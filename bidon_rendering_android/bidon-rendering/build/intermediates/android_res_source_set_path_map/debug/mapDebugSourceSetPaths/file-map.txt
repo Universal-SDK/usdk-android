@@ -1,0 +1,8 @@
+org.bidon.rendering.bidon-rendering-pngs-0 E:\Bidon\usdk-android\bidon_rendering_android\bidon-rendering\build\generated\res\pngs\debug
+org.bidon.rendering.bidon-rendering-updated_navigation_xml-1 E:\Bidon\usdk-android\bidon_rendering_android\bidon-rendering\build\generated\updated_navigation_xml\debug
+org.bidon.rendering.bidon-rendering-mergeDebugResources-2 E:\Bidon\usdk-android\bidon_rendering_android\bidon-rendering\build\intermediates\incremental\debug\mergeDebugResources\merged.dir
+org.bidon.rendering.bidon-rendering-mergeDebugResources-3 E:\Bidon\usdk-android\bidon_rendering_android\bidon-rendering\build\intermediates\incremental\debug\mergeDebugResources\stripped.dir
+org.bidon.rendering.bidon-rendering-debug-4 E:\Bidon\usdk-android\bidon_rendering_android\bidon-rendering\build\intermediates\merged_res\debug\mergeDebugResources
+org.bidon.rendering.bidon-rendering-debug-5 E:\Bidon\usdk-android\bidon_rendering_android\bidon-rendering\build\intermediates\packaged_res\debug\packageDebugResources
+org.bidon.rendering.bidon-rendering-debug-6 E:\Bidon\usdk-android\bidon_rendering_android\bidon-rendering\src\debug\res
+org.bidon.rendering.bidon-rendering-main-7 E:\Bidon\usdk-android\bidon_rendering_android\bidon-rendering\src\main\res
