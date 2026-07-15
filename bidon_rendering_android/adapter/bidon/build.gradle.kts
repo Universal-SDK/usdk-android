@@ -3,8 +3,8 @@ plugins {
 }
 
 android {
-    namespace = "org.bidon.rendering.adapter"
-    compileSdk = 34
+    namespace = "org.bidon.bidon"
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 24
@@ -14,23 +14,18 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
         }
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
-    }
-    kotlinOptions {
-        jvmTarget = "1.8"
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 }
 
 dependencies {
     implementation(project(":bidon-rendering"))
-    implementation("androidx.appcompat:appcompat:1.6.1")
+    //api("org.bidon:bidon-sdk:0.4.29")
+    implementation("org.bidon:bidon-sdk:0.4.29")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }

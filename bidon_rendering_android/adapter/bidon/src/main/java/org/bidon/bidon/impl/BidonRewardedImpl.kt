@@ -1,119 +1,121 @@
 package org.bidon.bidon.impl
 
 import android.app.Activity
-import android.view.ViewGroup
-import org.bidon.bidon.BidonFullscreenAdAuctionParams
-import org.bidon.rendering.BidonRenderer
+import android.util.Log
+import kotlinx.coroutines.flow.MutableSharedFlow
+import org.bidon.bidon.BidonFullscreenAuctionParams
 import org.bidon.rendering.AdRenderer
+import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.tracking.TrackingDispatcher
+import org.bidon.sdk.adapter.AdAuctionParamSource
+import org.bidon.sdk.adapter.AdAuctionParams
 import org.bidon.sdk.adapter.AdEvent
 import org.bidon.sdk.adapter.AdSource
-import org.bidon.sdk.ads.rewarded.Reward
+import org.bidon.sdk.adapter.DemandId
+import org.bidon.sdk.adapter.impl.AdEventFlow
 import org.bidon.sdk.config.BidonError
+import org.bidon.sdk.stats.StatisticsCollector
+import org.bidon.sdk.stats.impl.StatisticsCollectorImpl
 
 internal class BidonRewardedImpl :
-    AdSource.Rewarded<BidonFullscreenAdAuctionParams> {
+    AdSource.Rewarded<BidonFullscreenAuctionParams>,
+    AdEventFlow,
+    StatisticsCollector by StatisticsCollectorImpl() {
+
+    companion object {
+        private const val TAG = "BidonRewarded"
+    }
+
+    override val adEvent = MutableSharedFlow<AdEvent>(extraBufferCapacity = 10)
+
+    override fun emitEvent(event: AdEvent) {
+        adEvent.tryEmit(event)
+    }
+
+    override var isAdReadyToShow: Boolean = false
 
     private var renderer: AdRenderer? = null
-
-    private var isLoaded = false
-    private var isShown = false
-    private var isRewardSent = false
+    private var pendingBurl: String? = null
     private var isImpressionSent = false
 
-    private var pendingBurl: String? = null
+    override fun getAuctionParam(
+        auctionParamsScope: AdAuctionParamSource
+    ): Result<AdAuctionParams> = auctionParamsScope {
+        val lineItem = popLineItem(DemandId("bidon"))
 
-    private var rewardAmount: Int = 0
-    private var rewardType: String = "reward"
+        val json = json
+        val adm = json?.optString("adm").orEmpty()
+        val crtype = json?.optString("crtype") ?: "VAST"
+        val nurl = json?.optString("nurl")?.ifBlank { null }
+        val burl = json?.optString("burl")?.ifBlank { null }
 
-    override fun load(
-        auction: BidonFullscreenAdAuctionParams,
-        listener: AdSource.Rewarded.Listener
-    ) {
-        val adUnit = auction.adUnit
-
-        val adm = adUnit.adm
-        val crtype = adUnit.ext?.optString("crtype") ?: "HTML"
-
-        val nurl = adUnit.nurl
-        val burl = adUnit.burl
-
-        rewardAmount = adUnit.ext?.optInt("reward_amount") ?: 0
-        rewardType = adUnit.ext?.optString("reward_type") ?: "reward"
-
-        renderer = BidonRenderer.createRendererByType(
-            context = auction.activity,
-            crtype = crtype
-        )
-
-        nurl?.let { TrackingDispatcher.fire(it) }
-
-        renderer?.load(
+        BidonFullscreenAuctionParams(
+            activity = activity,
             adm = adm,
-            nurl = nurl ?: "",
-            onLoaded = {
-                isLoaded = true
-                listener.onAdLoaded()
-            },
-            onClick = {
-                listener.onAdClicked()
-            },
-            onError = { error ->
-                listener.onAdLoadFailed(error)
-            }
+            crtype = crtype,
+            nurl = nurl,
+            burl = burl,
+            price = lineItem?.pricefloor ?: pricefloor,
+            lineItem = lineItem
         )
-
-        pendingBurl = burl
     }
 
-    override fun show(
-        activity: Activity,
-        container: ViewGroup?,
-        listener: AdSource.Rewarded.Listener
-    ) {
-        val renderer = renderer ?: run {
-            listener.onAdShowFailed(BidonError.AdNotReady)
-            return
+    override fun load(adParams: BidonFullscreenAuctionParams) {
+        Log.d(TAG, "load() crtype=${adParams.crtype}")
+
+        pendingBurl = adParams.burl
+
+        adParams.nurl?.let {
+            Log.d(TAG, "Firing nurl")
+            TrackingDispatcher.fire(it, "nurl")
         }
 
-        if (isShown) return
-        isShown = true
+        val ad = getAd()
 
-        renderer.show(
-            container = container,
-            burl = pendingBurl ?: "",
-            isFullscreen = true
-        )
+        renderer = BidonRenderer.createRendererByType(adParams.crtype)
+        renderer?.load(adParams.adm, object : AdRenderer.Listener {
+            override fun onLoaded() {
+                Log.d(TAG, "Ad loaded")
+                isAdReadyToShow = true
+                ad?.let { emitEvent(AdEvent.Fill(it)) }
+            }
 
-        listener.onAdImpression()
-        isImpressionSent = true
+            override fun onImpression() {
+                if (!isImpressionSent) {
+                    isImpressionSent = true
+                    pendingBurl?.let {
+                        Log.d(TAG, "Firing burl")
+                        TrackingDispatcher.fire(it, "burl")
+                    }
+                    ad?.let { emitEvent(AdEvent.Shown(it)) }
+                }
+            }
 
+            override fun onClick() {
+                ad?.let { emitEvent(AdEvent.Clicked(it)) }
+            }
+
+            override fun onError(error: Throwable) {
+                Log.e(TAG, "Ad error: ${error.message}")
+                isAdReadyToShow = false
+                emitEvent(AdEvent.LoadFailed(BidonError.NoFill(DemandId("bidon"))))
+            }
+        })
     }
 
-    fun grantReward(listener: AdSource.Rewarded.Listener) {
-        if (isRewardSent) return
-        isRewardSent = true
-
-        listener.onAdReward(
-            Reward(
-                type = rewardType,
-                amount = rewardAmount
-            )
-        )
-    }
-
-    fun onAdClosed(listener: AdSource.Rewarded.Listener) {
-        listener.onAdClosed()
+    override fun show(activity: Activity) {
+        val r = renderer ?: run {
+            emitEvent(AdEvent.ShowFailed(BidonError.AdNotReady))
+            return
+        }
+        r.showFullscreen(activity)
     }
 
     override fun destroy() {
         renderer?.destroy()
         renderer = null
-
-        isLoaded = false
-        isShown = false
-        isRewardSent = false
-        isImpressionSent = false
         pendingBurl = null
+        isAdReadyToShow = false
+        isImpressionSent = false
     }
 }

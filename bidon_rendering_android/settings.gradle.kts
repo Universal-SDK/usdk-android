@@ -19,6 +19,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri("https://artifactory.bidon.org/bidon") }
     }
 }
 
@@ -26,3 +27,4 @@ rootProject.name = "bidon_rendering_android"
 include(":app")
 include(":bidon-rendering")
 include(":adapter")
+project(":adapter").projectDir = File("adapter/bidon")

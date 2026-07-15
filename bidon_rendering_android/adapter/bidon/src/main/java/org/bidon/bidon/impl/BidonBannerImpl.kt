@@ -1,90 +1,123 @@
 package org.bidon.bidon.impl
 
+import android.util.Log
 import android.view.ViewGroup
+import kotlinx.coroutines.flow.MutableSharedFlow
 import org.bidon.bidon.BidonBannerAuctionParams
-import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.AdRenderer
+import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.tracking.TrackingDispatcher
+import org.bidon.sdk.adapter.AdAuctionParamSource
+import org.bidon.sdk.adapter.AdAuctionParams
 import org.bidon.sdk.adapter.AdEvent
 import org.bidon.sdk.adapter.AdSource
+import org.bidon.sdk.adapter.AdViewHolder
+import org.bidon.sdk.adapter.DemandId
+import org.bidon.sdk.adapter.impl.AdEventFlow
 import org.bidon.sdk.config.BidonError
+import org.bidon.sdk.stats.StatisticsCollector
+import org.bidon.sdk.stats.impl.StatisticsCollectorImpl
 
 internal class BidonBannerImpl :
-    AdSource.Banner<BidonBannerAuctionParams> {
+    AdSource.Banner<BidonBannerAuctionParams>,
+    AdEventFlow,
+    StatisticsCollector by StatisticsCollectorImpl() {
 
-    private var renderer: AdRenderer? = null
-
-    private var isLoaded = false
-    private var isImpressionSent = false
-    private var isShown = false
-
-    private var pendingBurl: String? = null
-
-    override fun load(
-        auction: BidonBannerAuctionParams,
-        listener: AdSource.Banner.Listener
-    ) {
-        val adUnit = auction.adUnit
-
-        val adm = adUnit.adm
-        val crtype = adUnit.ext?.optString("crtype") ?: "HTML"
-        val nurl = adUnit.nurl
-        val burl = adUnit.burl
-
-        renderer = BidonRenderer.createRendererByType(
-            context = auction.activity,
-            crtype = crtype
-        )
-
-        nurl?.let {
-            TrackingDispatcher.fire(it)
-        }
-
-        renderer?.load(
-            adm = adm,
-            nurl = nurl ?: "",
-            onLoaded = {
-                isLoaded = true
-                listener.onAdLoaded()
-            },
-            onClick = {
-                listener.onAdClicked()
-            },
-            onError = { error ->
-                listener.onAdLoadFailed(error)
-            }
-        )
-
-        pendingBurl = burl
+    companion object {
+        private const val TAG = "BidonBanner"
     }
 
-    override fun onAdRendered(container: ViewGroup, listener: AdSource.Banner.Listener) {
+    override val adEvent = MutableSharedFlow<AdEvent>(extraBufferCapacity = 10)
 
-        val renderer = renderer ?: run {
-            listener.onAdLoadFailed(BidonError.AdNotReady)
-            return
+    override fun emitEvent(event: AdEvent) {
+        adEvent.tryEmit(event)
+    }
+
+    override var isAdReadyToShow: Boolean = false
+
+    private var renderer: AdRenderer? = null
+    private var pendingBurl: String? = null
+    private var isImpressionSent = false
+
+    override fun getAuctionParam(
+        auctionParamsScope: AdAuctionParamSource
+    ): Result<AdAuctionParams> = auctionParamsScope {
+        val lineItem = popLineItem(DemandId("bidon"))
+
+        val json = json
+        val adm = json?.optString("adm").orEmpty()
+        val crtype = json?.optString("crtype") ?: "HTML"
+        val nurl = json?.optString("nurl")?.ifBlank { null }
+        val burl = json?.optString("burl")?.ifBlank { null }
+
+        BidonBannerAuctionParams(
+            activity = activity,
+            adm = adm,
+            crtype = crtype,
+            nurl = nurl,
+            burl = burl,
+            price = lineItem?.pricefloor ?: pricefloor,
+            lineItem = lineItem
+        )
+    }
+
+    override fun load(adParams: BidonBannerAuctionParams) {
+        Log.d(TAG, "load() crtype=${adParams.crtype}")
+
+        pendingBurl = adParams.burl
+
+        adParams.nurl?.let {
+            Log.d(TAG, "Firing nurl")
+            TrackingDispatcher.fire(it, "nurl")
         }
 
-        if (isShown) return
-        isShown = true
+        val ad = getAd()
 
-        renderer.show(
-            container = container,
-            burl = pendingBurl ?: "",
-            isFullscreen = false
+        renderer = BidonRenderer.createRendererByType(adParams.crtype)
+        renderer?.load(adParams.adm, object : AdRenderer.Listener {
+            override fun onLoaded() {
+                Log.d(TAG, "Ad loaded")
+                isAdReadyToShow = true
+                ad?.let { emitEvent(AdEvent.Fill(it)) }
+            }
+
+            override fun onImpression() {
+                if (!isImpressionSent) {
+                    isImpressionSent = true
+                    pendingBurl?.let {
+                        Log.d(TAG, "Firing burl")
+                        TrackingDispatcher.fire(it, "burl")
+                    }
+                    ad?.let { emitEvent(AdEvent.Shown(it)) }
+                }
+            }
+
+            override fun onClick() {
+                ad?.let { emitEvent(AdEvent.Clicked(it)) }
+            }
+
+            override fun onError(error: Throwable) {
+                Log.e(TAG, "Ad error: ${error.message}")
+                isAdReadyToShow = false
+                emitEvent(AdEvent.LoadFailed(BidonError.NoFill(DemandId("bidon"))))
+            }
+        })
+    }
+
+    override fun getAdView(): AdViewHolder? {
+        val view = renderer?.getView() ?: return null
+        return AdViewHolder(
+            networkAdview = view,
+            widthDp = ViewGroup.LayoutParams.MATCH_PARENT,
+            heightDp = 50
         )
-
-        listener.onAdImpression()
-        isImpressionSent = true
     }
 
     override fun destroy() {
         renderer?.destroy()
         renderer = null
-
-        isLoaded = false
-        isShown = false
-        isImpressionSent = false
         pendingBurl = null
+        isAdReadyToShow = false
+        isImpressionSent = false
     }
 }

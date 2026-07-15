@@ -137,12 +137,10 @@ class CloseButton @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
-    // 🎨 Colors
     private val defaultBgColor = Color.parseColor("#80000000")
     private val pressedBgColor = Color.parseColor("#CC000000")
     private val crossColor = Color.WHITE
 
-    // 🎨 Paints
     private val crossPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = crossColor
         style = Paint.Style.STROKE

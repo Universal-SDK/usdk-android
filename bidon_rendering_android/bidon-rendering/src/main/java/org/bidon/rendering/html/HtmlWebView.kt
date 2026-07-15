@@ -1,21 +1,25 @@
 package org.bidon.rendering.html
 
 import android.content.Context
-import android.util.Log
 import android.webkit.WebSettings
 import android.webkit.WebView
 
-class HtmlWebView(context: Context) : WebView(context) {
+open class HtmlWebView(context: Context) : WebView(context) {
 
     init {
         setupWebView()
     }
-    private fun setupWebView() {
+
+    protected open fun setupWebView() {
         with(settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
             loadWithOverviewMode = true
             useWideViewPort = true
+
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+
+
             cacheMode = WebSettings.LOAD_DEFAULT
             setSupportZoom(false)
             builtInZoomControls = false
