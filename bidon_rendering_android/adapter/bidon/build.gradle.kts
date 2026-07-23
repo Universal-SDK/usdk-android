@@ -29,7 +29,6 @@ android {
 
 dependencies {
     implementation(project(":bidon-rendering"))
-    //api("org.bidon:bidon-sdk:0.4.29")
-    implementation("org.bidon:bidon-sdk:0.4.29")
+    implementation("org.bidon:bidon-sdk:0.14.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }

@@ -41,7 +41,7 @@ dependencies {
     implementation(libs.material)
     implementation(project(":bidon-rendering"))
     implementation(project(":adapter"))
-    implementation("org.bidon:bidon-sdk:0.4.29")
+    implementation("org.bidon:bidon-sdk:0.14.0")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
