@@ -2,7 +2,7 @@ package org.bidon.bidon
 
 import android.app.Activity
 import org.bidon.sdk.adapter.AdAuctionParams
-import org.bidon.sdk.auction.models.LineItem
+import org.bidon.sdk.auction.models.AdUnit
 
 sealed interface BidonAuctionParams : AdAuctionParams {
     val activity: Activity
@@ -11,7 +11,7 @@ sealed interface BidonAuctionParams : AdAuctionParams {
     val nurl: String?
     val burl: String?
     override val price: Double
-    override val lineItem: LineItem?
+    override val adUnit: AdUnit
 }
 
 data class BidonBannerAuctionParams(
@@ -21,7 +21,7 @@ data class BidonBannerAuctionParams(
     override val nurl: String?,
     override val burl: String?,
     override val price: Double,
-    override val lineItem: LineItem? = null
+    override val adUnit: AdUnit
 ) : BidonAuctionParams
 
 data class BidonFullscreenAuctionParams(
@@ -31,5 +31,5 @@ data class BidonFullscreenAuctionParams(
     override val nurl: String?,
     override val burl: String?,
     override val price: Double,
-    override val lineItem: LineItem? = null
+    override val adUnit: AdUnit
 ) : BidonAuctionParams

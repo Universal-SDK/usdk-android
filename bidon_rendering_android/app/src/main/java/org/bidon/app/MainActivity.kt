@@ -8,6 +8,9 @@ import androidx.appcompat.app.AppCompatActivity
 import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.tracking.TrackingDispatcher
+import org.bidon.sdk.BidonSdk
+import org.bidon.sdk.logs.logging.Logger
+import org.bidon.bidon.BidonAdapter
 
 class MainActivity : AppCompatActivity() {
 
@@ -41,6 +44,17 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         BidonRenderer.init(this)
+
+        // Step 1: verify BidOn SDK initialization against the real staging server.
+        println("hop: calling BidonSdk.initialize (baseUrl=sdkapi.bidon.squads.com, appKey=tetris_2005)")
+        BidonSdk
+            .registerAdapters(BidonAdapter())
+            .setBaseUrl("https://sdkapi.bidon.squads.com")
+            .setLoggerLevel(Logger.Level.Verbose)
+            .setInitializationCallback {
+                println("hop: BidonSdk_initialized! isInitialized=${BidonSdk.isInitialized()}")
+            }
+            .initialize(context = this, appKey = "tetris_2005")
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

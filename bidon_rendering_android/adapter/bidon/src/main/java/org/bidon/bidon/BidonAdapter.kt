@@ -17,7 +17,7 @@ internal val BidonDemandId = DemandId("bidon")
 
 @Suppress("unused")
 class BidonAdapter :
-    Adapter,
+    Adapter.Network,
     Initializable<BidonInitParameters>,
     AdProvider.Banner<BidonBannerAuctionParams>,
     AdProvider.Interstitial<BidonFullscreenAuctionParams>,

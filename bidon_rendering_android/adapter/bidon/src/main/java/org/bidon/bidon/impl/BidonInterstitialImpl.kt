@@ -41,13 +41,12 @@ internal class BidonInterstitialImpl :
     override fun getAuctionParam(
         auctionParamsScope: AdAuctionParamSource
     ): Result<AdAuctionParams> = auctionParamsScope {
-        val lineItem = popLineItem(DemandId("bidon"))
+        val ext = adUnit.extra
 
-        val json = json
-        val adm = json?.optString("adm").orEmpty()
-        val crtype = json?.optString("crtype") ?: "HTML"
-        val nurl = json?.optString("nurl")?.ifBlank { null }
-        val burl = json?.optString("burl")?.ifBlank { null }
+        val adm = ext?.optString("adm").orEmpty()
+        val crtype = ext?.optString("crtype") ?: "HTML"
+        val nurl = ext?.optString("nurl")?.ifBlank { null }
+        val burl = ext?.optString("burl")?.ifBlank { null }
 
         BidonFullscreenAuctionParams(
             activity = activity,
@@ -55,8 +54,8 @@ internal class BidonInterstitialImpl :
             crtype = crtype,
             nurl = nurl,
             burl = burl,
-            price = lineItem?.pricefloor ?: pricefloor,
-            lineItem = lineItem
+            price = adUnit.pricefloor,
+            adUnit = adUnit
         )
     }
 
