@@ -13,7 +13,7 @@ import org.bidon.bidon.impl.BidonInterstitialImpl
 import org.bidon.bidon.impl.BidonRewardedImpl
 import org.json.JSONObject
 
-internal val BidonDemandId = DemandId("bidon")
+internal val BidonDemandId = DemandId("adikteev")
 
 @Suppress("unused")
 class BidonAdapter :
