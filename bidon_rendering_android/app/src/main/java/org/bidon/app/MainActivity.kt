@@ -99,18 +99,6 @@ class MainActivity : AppCompatActivity() {
 
         BidonRenderer.init(this)
 
-        // Step 1: verify BidOn SDK initialization against the real staging server.
-        println("hop: calling BidonSdk.initialize (baseUrl=sdkapi.bidon.squads.com, appKey=tetris_2005)")
-        BidonSdk
-            .registerAdapters(BidonAdapter())
-            .setBaseUrl("https://sdkapi.bidon.squads.com")
-            .setLoggerLevel(Logger.Level.Verbose)
-            .setInitializationCallback {
-                println("hop: BidonSdk_initialized! isInitialized=${BidonSdk.isInitialized()}")
-                runOnUiThread { loadSdkBanner() }
-            }
-            .initialize(context = this, appKey = "tetris_2005")
-
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(16, 500, 16, 16)
@@ -202,6 +190,20 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
 
         log("App started")
+
+        // Init the BidOn SDK last, after the views exist. On a warm start the SDK is already
+        // initialized and setInitializationCallback runs the callback inline, so anything it
+        // touches has to be built by now.
+        println("hop: calling BidonSdk.initialize (baseUrl=sdkapi.bidon.squads.com, appKey=tetris_2005)")
+        BidonSdk
+            .registerAdapters(BidonAdapter())
+            .setBaseUrl("https://sdkapi.bidon.squads.com")
+            .setLoggerLevel(Logger.Level.Verbose)
+            .setInitializationCallback {
+                println("hop: BidonSdk_initialized! isInitialized=${BidonSdk.isInitialized()}")
+                runOnUiThread { loadSdkBanner() }
+            }
+            .initialize(context = this, appKey = "tetris_2005")
     }
 
 
