@@ -5,6 +5,7 @@ import org.bidon.rendering.RendererConfig
 import org.bidon.sdk.adapter.AdapterParameters
 
 data class BidonInitParameters(
+    val sdkInstanceId: String? = null,
     val endpoint: String? = null,
     val apiKey: String? = null,
     val debug: Boolean = false,

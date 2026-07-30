@@ -4,6 +4,8 @@ import android.util.Log
 import android.view.ViewGroup
 import kotlinx.coroutines.flow.MutableSharedFlow
 import org.bidon.bidon.BidonBannerAuctionParams
+import org.bidon.bidon.BidonDemandId
+import org.bidon.bidon.creativeTypeOf
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.tracking.TrackingDispatcher
@@ -12,7 +14,6 @@ import org.bidon.sdk.adapter.AdAuctionParams
 import org.bidon.sdk.adapter.AdEvent
 import org.bidon.sdk.adapter.AdSource
 import org.bidon.sdk.adapter.AdViewHolder
-import org.bidon.sdk.adapter.DemandId
 import org.bidon.sdk.adapter.impl.AdEventFlow
 import org.bidon.sdk.config.BidonError
 import org.bidon.sdk.stats.StatisticsCollector
@@ -44,8 +45,8 @@ internal class BidonBannerImpl :
     ): Result<AdAuctionParams> = auctionParamsScope {
         val ext = adUnit.extra
 
-        val adm = ext?.optString("adm").orEmpty()
-        val crtype = ext?.optString("crtype") ?: "HTML"
+        val adm = ext?.optString("payload").orEmpty()
+        val crtype = creativeTypeOf(adm)
         val nurl = ext?.optString("nurl")?.ifBlank { null }
         val burl = ext?.optString("burl")?.ifBlank { null }
 
@@ -98,7 +99,7 @@ internal class BidonBannerImpl :
             override fun onError(error: Throwable) {
                 Log.e(TAG, "Ad error: ${error.message}")
                 isAdReadyToShow = false
-                emitEvent(AdEvent.LoadFailed(BidonError.NoFill(DemandId("bidon"))))
+                emitEvent(AdEvent.LoadFailed(BidonError.NoFill(BidonDemandId)))
             }
         })
     }
