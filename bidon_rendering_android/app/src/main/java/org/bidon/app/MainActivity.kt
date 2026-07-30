@@ -11,6 +11,15 @@ import org.bidon.rendering.tracking.TrackingDispatcher
 import org.bidon.sdk.BidonSdk
 import org.bidon.sdk.logs.logging.Logger
 import org.bidon.bidon.BidonAdapter
+import org.bidon.sdk.ads.Ad
+import org.bidon.sdk.ads.AuctionInfo
+import org.bidon.sdk.ads.interstitial.InterstitialAd
+import org.bidon.sdk.ads.interstitial.InterstitialListener
+import org.bidon.sdk.ads.banner.BannerView
+import org.bidon.sdk.ads.banner.BannerFormat
+import org.bidon.sdk.ads.banner.BannerListener
+import org.bidon.sdk.config.BidonError
+import org.bidon.sdk.logs.analytic.AdValue
 
 class MainActivity : AppCompatActivity() {
 
@@ -40,6 +49,51 @@ class MainActivity : AppCompatActivity() {
     private var isMraidLoaded = false
     private var isMraidInterstitialLoaded = false
 
+    private var sdkInterstitial: InterstitialAd? = null
+    private var sdkBanner: BannerView? = null
+
+    // Runs a real SDK auction (POST /v2/auction) and logs every callback with "hop:".
+    // No auctionKey is passed: the backend picks the auction from the app key and the ad type.
+    private fun loadSdkInterstitial() {
+        val ad = InterstitialAd()
+        sdkInterstitial = ad
+        ad.setInterstitialListener(object : InterstitialListener {
+            override fun onAdLoaded(ad: Ad, auctionInfo: AuctionInfo) { println("hop: SDK onAdLoaded ad=$ad") }
+            override fun onAdLoadFailed(auctionInfo: AuctionInfo?, cause: BidonError) { println("hop: SDK onAdLoadFailed: $cause") }
+            override fun onAdShown(ad: Ad) { println("hop: SDK onAdShown") }
+            override fun onAdShowFailed(cause: BidonError) { println("hop: SDK onAdShowFailed: $cause") }
+            override fun onAdClicked(ad: Ad) { println("hop: SDK onAdClicked") }
+            override fun onAdClosed(ad: Ad) { println("hop: SDK onAdClosed") }
+            override fun onAdExpired(ad: Ad) { println("hop: SDK onAdExpired") }
+            override fun onRevenuePaid(ad: Ad, adValue: AdValue) { println("hop: SDK onRevenuePaid") }
+        })
+        println("hop: interstitial.loadAd() -> should trigger POST /v2/auction")
+        ad.loadAd(this)
+    }
+
+    // Runs a real SDK BANNER auction (POST /v2/auction/banner) and logs callbacks.
+    private fun loadSdkBanner() {
+        val banner = BannerView(context = this)
+        sdkBanner = banner
+        bannerContainer.removeAllViews()
+        bannerContainer.addView(banner)
+        banner.setBannerFormat(BannerFormat.Banner)
+        banner.setBannerListener(object : BannerListener {
+            override fun onAdLoaded(ad: Ad, auctionInfo: AuctionInfo) {
+                println("hop: SDK banner onAdLoaded ad=$ad")
+                runOnUiThread { banner.showAd() }
+            }
+            override fun onAdLoadFailed(auctionInfo: AuctionInfo?, cause: BidonError) { println("hop: SDK banner onAdLoadFailed: $cause") }
+            override fun onAdShown(ad: Ad) { println("hop: SDK banner onAdShown") }
+            override fun onAdShowFailed(cause: BidonError) { println("hop: SDK banner onAdShowFailed: $cause") }
+            override fun onAdClicked(ad: Ad) { println("hop: SDK banner onAdClicked") }
+            override fun onAdExpired(ad: Ad) { println("hop: SDK banner onAdExpired") }
+            override fun onRevenuePaid(ad: Ad, adValue: AdValue) { println("hop: SDK banner onRevenuePaid") }
+        })
+        println("hop: banner.loadAd() -> should trigger POST /v2/auction/banner")
+        banner.loadAd(this, BidonSdk.DefaultPricefloor)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -53,6 +107,7 @@ class MainActivity : AppCompatActivity() {
             .setLoggerLevel(Logger.Level.Verbose)
             .setInitializationCallback {
                 println("hop: BidonSdk_initialized! isInitialized=${BidonSdk.isInitialized()}")
+                runOnUiThread { loadSdkBanner() }
             }
             .initialize(context = this, appKey = "tetris_2005")
 
