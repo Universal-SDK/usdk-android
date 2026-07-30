@@ -26,21 +26,7 @@
 
     </activity>
 
-    <activity
-        android:name="org.bidon.rendering.ui.FullscreenAdActivity"
-        android:theme="@style/Theme.AppCompat.NoActionBar"
-        android:configChanges="orientation|screenSize|keyboardHidden"
-        android:exported="false" />
-
-    <activity
-        android:name="org.bidon.rendering.vast.ui.VideoAdActivity"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar"
-        android:exported="false"/>
-
-    <activity
-        android:name="org.bidon.rendering.mraid.ui.MraidAdActivity"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar"
-        android:exported="false"/>
+    <!-- The renderer's ad activities are declared by the bidon-rendering library itself. -->
 
 </application>
 

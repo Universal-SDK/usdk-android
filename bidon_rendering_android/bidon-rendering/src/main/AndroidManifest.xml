@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        The ad activities are declared here, in the library, so that any app which depends on
+        the renderer gets them through manifest merging. They used to live only in the demo
+        app's manifest, which meant showing an ad in any other app crashed with
+        ActivityNotFoundException.
+
+        All three are exported="false": they are started by the renderer itself and must never
+        be launchable by another app.
+    -->
+    <application>
+
+        <activity
+            android:name="org.bidon.rendering.ui.FullscreenAdActivity"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false" />
+
+        <activity
+            android:name="org.bidon.rendering.vast.ui.VideoAdActivity"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            android:exported="false" />
+
+        <activity
+            android:name="org.bidon.rendering.mraid.ui.MraidAdActivity"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            android:exported="false" />
+
+    </application>
+
+</manifest>
