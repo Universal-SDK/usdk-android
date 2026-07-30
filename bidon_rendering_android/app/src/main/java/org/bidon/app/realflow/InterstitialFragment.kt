@@ -1,7 +1,9 @@
-package org.bidon.app
+package org.bidon.app.realflow
 
 import android.widget.Button
 import android.widget.LinearLayout
+import org.bidon.app.shared.AdFragment
+import org.bidon.app.shared.describe
 import org.bidon.sdk.ads.Ad
 import org.bidon.sdk.ads.AuctionInfo
 import org.bidon.sdk.ads.interstitial.InterstitialAd

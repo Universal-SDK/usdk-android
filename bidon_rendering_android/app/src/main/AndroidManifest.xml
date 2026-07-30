@@ -15,10 +15,6 @@
     android:theme="@style/Theme.Bidon_rendering_android"
     android:usesCleartextTraffic="true">
 
-    <meta-data
-        android:name="org.bidon.rendering.adapter.BidonAdapter"
-        android:value="org.bidon.rendering.adapter.BidonAdapter" />
-
     <activity
         android:name="org.bidon.app.MainActivity"
         android:exported="true">

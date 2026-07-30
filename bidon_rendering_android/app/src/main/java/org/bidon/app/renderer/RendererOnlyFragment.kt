@@ -1,9 +1,10 @@
-package org.bidon.app
+package org.bidon.app.renderer
 
 import android.graphics.Color
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import org.bidon.app.shared.AdFragment
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.tracking.TrackingDispatcher

@@ -1,8 +1,10 @@
-package org.bidon.app
+package org.bidon.app.realflow
 
 import android.graphics.Color
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import org.bidon.app.shared.AdFragment
+import org.bidon.app.shared.describe
 import org.bidon.sdk.BidonSdk
 import org.bidon.sdk.ads.Ad
 import org.bidon.sdk.ads.AuctionInfo

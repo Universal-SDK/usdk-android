@@ -1,4 +1,4 @@
-package org.bidon.app
+package org.bidon.app.shared
 
 import android.graphics.Color
 import android.graphics.Typeface
