@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">bidon_rendering_android</string>
+
+    <string name="tab_banner">Banner</string>
+    <string name="tab_interstitial">Interstitial</string>
+    <string name="tab_rewarded">Rewarded</string>
+    <string name="tab_renderer">Renderer</string>
 </resources>

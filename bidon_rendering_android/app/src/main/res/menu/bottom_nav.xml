@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/tab_banner"
+        android:icon="@drawable/ic_tab_banner"
+        android:title="@string/tab_banner" />
+
+    <item
+        android:id="@+id/tab_interstitial"
+        android:icon="@drawable/ic_tab_interstitial"
+        android:title="@string/tab_interstitial" />
+
+    <item
+        android:id="@+id/tab_rewarded"
+        android:icon="@drawable/ic_tab_rewarded"
+        android:title="@string/tab_rewarded" />
+
+    <item
+        android:id="@+id/tab_renderer"
+        android:icon="@drawable/ic_tab_renderer"
+        android:title="@string/tab_renderer" />
+
+</menu>
