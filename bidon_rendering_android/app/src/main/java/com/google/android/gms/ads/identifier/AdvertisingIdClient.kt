@@ -35,9 +35,7 @@ class AdvertisingIdClient {
         const val TEST_ADVERTISING_ID: String = "013b8c47-8beb-41b4-aefe-60fe466f9fd8"
 
         @JvmStatic
-        fun getAdvertisingIdInfo(context: Context): Info {
-            println("hop: serving test advertising id $TEST_ADVERTISING_ID")
-            return Info(advertisingId = TEST_ADVERTISING_ID, limitAdTracking = false)
-        }
+        fun getAdvertisingIdInfo(context: Context): Info =
+            Info(advertisingId = TEST_ADVERTISING_ID, limitAdTracking = false)
     }
 }

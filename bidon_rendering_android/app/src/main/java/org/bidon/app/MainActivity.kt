@@ -5,16 +5,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.commit
 import com.demo.tetris.R
-import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.demo.tetris.databinding.ActivityMainBinding
 import org.bidon.app.realflow.BannerFragment
 import org.bidon.app.realflow.InterstitialFragment
 import org.bidon.app.realflow.RewardedFragment
 import org.bidon.app.renderer.RendererOnlyFragment
-import org.bidon.app.shared.FlowLog
 import org.bidon.bidon.BidonAdapter
 import org.bidon.rendering.BidonRenderer
 import org.bidon.sdk.BidonSdk
-import org.bidon.sdk.logs.logging.Logger
 
 private const val BASE_URL = "https://sdkapi.bidon.squads.com"
 private const val APP_KEY = "tetris_2005"
@@ -27,15 +25,19 @@ private const val APP_KEY = "tetris_2005"
  * - [RendererOnlyFragment] drives the renderer directly with hardcoded creatives and does not
  *   touch the SDK at all.
  */
-class MainActivity : AppCompatActivity(R.layout.activity_main) {
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityMainBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
         BidonRenderer.init(this)
 
-        val bottomNav = findViewById<BottomNavigationView>(R.id.bottom_nav)
-        bottomNav.setOnItemSelectedListener { item ->
+        binding.bottomNav.setOnItemSelectedListener { item ->
             show(
                 when (item.itemId) {
                     R.id.tab_banner -> BannerFragment::class.java
@@ -50,7 +52,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         }
 
         if (savedInstanceState == null) {
-            bottomNav.selectedItemId = R.id.tab_banner
+            binding.bottomNav.selectedItemId = R.id.tab_banner
             initBidonSdk()
         }
     }
@@ -64,15 +66,9 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     }
 
     private fun initBidonSdk() {
-        FlowLog.step("init 1", "BidonSdk.initialize (appKey=$APP_KEY, $BASE_URL)")
         BidonSdk
             .registerAdapters(BidonAdapter())
             .setBaseUrl(BASE_URL)
-            .setLoggerLevel(Logger.Level.Verbose)
-            .setInitializationCallback {
-                FlowLog.step("init 2", "POST /v2/config done, the adapter is registered as adikteev")
-                FlowLog.step("init 3", "ready - pick a format from the bottom bar")
-            }
             .initialize(context = this, appKey = APP_KEY)
     }
 }

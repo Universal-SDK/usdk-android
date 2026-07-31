@@ -1,10 +1,10 @@
 package org.bidon.app.renderer
 
-import android.graphics.Color
-import android.widget.Button
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import org.bidon.app.shared.AdFragment
+import android.os.Bundle
+import android.view.View
+import androidx.fragment.app.Fragment
+import com.demo.tetris.R
+import com.demo.tetris.databinding.FragmentRendererOnlyBinding
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.tracking.TrackingDispatcher
@@ -12,27 +12,14 @@ import org.bidon.rendering.tracking.TrackingDispatcher
 /**
  * The renderer on its own, with hardcoded creatives pasted straight in.
  *
- * This is NOT the product path: no SDK, no auction, no adapter. Nothing here proves the real
- * flow works. It is for poking at the renderer in isolation - a new VAST tag, an MRAID command,
- * a creative that misbehaves - without needing a live auction to fill.
- *
- * The banner and interstitial creatives here point at a third-party SSP test endpoint; the VAST
- * and MRAID ones are captured Adikteev creatives.
+ * This is NOT the product path: no SDK, no auction, no adapter. Nothing here proves the real flow
+ * works. It is for poking at the renderer in isolation - a new VAST tag, an MRAID command, a
+ * creative that misbehaves - without needing a live auction to fill.
  */
-class RendererOnlyFragment : AdFragment() {
+class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
 
-    override val title = "Renderer only"
-
-    override val subtitle =
-        "Bypasses the SDK. Hardcoded creatives fed straight into the renderer, so nothing here " +
-            "exercises the auction or the adapter."
-
-    private lateinit var bannerContainer: FrameLayout
-    private lateinit var btnShowBanner: Button
-    private lateinit var btnShowInterstitial: Button
-    private lateinit var btnShowVast: Button
-    private lateinit var btnShowMraid: Button
-    private lateinit var btnShowMraidInterstitial: Button
+    private var _binding: FragmentRendererOnlyBinding? = null
+    private val binding get() = _binding!!
 
     private var bannerRenderer: AdRenderer? = null
     private var interstitialRenderer: AdRenderer? = null
@@ -46,55 +33,37 @@ class RendererOnlyFragment : AdFragment() {
     private var isMraidLoaded = false
     private var isMraidInterstitialLoaded = false
 
-    override fun buildControls(container: LinearLayout) {
-        container.addView(button("Load banner") { loadBanner() })
-        btnShowBanner = button("Show banner") { showBanner() }.disabled()
-        container.addView(btnShowBanner)
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        _binding = FragmentRendererOnlyBinding.bind(view)
 
-        container.addView(button("Load interstitial") { loadInterstitial() })
-        btnShowInterstitial = button("Show interstitial") { showInterstitial() }.disabled()
-        container.addView(btnShowInterstitial)
+        with(binding) {
+            btnLoadHtmlBanner.setOnClickListener { loadBanner() }
+            btnShowHtmlBanner.setOnClickListener { showBanner() }
 
-        container.addView(button("Load VAST") { loadVast() })
-        btnShowVast = button("Show VAST") { showVast() }.disabled()
-        container.addView(btnShowVast)
+            btnLoadHtmlInterstitial.setOnClickListener { loadInterstitial() }
+            btnShowHtmlInterstitial.setOnClickListener { showInterstitial() }
 
-        container.addView(button("Load MRAID banner") { loadMraid() })
-        btnShowMraid = button("Show MRAID banner") { showMraid() }.disabled()
-        container.addView(btnShowMraid)
+            btnLoadVast.setOnClickListener { loadVast() }
+            btnShowVast.setOnClickListener { showVast() }
 
-        container.addView(button("Load MRAID interstitial") { loadMraidInterstitial() })
-        btnShowMraidInterstitial =
-            button("Show MRAID interstitial") { showMraidInterstitial() }.disabled()
-        container.addView(btnShowMraidInterstitial)
+            btnLoadMraidBanner.setOnClickListener { loadMraid() }
+            btnShowMraidBanner.setOnClickListener { showMraid() }
 
-        container.addView(button("Destroy") { destroyAll() })
+            btnLoadMraidInterstitial.setOnClickListener { loadMraidInterstitial() }
+            btnShowMraidInterstitial.setOnClickListener { showMraidInterstitial() }
 
-        container.addView(note("Banner slot:"))
-        bannerContainer = FrameLayout(requireContext()).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(50)
-            )
-            setBackgroundColor(Color.LTGRAY)
+            btnDestroyAll.setOnClickListener { destroyAll() }
         }
-        container.addView(bannerContainer)
     }
-
-    private fun Button.disabled(): Button = apply { isEnabled = false }
-
-    /** Everything in this screen logs under one stage, since it is all renderer-only poking. */
-    private fun logStep(message: String) = step("renderer", message)
 
     override fun onDestroyView() {
         destroyAll()
+        _binding = null
         super.onDestroyView()
     }
 
-    // ---------------- BANNER ----------------
-
     private fun loadBanner() {
-        logStep("Loading banner...")
         bannerRenderer = BidonRenderer.createHtmlRenderer()
 
         val width = 320
@@ -158,29 +127,27 @@ class RendererOnlyFragment : AdFragment() {
 """.trimIndent()
 
         bannerRenderer?.load(adm = html, listener = object : AdRenderer.Listener {
-            override fun onLoaded() { logStep("Banner loaded"); isBannerLoaded = true; btnShowBanner.isEnabled = true
+            override fun onLoaded() { isBannerLoaded = true; binding.btnShowHtmlBanner.isEnabled = true
                 TrackingDispatcher.fire("https://wikimedia.org", "nurl")
             }
 
-            override fun onImpression() { logStep("Banner impression")
+            override fun onImpression() { 
                 TrackingDispatcher.fire("https://wikimedia.org", "burl")
             }
-            override fun onClick() { logStep("Banner click") }
-            override fun onError(error: Throwable) { logStep("Banner error: ${error.message}") }
+            override fun onClick() { }
+            override fun onError(error: Throwable) { }
         })
     }
 
     private fun showBanner() {
-        logStep("Show banner")
-        val view = bannerRenderer?.getView() ?: run { logStep("Banner view is null"); return }
-        bannerContainer.removeAllViews()
-        bannerContainer.addView(view)
+        val view = bannerRenderer?.getView() ?: run { return }
+        binding.rendererBannerSlot.removeAllViews()
+        binding.rendererBannerSlot.addView(view)
     }
 
     // ---------------- INTERSTITIAL ----------------
 
     private fun loadInterstitial() {
-        logStep("Loading interstitial...")
         interstitialRenderer = BidonRenderer.createHtmlRenderer()
 
 
@@ -248,19 +215,17 @@ class RendererOnlyFragment : AdFragment() {
 """.trimIndent()
 
         interstitialRenderer?.load(adm = html, listener = object : AdRenderer.Listener {
-            override fun onLoaded() { logStep("Interstitial loaded"); isInterstitialLoaded = true; btnShowInterstitial.isEnabled = true
+            override fun onLoaded() { isInterstitialLoaded = true; binding.btnShowHtmlInterstitial.isEnabled = true
                 TrackingDispatcher.fire("https://httpbin.org/get?pixel=nurl&test=true", "nurl")
             }
             override fun onImpression() {
-                logStep("Interstitial impression")
                 TrackingDispatcher.fire("https://httpbin.org/get?pixel=burl&test=true", "burl")}
-            override fun onClick() { logStep("Interstitial click")}
-            override fun onError(error: Throwable) { logStep("Interstitial error: ${error.message}") }
+            override fun onClick() { }
+            override fun onError(error: Throwable) { }
         })
     }
 
     private fun showInterstitial() {
-        logStep("Show interstitial")
         interstitialRenderer?.showFullscreen(requireActivity())
     }
 
@@ -273,14 +238,14 @@ class RendererOnlyFragment : AdFragment() {
         """.trimIndent()
         vastRenderer = BidonRenderer.createVastRenderer()
         vastRenderer?.load(adm = vastXml, listener = object : AdRenderer.Listener {
-            override fun onLoaded() { logStep("VAST loaded"); isVastLoaded = true; btnShowVast.isEnabled = true
+            override fun onLoaded() { isVastLoaded = true; binding.btnShowVast.isEnabled = true
                 TrackingDispatcher.fire("https://httpbin.org/get?pixel=nurl&test=true", "nurl")
             }
-            override fun onImpression() { logStep("VAST impression")
+            override fun onImpression() { 
                 TrackingDispatcher.fire("https://httpbin.org/get?pixel=burl&test=true", "burl")
             }
-            override fun onClick() { logStep("VAST click") }
-            override fun onError(error: Throwable) { logStep("VAST error: ${error.message}") }
+            override fun onClick() { }
+            override fun onError(error: Throwable) { }
         })
     }
 
@@ -291,7 +256,6 @@ class RendererOnlyFragment : AdFragment() {
     // ---------------- MRAID BANNER ----------------
 
     private fun loadMraid() {
-        logStep("Loading MRAID banner...")
         mraidRenderer = BidonRenderer.createMraidRenderer()
 
         val mraidHtml = """
@@ -322,7 +286,7 @@ class RendererOnlyFragment : AdFragment() {
                 }
                 function onMraidReady() {
                   mraid.addEventListener('stateChange', function(state) {
-                    console.logStep('MRAID state:', state);
+                    console.log('MRAID state:', state);
                   });
                 }
                 if (typeof mraid !== 'undefined') {
@@ -335,57 +299,50 @@ class RendererOnlyFragment : AdFragment() {
         """.trimIndent()
 
         mraidRenderer?.load(adm = mraidHtml, listener = object : AdRenderer.Listener {
-            override fun onLoaded() { logStep("MRAID banner loaded"); isMraidLoaded = true; btnShowMraid.isEnabled = true
+            override fun onLoaded() { isMraidLoaded = true; binding.btnShowMraidBanner.isEnabled = true
                 TrackingDispatcher.fire("https://httpbin.org/get?pixel=nurl&test=true", "nurl")
             }
-            override fun onImpression() { logStep("MRAID banner impression")
+            override fun onImpression() { 
                 TrackingDispatcher.fire("https://httpbin.org/get?pixel=burl&test=true", "burl")
             }
-            override fun onClick() { logStep("MRAID banner click") }
-            override fun onError(error: Throwable) { logStep("MRAID banner error: ${error.message}") }
+            override fun onClick() { }
+            override fun onError(error: Throwable) { }
         })
     }
 
     private fun showMraid() {
-        logStep("Show MRAID banner")
-        val view = mraidRenderer?.getView() ?: run { logStep("MRAID view is null"); return }
-        bannerContainer.removeAllViews()
-        bannerContainer.layoutParams = (bannerContainer.layoutParams as LinearLayout.LayoutParams).apply {
-            height = (50 * resources.displayMetrics.density).toInt()
-        }
-        bannerContainer.addView(view)
+        val view = mraidRenderer?.getView() ?: run { return }
+        binding.rendererBannerSlot.removeAllViews()
+        binding.rendererBannerSlot.addView(view)
     }
 
     // ---------------- MRAID INTERSTITIAL ----------------
 
     private fun loadMraidInterstitial() {
-        logStep("Loading MRAID interstitial...")
         mraidInterstitialRenderer = BidonRenderer.createMraidRenderer()
         val mraidHtml = """
             <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><title>Ad</title></head><body><script src='mraid.js'></script> <script> var BASE_URL = 'https://cdn-ww.adikteev.com/craftsman/Hbz20iChA9f/48d6033c9db4d7d03c7b16a472364a49585b8bd3/'; var AK_CLICK_DESTINATION_URL = (false && 'android' === 'ios') ? 'https://www.adikteev.com?cr=48d6033c9db4d7d03c7b16a472364a49585b8bd3' : 'https://click-geo.adikteev.com/v1/click?user_id=&bidrequest_id=019eca06-aca2-70bf-91c0-e6527b83b55e&creativeGroupId=178040&impression_id=Lnh-L2_zidqFF-yklqcnP2&android_id=27ea682c281e7dc4fb8e2291c811a7c4b26b93a3&deviceId=27ea682c281e7dc4fb8e2291c811a7c4b26b93a3&supplier=344&campaign=52300&creativeId=525852&expires=1781649895&signature=6wJJxoLbM52bHtCCjTtk8TCGWNbKCgt0siW8WzSl_v4&adSession=yg6L9wP0-klQUtjZxkUQxe&h=480&w=320&crAlgorithm=&device_model=Google+Pixel+3&ip_addr=94.24.105.28&osv=12&supplier_name=appodeal&publisherAppId=com.demo.tetris&creativeGroupName=Auto_Test_CreativeGroup&ak_protocol_version=ak_bidder&country=ESP&creativeName=48d6033c9db4d7d03c7b16a472364a49585b8bd3&creativeType=creative_mraid_banner&os_raw=android&user_agent=TW96aWxsYS81LjAgKExpbnV4OyBBbmRyb2lkIDEyOyBQaXhlbCAzIEJ1aWxkL1NQMUEuMjEwODEyLjAxNi5DMTsgd3YpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIFZlcnNpb24vNC4wIENocm9tZS8xMTQuMC41NzM1LjEzMSBNb2JpbGUgU2FmYXJpLzUzNy4zNg&zip=30600&country_a2=ES&retina=0&algorithm=&bid_on=0&city=archena&device_type=4&android_id_plain=013b8c47-8beb-41b4-aefe-60fe466f9fd8&ch=mobile&os=android'; var AK_CLICK_PIXEL_URL = (false && 'android' === 'ios') ? 'https://click-geo.adikteev.com/v1/click?android_id=27ea682c281e7dc4fb8e2291c811a7c4b26b93a3&creativeGroupId=178040&user_id=&campaign=52300&deviceId=27ea682c281e7dc4fb8e2291c811a7c4b26b93a3&impression_id=Lnh-L2_zidqFF-yklqcnP2&creativeId=525852&supplier=344&bidrequest_id=019eca06-aca2-70bf-91c0-e6527b83b55e&expires=1781649895&signature=vhx_N3FEfWmhyrQ4H9JsjulJxMhyuyBPSPyYI0ycYtg&device_model=Google+Pixel+3&android_id_plain=013b8c47-8beb-41b4-aefe-60fe466f9fd8&creativeGroupName=Auto_Test_CreativeGroup&device_type=4&bid_on=0&country_a2=ES&city=archena&country=ESP&noredirect=1&osv=12&retina=0&zip=30600&crAlgorithm=&creativeType=creative_mraid_banner&h=480&os_raw=android&user_agent=TW96aWxsYS81LjAgKExpbnV4OyBBbmRyb2lkIDEyOyBQaXhlbCAzIEJ1aWxkL1NQMUEuMjEwODEyLjAxNi5DMTsgd3YpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIFZlcnNpb24vNC4wIENocm9tZS8xMTQuMC41NzM1LjEzMSBNb2JpbGUgU2FmYXJpLzUzNy4zNg&adSession=yg6L9wP0-klQUtjZxkUQxe&os=android&w=320&ch=mobile&creativeName=48d6033c9db4d7d03c7b16a472364a49585b8bd3&ip_addr=94.24.105.28&publisherAppId=com.demo.tetris&algorithm=&click_id=jHRnwPzXM02mXdx3pX1Fao&supplier_name=appodeal&ak_protocol_version=ak_bidder' : undefined; </script> <script src='https://cdn-ww.adikteev.com/craftsman/Hbz20iChA9f/48d6033c9db4d7d03c7b16a472364a49585b8bd3/playable.js'></script><img src="https://impression-eu.adikteev.com/3.0?adSession=yg6L9wP0-klQUtjZxkUQxe&ak_protocol_version=ak_bidder&algorithm=&android_id=27ea682c281e7dc4fb8e2291c811a7c4b26b93a3&android_id_plain=013b8c47-8beb-41b4-aefe-60fe466f9fd8&bid_on=0&bidrequest_id=019eca06-aca2-70bf-91c0-e6527b83b55e&campaign=52300&ch=mobile&city=archena&click_id=jHRnwPzXM02mXdx3pX1Fao&client_cpm_usd=8D9BA29CD83FBB83239D350A2B9B45EAC9E41C8443295193&connection_type=wifi&country=ESP&country_a2=ES&crAlgorithm=&creativeGroupId=178040&creativeGroupName=Auto_Test_CreativeGroup&creativeId=525852&creativeName=48d6033c9db4d7d03c7b16a472364a49585b8bd3&creativeType=creative_mraid_banner&deviceFamily=android&deviceId=27ea682c281e7dc4fb8e2291c811a7c4b26b93a3&device_model=Google+Pixel+3&device_name=Google+Google+Pixel+3&device_type=4&fm=0&h=480&impression_id=Lnh-L2_zidqFF-yklqcnP2&ip_addr=94.24.105.28&os=android&os_raw=android&osv=12&publisherAppId=com.demo.tetris&rbm=1.01&retina=0&s2s=1&supplier=344&supplier_name=appodeal&ts=1781505895&user_agent=TW96aWxsYS81LjAgKExpbnV4OyBBbmRyb2lkIDEyOyBQaXhlbCAzIEJ1aWxkL1NQMUEuMjEwODEyLjAxNi5DMTsgd3YpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIFZlcnNpb24vNC4wIENocm9tZS8xMTQuMC41NzM1LjEzMSBNb2JpbGUgU2FmYXJpLzUzNy4zNg&user_id=&w=320&zip=30600&cpm=${'$'}{AUCTION_PRICE}" style="display:none;"/></body></html>
         """.trimIndent()
 
         mraidInterstitialRenderer?.load(adm = mraidHtml, listener = object : AdRenderer.Listener {
-            override fun onLoaded() { logStep("MRAID interstitial loaded"); isMraidInterstitialLoaded = true; btnShowMraidInterstitial.isEnabled = true
+            override fun onLoaded() { isMraidInterstitialLoaded = true; binding.btnShowMraidInterstitial.isEnabled = true
                 TrackingDispatcher.fire("https://httpbin.org/get?pixel=nurl&test=true", "nurl")
             }
-            override fun onImpression() { logStep("MRAID interstitial impression")
+            override fun onImpression() { 
                 TrackingDispatcher.fire("https://httpbin.org/get?pixel=burl&test=true", "burl")
             }
-            override fun onClick() { logStep("MRAID interstitial click") }
-            override fun onError(error: Throwable) { logStep("MRAID interstitial error: ${error.message}") }
+            override fun onClick() { }
+            override fun onError(error: Throwable) { }
         })
     }
 
     private fun showMraidInterstitial() {
-        logStep("Show MRAID interstitial")
         mraidInterstitialRenderer?.showFullscreen(requireActivity())
     }
 
     // ---------------- DESTROY ----------------
 
     private fun destroyAll() {
-        logStep("Destroy all")
 
         bannerRenderer?.destroy()
         interstitialRenderer?.destroy()
@@ -399,7 +356,7 @@ class RendererOnlyFragment : AdFragment() {
         mraidRenderer = null
         mraidInterstitialRenderer = null
 
-        bannerContainer.removeAllViews()
+        binding.rendererBannerSlot.removeAllViews()
 
         isBannerLoaded = false
         isInterstitialLoaded = false
@@ -407,10 +364,10 @@ class RendererOnlyFragment : AdFragment() {
         isMraidLoaded = false
         isMraidInterstitialLoaded = false
 
-        btnShowBanner.isEnabled = false
-        btnShowInterstitial.isEnabled = false
-        btnShowVast.isEnabled = false
-        btnShowMraid.isEnabled = false
-        btnShowMraidInterstitial.isEnabled = false
+        binding.btnShowHtmlBanner.isEnabled = false
+        binding.btnShowHtmlInterstitial.isEnabled = false
+        binding.btnShowVast.isEnabled = false
+        binding.btnShowMraidBanner.isEnabled = false
+        binding.btnShowMraidInterstitial.isEnabled = false
     }
 }

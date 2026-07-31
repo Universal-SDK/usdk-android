@@ -1,10 +1,10 @@
 package org.bidon.app.realflow
 
-import android.graphics.Color
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import org.bidon.app.shared.AdFragment
-import org.bidon.app.shared.describe
+import android.os.Bundle
+import android.view.View
+import androidx.fragment.app.Fragment
+import com.demo.tetris.R
+import com.demo.tetris.databinding.FragmentBannerBinding
 import org.bidon.sdk.BidonSdk
 import org.bidon.sdk.ads.Ad
 import org.bidon.sdk.ads.AuctionInfo
@@ -12,82 +12,59 @@ import org.bidon.sdk.ads.banner.BannerFormat
 import org.bidon.sdk.ads.banner.BannerListener
 import org.bidon.sdk.ads.banner.BannerView
 import org.bidon.sdk.config.BidonError
-import org.bidon.sdk.logs.analytic.AdValue
 
 /**
- * The real flow for a banner:
- * publisher app -> BidOn SDK -> live auction -> bidon adapter -> uSDK renderer.
+ * Banner through the real path: BidOn SDK -> live auction -> bidon adapter -> uSDK renderer.
+ *
+ * A banner is a view rather than an activity, so the adapter hands the renderer's view back to
+ * the SDK, and the SDK puts it inside this [BannerView].
  */
-class BannerFragment : AdFragment() {
+class BannerFragment : Fragment(R.layout.fragment_banner) {
 
-    override val title = "Banner"
+    private var _binding: FragmentBannerBinding? = null
+    private val binding get() = _binding!!
 
-    override val subtitle =
-        "Real flow. The SDK runs a live auction, the bidon adapter builds the renderer, " +
-            "and the renderer's view is handed back to the SDK to display."
-
-    private lateinit var slot: FrameLayout
     private var banner: BannerView? = null
 
-    override fun buildControls(container: LinearLayout) {
-        container.addView(button("Load and show") { load(BannerFormat.Banner) })
-        container.addView(button("Load and show MREC") { load(BannerFormat.MRec) })
-        container.addView(button("Destroy") { destroy() })
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        _binding = FragmentBannerBinding.bind(view)
 
-        container.addView(note("Banner slot:"))
-        slot = FrameLayout(requireContext()).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(250)
-            )
-            setBackgroundColor(Color.LTGRAY)
-        }
-        container.addView(slot)
+        binding.btnLoadBanner.setOnClickListener { load(BannerFormat.Banner) }
+        binding.btnLoadMrec.setOnClickListener { load(BannerFormat.MRec) }
+        binding.btnDestroyBanner.setOnClickListener { destroy() }
     }
 
     private fun load(format: BannerFormat) {
         destroy()
-        step("banner 1", "loadAd() - the SDK will POST /v2/auction/banner ($format)")
 
-        val view = BannerView(context = requireContext())
-        banner = view
-        slot.addView(view)
-        view.setBannerFormat(format)
-        view.setBannerListener(object : BannerListener {
+        val bannerView = BannerView(context = requireContext())
+        banner = bannerView
+        binding.bannerSlot.addView(bannerView)
+        bannerView.setBannerFormat(format)
+        bannerView.setBannerListener(object : BannerListener {
             override fun onAdLoaded(ad: Ad, auctionInfo: AuctionInfo) {
-                step("banner 2", "auction won: ${ad.describe()}")
-                step("banner 3", "adapter gave the renderer's view to the SDK, showing it")
-                view.showAd()
+                bannerView.showAd()
             }
 
-            override fun onAdShown(ad: Ad) =
-                step("banner 4", "onAdShown - renderer is on screen, impression reported")
-
-            override fun onAdClicked(ad: Ad) = step("banner", "onAdClicked")
-
-            override fun onAdExpired(ad: Ad) = step("banner", "onAdExpired")
-
-            override fun onRevenuePaid(ad: Ad, adValue: AdValue) =
-                step("banner", "onRevenuePaid ${adValue.adRevenue} ${adValue.currency}")
-
-            override fun onAdLoadFailed(auctionInfo: AuctionInfo?, cause: BidonError) =
-                fail("banner", "no ad: $cause")
-
-            override fun onAdShowFailed(cause: BidonError) = fail("banner", "show failed: $cause")
+            override fun onAdShown(ad: Ad) {}
+            override fun onAdClicked(ad: Ad) {}
+            override fun onAdExpired(ad: Ad) {}
+            override fun onAdLoadFailed(auctionInfo: AuctionInfo?, cause: BidonError) {}
+            override fun onAdShowFailed(cause: BidonError) {}
         })
-        view.loadAd(requireActivity(), BidonSdk.DefaultPricefloor)
+        bannerView.loadAd(requireActivity(), BidonSdk.DefaultPricefloor)
     }
 
     private fun destroy() {
-        banner?.let {
-            it.destroyAd()
-            slot.removeAllViews()
-            banner = null
-        }
+        banner?.destroyAd()
+        _binding?.bannerSlot?.removeAllViews()
+        banner = null
     }
 
     override fun onDestroyView() {
         destroy()
+        _binding = null
         super.onDestroyView()
     }
 }

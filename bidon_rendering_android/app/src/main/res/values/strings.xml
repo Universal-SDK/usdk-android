@@ -5,4 +5,21 @@
     <string name="tab_interstitial">Interstitial</string>
     <string name="tab_rewarded">Rewarded</string>
     <string name="tab_renderer">Renderer</string>
+
+    <string name="load">Load</string>
+    <string name="show">Show</string>
+    <string name="destroy">Destroy</string>
+    <string name="load_banner">Load and show banner</string>
+    <string name="load_mrec">Load and show MREC</string>
+
+    <string name="ro_load_banner">Load HTML banner</string>
+    <string name="ro_show_banner">Show HTML banner</string>
+    <string name="ro_load_interstitial">Load HTML interstitial</string>
+    <string name="ro_show_interstitial">Show HTML interstitial</string>
+    <string name="ro_load_vast">Load VAST</string>
+    <string name="ro_show_vast">Show VAST</string>
+    <string name="ro_load_mraid_banner">Load MRAID banner</string>
+    <string name="ro_show_mraid_banner">Show MRAID banner</string>
+    <string name="ro_load_mraid_interstitial">Load MRAID interstitial</string>
+    <string name="ro_show_mraid_interstitial">Show MRAID interstitial</string>
 </resources>

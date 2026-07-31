@@ -1,93 +1,64 @@
 package org.bidon.app.realflow
 
-import android.widget.Button
-import android.widget.LinearLayout
-import org.bidon.app.shared.AdFragment
-import org.bidon.app.shared.describe
+import android.os.Bundle
+import android.view.View
+import androidx.fragment.app.Fragment
+import com.demo.tetris.R
+import com.demo.tetris.databinding.FragmentInterstitialBinding
 import org.bidon.sdk.ads.Ad
 import org.bidon.sdk.ads.AuctionInfo
 import org.bidon.sdk.ads.interstitial.InterstitialAd
 import org.bidon.sdk.ads.interstitial.InterstitialListener
 import org.bidon.sdk.config.BidonError
-import org.bidon.sdk.logs.analytic.AdValue
 
 /**
- * The real flow for an interstitial. Load and show are separate buttons here, unlike the banner,
- * because that is how a publisher actually uses it: load early, show at a break in the game.
+ * Interstitial through the real path: BidOn SDK -> live auction -> bidon adapter -> uSDK renderer.
+ *
+ * Load and show are separate, the way a publisher uses them: load during play, show at a break.
  */
-class InterstitialFragment : AdFragment() {
+class InterstitialFragment : Fragment(R.layout.fragment_interstitial) {
 
-    override val title = "Interstitial"
-
-    override val subtitle =
-        "Real flow. Load runs a live auction; show hands the creative to the renderer fullscreen."
+    private var _binding: FragmentInterstitialBinding? = null
+    private val binding get() = _binding!!
 
     private var ad: InterstitialAd? = null
-    private lateinit var showButton: Button
 
-    override fun buildControls(container: LinearLayout) {
-        container.addView(button("Load") { load() })
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        _binding = FragmentInterstitialBinding.bind(view)
 
-        showButton = button("Show") { show() }
-        showButton.isEnabled = false
-        container.addView(showButton)
-
-        container.addView(
-            note(
-                "Known gap: the renderer has no close event yet, so onAdClosed never arrives and\n" +
-                    "the ad cannot complete. Expect the log to stop after onAdShown."
-            )
-        )
+        binding.btnLoadInterstitial.setOnClickListener { load() }
+        binding.btnShowInterstitial.setOnClickListener { show() }
     }
 
     private fun load() {
-        step("interstitial 1", "loadAd() - the SDK will POST /v2/auction/interstitial")
-        showButton.isEnabled = false
+        binding.btnShowInterstitial.isEnabled = false
 
         val interstitial = InterstitialAd()
         ad = interstitial
         interstitial.setInterstitialListener(object : InterstitialListener {
             override fun onAdLoaded(ad: Ad, auctionInfo: AuctionInfo) {
-                step("interstitial 2", "auction won: ${ad.describe()}")
-                step("interstitial 3", "ready - tap Show")
-                showButton.isEnabled = true
+                _binding?.btnShowInterstitial?.isEnabled = true
             }
 
-            override fun onAdShown(ad: Ad) =
-                step("interstitial 4", "onAdShown - renderer is fullscreen, impression reported")
-
-            override fun onAdClosed(ad: Ad) =
-                step("interstitial 5", "onAdClosed - the ad completed")
-
-            override fun onAdClicked(ad: Ad) = step("interstitial", "onAdClicked")
-
-            override fun onAdExpired(ad: Ad) = step("interstitial", "onAdExpired")
-
-            override fun onRevenuePaid(ad: Ad, adValue: AdValue) =
-                step("interstitial", "onRevenuePaid ${adValue.adRevenue} ${adValue.currency}")
-
-            override fun onAdLoadFailed(auctionInfo: AuctionInfo?, cause: BidonError) =
-                fail("interstitial", "no ad: $cause")
-
-            override fun onAdShowFailed(cause: BidonError) =
-                fail("interstitial", "show failed: $cause")
+            override fun onAdShown(ad: Ad) {}
+            override fun onAdClosed(ad: Ad) {}
+            override fun onAdClicked(ad: Ad) {}
+            override fun onAdExpired(ad: Ad) {}
+            override fun onAdLoadFailed(auctionInfo: AuctionInfo?, cause: BidonError) {}
+            override fun onAdShowFailed(cause: BidonError) {}
         })
         interstitial.loadAd(requireActivity())
     }
 
     private fun show() {
-        val interstitial = ad
-        if (interstitial == null || !interstitial.isReady()) {
-            fail("interstitial", "nothing loaded to show")
-            return
-        }
-        step("interstitial", "showAd()")
-        interstitial.showAd(requireActivity())
+        ad?.takeIf { it.isReady() }?.showAd(requireActivity())
     }
 
     override fun onDestroyView() {
         ad?.destroyAd()
         ad = null
+        _binding = null
         super.onDestroyView()
     }
 }
