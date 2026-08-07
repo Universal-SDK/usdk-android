@@ -14,6 +14,7 @@ import android.widget.TextView
 import coil.load
 import org.bidon.rendering.html.ClickHandler
 import org.bidon.rendering.html.HtmlWebView
+import org.bidon.rendering.vast.CompanionResource
 import org.bidon.rendering.vast.VastCompanion
 
 class EndCardView(
@@ -80,7 +81,7 @@ class EndCardView(
         this.listener = listener
     }
 
-    fun showCompanion(companion: org.bidon.rendering.vast.VastCompanion) {
+    fun showCompanion(companion: VastCompanion) {
 
         removeAdContent()
 
@@ -88,28 +89,38 @@ class EndCardView(
 
         val contentView = when (val resource = companion.resource) {
 
-            is org.bidon.rendering.vast.CompanionResource.StaticImage -> {
-                createImage(resource.url)
+            is CompanionResource.StaticImage -> {
+                // A StaticResource is only an image when creativeType says so. HTML and
+                // JavaScript creative types have to go through the WebView instead.
+                if (isImageCreativeType(resource.creativeType)) {
+                    createImage(resource.url)
+                } else {
+                    createIframe(resource.url)
+                }
             }
 
-            is org.bidon.rendering.vast.CompanionResource.Html -> {
+            is CompanionResource.Html -> {
                 createHtml(resource.html)
             }
 
-            is org.bidon.rendering.vast.CompanionResource.IFrame -> {
+            is CompanionResource.IFrame -> {
                 createIframe(resource.url)
-            }
-
-            null -> {
-                listener?.onError(IllegalStateException("No companion resource"))
-                return
             }
         }
 
         addView(contentView)
 
         addView(closeButton)
+
+        ctaButton.visibility =
+            if (clickThroughUrl.isNullOrBlank()) View.GONE else View.VISIBLE
         addView(ctaButton)
+    }
+
+    private fun isImageCreativeType(creativeType: String?): Boolean {
+        // No creativeType at all is the common case in the wild, and it means an image.
+        if (creativeType.isNullOrBlank()) return true
+        return creativeType.startsWith("image/", ignoreCase = true)
     }
 
     private fun createImage(url: String): View {

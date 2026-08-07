@@ -40,7 +40,8 @@ class VastParser {
             wrapperDepth = 0,
             inheritedImpressions = mutableListOf(),
             inheritedTracking = mutableListOf(),
-            inheritedClickTracking = mutableListOf()
+            inheritedClickTracking = mutableListOf(),
+            inheritedCompanions = mutableListOf()
         )
     }
 
@@ -49,7 +50,8 @@ class VastParser {
         wrapperDepth: Int,
         inheritedImpressions: MutableList<String>,
         inheritedTracking: MutableList<TrackingEvent>,
-        inheritedClickTracking: MutableList<String>
+        inheritedClickTracking: MutableList<String>,
+        inheritedCompanions: MutableList<VastCompanion> = mutableListOf()
     ): Result<VastAd> = withContext(Dispatchers.IO) {
 
         try {
@@ -191,16 +193,22 @@ class VastParser {
                     wrapperDepth = wrapperDepth + 1,
                     inheritedImpressions = impressions,
                     inheritedTracking = trackingEvents,
-                    inheritedClickTracking = clickTrackingUrls
+                    inheritedClickTracking = clickTrackingUrls,
+                    inheritedCompanions = companions
                 )
             }
+
+            // An inline companion wins; the wrapper's is the fallback when the inline
+            // ad declares none.
+            val resolvedCompanions =
+                companions.ifEmpty { inheritedCompanions }
 
             Result.success(
                 VastAd(
                     impressions = impressions,
                     mediaFiles = mediaFiles,
                     trackingEvents = trackingEvents,
-                    companions = companions,
+                    companions = resolvedCompanions,
                     videoClicks = VideoClicks(
                         clickThroughUrl = clickThroughUrl,
                         clickTrackingUrls = clickTrackingUrls
@@ -333,9 +341,12 @@ class VastParser {
                     ?: 0
 
             var staticImageUrl: String? = null
+            var staticCreativeType: String? = null
             var htmlResource: String? = null
             var iframeUrl: String? = null
             var clickThroughUrl: String? = null
+
+            val trackingEvents = mutableListOf<TrackingEvent>()
 
             val startDepth = parser.depth
 
@@ -348,6 +359,8 @@ class VastParser {
                         when (parser.name) {
 
                             "StaticResource" -> {
+                                staticCreativeType =
+                                    parser.getAttributeValue(null, "creativeType")
                                 staticImageUrl =
                                     parser.nextText().trim()
                             }
@@ -365,6 +378,14 @@ class VastParser {
                             "CompanionClickThrough" -> {
                                 clickThroughUrl =
                                     parser.nextText().trim()
+                            }
+
+                            // Companion tracking lives inside the Companion element, so the
+                            // outer parse loop never sees it. Collect it here or it is lost.
+                            "Tracking" -> {
+                                parseTracking(parser)?.let {
+                                    trackingEvents.add(it)
+                                }
                             }
                         }
                     }
@@ -384,19 +405,20 @@ class VastParser {
             val resource: CompanionResource =
                 when {
 
-                    staticImageUrl != null -> {
+                    !staticImageUrl.isNullOrBlank() -> {
                         CompanionResource.StaticImage(
-                            staticImageUrl
+                            url = staticImageUrl,
+                            creativeType = staticCreativeType
                         )
                     }
 
-                    htmlResource != null -> {
+                    !htmlResource.isNullOrBlank() -> {
                         CompanionResource.Html(
                             htmlResource
                         )
                     }
 
-                    iframeUrl != null -> {
+                    !iframeUrl.isNullOrBlank() -> {
                         CompanionResource.IFrame(
                             iframeUrl
                         )
@@ -411,7 +433,8 @@ class VastParser {
                 width = width,
                 height = height,
                 resource = resource,
-                clickThroughUrl = clickThroughUrl
+                clickThroughUrl = clickThroughUrl,
+                trackingEvents = trackingEvents
             )
 
         } catch (_: Exception) {

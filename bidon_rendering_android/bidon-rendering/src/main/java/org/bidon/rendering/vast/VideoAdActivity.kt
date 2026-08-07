@@ -50,6 +50,7 @@ class VideoAdActivity : AppCompatActivity() {
 
     private var vastAd: VastAd? = null
     private var isCompleted = false
+    private var isEndCardShown = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -90,7 +91,9 @@ class VideoAdActivity : AppCompatActivity() {
                     eventTracker.onSkip(trackingEvents)
                     rewardedController.onSkip()
                     isCompleted = true
-                    finish()
+                    // Skipping ends the video, not the ad. The companion end card,
+                    // when the VAST has one, still gets its turn.
+                    showEndCard()
                 }
 
                 override fun onMuteChanged(isMuted: Boolean) {}
@@ -109,6 +112,7 @@ class VideoAdActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        if (isEndCardShown) return
         player?.play()
     }
 
@@ -169,12 +173,22 @@ class VideoAdActivity : AppCompatActivity() {
     }
 
     private fun showEndCard() {
+        if (isEndCardShown) return
+
+        // Whether the video completed or was skipped, it stops here. Without this the
+        // audio keeps running behind the end card.
+        player?.pause()
+        videoAdView?.setListener(null)
+        videoAdView?.unbindPlayer()
+
         val companion = vastAd?.companions?.firstOrNull()
 
         if (companion == null) {
             finish()
             return
         }
+
+        isEndCardShown = true
 
         val endCard = EndCardView(this).apply {
             setListener(object : EndCardView.Listener {
@@ -198,5 +212,7 @@ class VideoAdActivity : AppCompatActivity() {
 
         // Replace video view with end card
         setContentView(endCard)
+
+        eventTracker.onCompanionView(companion.trackingEvents)
     }
 }

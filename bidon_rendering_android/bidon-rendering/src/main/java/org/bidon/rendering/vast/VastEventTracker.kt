@@ -11,6 +11,7 @@ class VastEventTracker {
     private var thirdQuartile = false
     private var complete = false
     private var skipped = false
+    private var companionViewed = false
 
     private var cacheBusting: String = UUID.randomUUID().toString()
     private var currentPositionMs: Long = 0L
@@ -22,6 +23,7 @@ class VastEventTracker {
         thirdQuartile = false
         complete = false
         skipped = false
+        companionViewed = false
         cacheBusting = UUID.randomUUID().toString()
         currentPositionMs = 0L
     }
@@ -74,6 +76,17 @@ class VastEventTracker {
 
         fire("skip", trackingEvents, 0L, currentPositionMs)
         skipped = true
+    }
+
+    /**
+     * Called when the companion end card becomes visible.
+     * @param trackingEvents Tracking events declared inside the Companion element
+     */
+    fun onCompanionView(trackingEvents: List<TrackingEvent>) {
+        if (companionViewed) return
+
+        fire("creativeView", trackingEvents, 0L, currentPositionMs)
+        companionViewed = true
     }
 
     private fun fire(

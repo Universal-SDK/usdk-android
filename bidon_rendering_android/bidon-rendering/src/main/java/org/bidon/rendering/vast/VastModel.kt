@@ -68,7 +68,8 @@ data class VastCompanion(
 sealed class CompanionResource {
 
     data class StaticImage(
-        val url: String
+        val url: String,
+        val creativeType: String? = null
     ) : CompanionResource()
 
     data class Html(
