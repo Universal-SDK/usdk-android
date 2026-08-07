@@ -18,8 +18,8 @@
     <string name="settings_base_url">Base URL</string>
     <string name="settings_base_url_help">The BidOn backend the SDK talks to, for example https://sdkapi.bidon.squads.com</string>
     <string name="settings_test_mode">Test mode</string>
-    <string name="settings_test_mode_on">On. The backend serves test bids.</string>
-    <string name="settings_test_mode_off">Off. The backend runs a normal auction.</string>
+    <string name="settings_test_mode_on">On. Impression and stats calls are marked as test, and networks that support it serve test ads.</string>
+    <string name="settings_test_mode_off">Off. Traffic is reported as real.</string>
     <string name="settings_log_level">Log level</string>
 
     <string name="settings_advertising_id">Advertising ID</string>
