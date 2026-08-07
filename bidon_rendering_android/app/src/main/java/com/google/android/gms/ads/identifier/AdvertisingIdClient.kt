@@ -1,6 +1,7 @@
 package com.google.android.gms.ads.identifier
 
 import android.content.Context
+import org.bidon.app.settings.SdkSettings
 
 /**
  * Test-only stand-in for the Play services advertising id client.
@@ -31,11 +32,14 @@ class AdvertisingIdClient {
     }
 
     companion object {
-        /** The device the Adikteev test campaign targets. */
-        const val TEST_ADVERTISING_ID: String = "013b8c47-8beb-41b4-aefe-60fe466f9fd8"
-
+        /**
+         * The id comes from the Settings tab so it can be changed without a rebuild. Its default,
+         * the device the Adikteev test campaign targets, lives in res/values/settings.xml.
+         */
         @JvmStatic
-        fun getAdvertisingIdInfo(context: Context): Info =
-            Info(advertisingId = TEST_ADVERTISING_ID, limitAdTracking = false)
+        fun getAdvertisingIdInfo(context: Context): Info = Info(
+            advertisingId = SdkSettings.load(context).advertisingId,
+            limitAdTracking = false
+        )
     }
 }

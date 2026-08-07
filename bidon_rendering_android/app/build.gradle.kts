@@ -44,6 +44,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.fragment.ktx)
+    implementation(libs.androidx.preference.ktx)
     implementation(project(":bidon-rendering"))
     implementation(project(":adapter"))
     implementation("org.bidon:bidon-sdk:0.14.0")
