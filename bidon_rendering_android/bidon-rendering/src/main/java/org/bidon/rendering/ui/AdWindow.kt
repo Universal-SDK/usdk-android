@@ -4,7 +4,9 @@ import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
+import androidx.core.view.doOnAttach
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 
@@ -73,22 +75,55 @@ internal fun View.dp(value: Int): Int =
 /**
  * Keeps a control clear of the status bar, gesture bar and any display cutout.
  *
- * The creative is allowed to run under them - full-bleed is the point of a fullscreen ad - but a
- * button the user has to hit is not.
+ * The creative is allowed to run under all of them - full-bleed is the point of a fullscreen ad -
+ * but a button the user has to hit is not.
  */
 internal fun View.insetFromSafeArea(marginDp: Int) {
     val base = dp(marginDp)
-    ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
-        val safe = insets.getInsets(
-            WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
-        )
-        view.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+
+    fun apply(insets: WindowInsetsCompat) {
+        val safe = safeArea(insets)
+        updateLayoutParams<ViewGroup.MarginLayoutParams> {
             topMargin = safe.top + base
             bottomMargin = safe.bottom + base
             leftMargin = safe.left + base
             rightMargin = safe.right + base
         }
+    }
+
+    ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
+        apply(insets)
         insets
     }
-    ViewCompat.requestApplyInsets(this)
+
+    // The listener alone is not enough. A view that is not attached yet gets no dispatch, and
+    // requesting one on it does nothing, so the first placement would never happen.
+    doOnAttach { view ->
+        ViewCompat.getRootWindowInsets(view)?.let(::apply)
+        ViewCompat.requestApplyInsets(view)
+    }
+}
+
+/**
+ * The area a control must stay out of, on each edge.
+ *
+ * Two details matter and both were wrong first time round.
+ *
+ * The bars are asked for their size *ignoring visibility*. An ad hides them for immersive
+ * fullscreen, and a hidden bar reports an inset of zero - so asking the ordinary way put controls
+ * right against the top of the screen, exactly where the status bar had been.
+ *
+ * Bars and cutout are compared per edge rather than combined, because they overlap: on most phones
+ * the notch sits inside the status bar strip, so adding them would push controls twice as far down
+ * as they need to go.
+ */
+private fun safeArea(insets: WindowInsetsCompat): Insets {
+    val bars = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.systemBars())
+    val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+    return Insets.of(
+        maxOf(bars.left, cutout.left),
+        maxOf(bars.top, cutout.top),
+        maxOf(bars.right, cutout.right),
+        maxOf(bars.bottom, cutout.bottom)
+    )
 }
