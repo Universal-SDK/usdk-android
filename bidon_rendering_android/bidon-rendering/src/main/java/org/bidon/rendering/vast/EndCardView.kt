@@ -16,6 +16,9 @@ import org.bidon.rendering.html.ClickHandler
 import org.bidon.rendering.html.HtmlWebView
 import org.bidon.rendering.vast.CompanionResource
 import org.bidon.rendering.vast.VastCompanion
+import org.bidon.rendering.ui.AdWindow
+import org.bidon.rendering.ui.dp
+import org.bidon.rendering.ui.insetFromSafeArea
 
 class EndCardView(
     context: Context
@@ -44,10 +47,11 @@ class EndCardView(
             setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
             setBackgroundColor(0x66000000)
 
-            layoutParams = LayoutParams(120, 120).apply {
+            layoutParams = LayoutParams(
+                dp(AdWindow.TOUCH_TARGET_DP),
+                dp(AdWindow.TOUCH_TARGET_DP)
+            ).apply {
                 gravity = Gravity.TOP or Gravity.END
-                topMargin = 40
-                marginEnd = 40
             }
 
             setOnClickListener {
@@ -59,7 +63,7 @@ class EndCardView(
             text = "Learn More"
             setTextColor(Color.WHITE)
             textSize = 16f
-            setPadding(40, 20, 40, 20)
+            setPadding(dp(18), dp(10), dp(18), dp(10))
             setBackgroundColor(0xFF1976D2.toInt())
 
             layoutParams = LayoutParams(
@@ -67,7 +71,6 @@ class EndCardView(
                 LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                bottomMargin = 48
             }
 
             setOnClickListener {
@@ -115,6 +118,12 @@ class EndCardView(
         ctaButton.visibility =
             if (clickThroughUrl.isNullOrBlank()) View.GONE else View.VISIBLE
         addView(ctaButton)
+
+        // The companion image fills the screen behind the notch and the bars; the close button
+        // and the call to action must not. This view was missed when the other ad surfaces were
+        // done, so its close button sat in the status bar strip.
+        closeButton.insetFromSafeArea(AdWindow.CONTROL_MARGIN_DP)
+        ctaButton.insetFromSafeArea(AdWindow.CONTROL_MARGIN_DP)
     }
 
     private fun isImageCreativeType(creativeType: String?): Boolean {
