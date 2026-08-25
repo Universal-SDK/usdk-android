@@ -2,7 +2,6 @@ package org.bidon.rendering.vast.ui
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
@@ -10,6 +9,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.annotation.OptIn
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
+import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.vast.RewardedController
 import org.bidon.rendering.vast.VastAd
 import org.bidon.rendering.vast.VastEventTracker
@@ -61,7 +61,9 @@ class VideoAdActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        // Was SCREEN_ORIENTATION_SENSOR, which invited the rotation that recreated this
+        // activity and restarted the video from the beginning.
+        AdWindow.goFullscreen(this)
 
         val mediaUrl = intent.getStringExtra(EXTRA_MEDIA_URL)
         val clickUrl = intent.getStringExtra(EXTRA_CLICK_URL)
@@ -75,6 +77,7 @@ class VideoAdActivity : AppCompatActivity() {
 
         presentationKey = adKey
         presentation = PresentedAds.get(adKey)
+        presentation?.let { requestedOrientation = it.lockedOrientation }
         vastAd = VastRenderer.getAd(adKey)
 
         eventTracker.reset()

@@ -6,9 +6,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updateLayoutParams
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 
@@ -38,10 +35,7 @@ class FullscreenAdActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         supportActionBar?.hide()
-        window.decorView.systemUiVisibility =
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                    View.SYSTEM_UI_FLAG_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+        AdWindow.goFullscreen(this)
 
         presentationKey = intent.getStringExtra(PresentedAds.EXTRA_KEY)
         val ad = PresentedAds.get(presentationKey) ?: run {
@@ -50,6 +44,10 @@ class FullscreenAdActivity : AppCompatActivity() {
             return
         }
         presentation = ad
+
+        // Locked so the ad cannot rotate while it is up, restarting the creative and moving the
+        // close button. Inherited from the publisher, resolved when the ad was shown.
+        requestedOrientation = ad.lockedOrientation
 
         val view = ad.contentView ?: run {
             ad.onFailed(IllegalStateException("Ad has no view to display"))
@@ -69,18 +67,20 @@ class FullscreenAdActivity : AppCompatActivity() {
         root.addView(view)
         adView = view
 
-        val margin = (16 * resources.displayMetrics.density).toInt()
-
         closeButton = CloseButton(this).apply {
             visibility = View.GONE
-            layoutParams = FrameLayout.LayoutParams(120, 120).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                dp(AdWindow.CLOSE_BUTTON_DP),
+                dp(AdWindow.CLOSE_BUTTON_DP)
+            ).apply {
                 gravity = Gravity.TOP or Gravity.END
-                rightMargin = margin
-                topMargin = margin
             }
             onClick = { finish() }
         }
         root.addView(closeButton!!)
+
+        // The creative may run under the notch and the system bars. The close button may not.
+        closeButton!!.insetFromSafeArea(AdWindow.CONTROL_MARGIN_DP)
 
         val delayMs = ad.closeDelayMs
         if (delayMs > 0) {
@@ -89,17 +89,6 @@ class FullscreenAdActivity : AppCompatActivity() {
             allowCloseRunnable.run()
         }
 
-        ViewCompat.setOnApplyWindowInsetsListener(closeButton!!) { view, insets ->
-            val safeArea = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or
-                        WindowInsetsCompat.Type.displayCutout()
-            )
-            view.updateLayoutParams<FrameLayout.LayoutParams> {
-                topMargin = safeArea.top + margin
-                rightMargin = safeArea.right + margin
-            }
-            insets
-        }
     }
 
     override fun onResume() {

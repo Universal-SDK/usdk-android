@@ -29,6 +29,13 @@ internal interface PresentedAd {
     val closeDelayMs: Long
 
     /**
+     * The orientation this ad locks to, inherited from the publisher's activity when it was
+     * shown. Resolved at show time, because that is when the publisher's own orientation and the
+     * current screen position are known.
+     */
+    val lockedOrientation: Int
+
+    /**
      * Set by the hosting activity so the creative can dismiss itself. An MRAID creative calls
      * mraid.close(), and that has to reach the activity showing it rather than the renderer.
      */

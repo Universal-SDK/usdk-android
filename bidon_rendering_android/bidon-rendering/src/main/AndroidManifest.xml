@@ -9,23 +9,36 @@
 
         All three are exported="false": they are started by the renderer itself and must never
         be launchable by another app.
+
+        All three share the same declarations, which they previously did not:
+
+        - configChanges, so the system hands the activity a configuration change instead of
+          destroying and rebuilding it. Each ad also locks its orientation on show, so rotation
+          should not arise; this covers what a lock cannot, such as multi-window and folding.
+        - hardwareAccelerated, for video playback and WebView compositing.
+        - one dark theme, so nothing flashes white before the creative paints.
     -->
     <application>
 
         <activity
             android:name="org.bidon.rendering.ui.FullscreenAdActivity"
-            android:theme="@style/Theme.AppCompat.NoActionBar"
-            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@style/Bidon.AdActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:hardwareAccelerated="true"
             android:exported="false" />
 
         <activity
             android:name="org.bidon.rendering.vast.ui.VideoAdActivity"
-            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            android:theme="@style/Bidon.AdActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:hardwareAccelerated="true"
             android:exported="false" />
 
         <activity
             android:name="org.bidon.rendering.mraid.ui.MraidAdActivity"
-            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            android:theme="@style/Bidon.AdActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:hardwareAccelerated="true"
             android:exported="false" />
 
     </application>

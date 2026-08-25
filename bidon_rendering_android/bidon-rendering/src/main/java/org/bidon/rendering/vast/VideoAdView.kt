@@ -10,6 +10,9 @@ import android.view.View
 import android.widget.*
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
+import org.bidon.rendering.ui.AdWindow
+import org.bidon.rendering.ui.dp
+import org.bidon.rendering.ui.insetFromSafeArea
 import org.bidon.rendering.vast.player.VideoPlayer
 
 @UnstableApi
@@ -51,14 +54,12 @@ class VideoAdView(context: Context) : FrameLayout(context) {
             setTextColor(Color.WHITE)
             textSize = 14f
             setBackgroundColor(0x66000000)
-            setPadding(20, 100, 20, 10)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
             layoutParams = LayoutParams(
                 LayoutParams.WRAP_CONTENT,
                 LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
-                topMargin = 40
-                marginStart = 40
             }
         }
 
@@ -67,14 +68,12 @@ class VideoAdView(context: Context) : FrameLayout(context) {
             visibility = View.GONE
             setTextColor(Color.WHITE)
             setBackgroundColor(0x99000000.toInt())
-            setPadding(30, 100, 30, 15)
+            setPadding(dp(14), dp(8), dp(14), dp(8))
             layoutParams = LayoutParams(
                 LayoutParams.WRAP_CONTENT,
                 LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.END
-                topMargin = 40
-                marginEnd = 40
             }
             setOnClickListener {
                 listener?.onSkip()
@@ -84,10 +83,11 @@ class VideoAdView(context: Context) : FrameLayout(context) {
         muteButton = ImageButton(context).apply {
             setImageResource(android.R.drawable.ic_lock_silent_mode_off)
             setBackgroundColor(0x66000000)
-            layoutParams = LayoutParams(120, 120).apply {
+            layoutParams = LayoutParams(
+                dp(AdWindow.CLOSE_BUTTON_DP),
+                dp(AdWindow.CLOSE_BUTTON_DP)
+            ).apply {
                 gravity = Gravity.BOTTOM or Gravity.START
-                bottomMargin = 40
-                marginStart = 40
             }
             setOnClickListener { toggleMute() }
         }
@@ -97,14 +97,12 @@ class VideoAdView(context: Context) : FrameLayout(context) {
             visibility = View.GONE
             setTextColor(Color.WHITE)
             setBackgroundColor(0xFF1976D2.toInt())
-            setPadding(40, 20, 40, 20)
+            setPadding(dp(18), dp(10), dp(18), dp(10))
             layoutParams = LayoutParams(
                 LayoutParams.WRAP_CONTENT,
                 LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = Gravity.BOTTOM or Gravity.END
-                bottomMargin = 40
-                marginEnd = 40
             }
             setOnClickListener {
                 listener?.onCtaClick()
@@ -132,6 +130,13 @@ class VideoAdView(context: Context) : FrameLayout(context) {
         addView(skipButton)
         addView(muteButton)
         addView(ctaButton)
+
+        // The video runs edge to edge behind the notch and system bars. The controls do not:
+        // margins used to be raw pixels, so on a dense screen they sat almost against the edge,
+        // and the countdown carried a hardcoded 100px top padding standing in for a status bar.
+        listOf(countdownView, skipButton, muteButton, ctaButton).forEach {
+            it.insetFromSafeArea(AdWindow.CONTROL_MARGIN_DP)
+        }
     }
 
     fun setListener(listener: Listener?) {

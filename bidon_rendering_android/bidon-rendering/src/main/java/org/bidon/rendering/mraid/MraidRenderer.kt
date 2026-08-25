@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
+import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.mraid.ui.MraidAdActivity
 
 class MraidRenderer(
@@ -91,9 +92,12 @@ class MraidRenderer(
         // permitted transitions change; the loaded creative is reused as it is.
         controller?.setPlacement(MraidPlacementType.INTERSTITIAL)
 
+        val orientation = AdWindow.orientationInheritedFrom(activity)
+
         val presented = object : PresentedAd {
             override val contentView: View get() = view
             override val closeDelayMs: Long get() = CLOSE_DELAY_MS
+            override val lockedOrientation: Int = orientation
             override var closeRequester: (() -> Unit)? = null
             override fun onImpression() = run { listener?.onImpression(); Unit }
             override fun onClicked() = run { listener?.onClick(); Unit }
