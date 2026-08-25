@@ -9,7 +9,10 @@ import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
+import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.ui.CloseButton
+import org.bidon.rendering.ui.dp
+import org.bidon.rendering.ui.insetFromSafeArea
 
 /**
  * Hosts a fullscreen MRAID creative.
@@ -37,10 +40,7 @@ class MraidAdActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         supportActionBar?.hide()
-        window.decorView.systemUiVisibility =
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                    View.SYSTEM_UI_FLAG_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+        AdWindow.goFullscreen(this)
 
         presentationKey = intent.getStringExtra(PresentedAds.EXTRA_KEY)
         val ad = PresentedAds.get(presentationKey) ?: run {
@@ -48,6 +48,8 @@ class MraidAdActivity : AppCompatActivity() {
             return
         }
         presentation = ad
+
+        requestedOrientation = ad.lockedOrientation
 
         val view = ad.contentView ?: run {
             ad.onFailed(IllegalStateException("MRAID ad has no view to display"))
@@ -75,18 +77,20 @@ class MraidAdActivity : AppCompatActivity() {
         root.addView(view)
         adView = view
 
-        val margin = (16 * resources.displayMetrics.density).toInt()
-
         closeButton = CloseButton(this).apply {
             visibility = View.GONE
-            layoutParams = FrameLayout.LayoutParams(70, 70).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                dp(AdWindow.TOUCH_TARGET_DP),
+                dp(AdWindow.TOUCH_TARGET_DP)
+            ).apply {
                 gravity = Gravity.TOP or Gravity.END
-                topMargin = margin
-                marginEnd = margin
             }
             onClick = { finish() }
         }
         root.addView(closeButton!!)
+
+        // Was missing entirely here: the close button could sit under a notch or gesture bar.
+        closeButton!!.insetFromSafeArea(AdWindow.CONTROL_MARGIN_DP)
 
         val delayMs = ad.closeDelayMs
         if (delayMs > 0) {

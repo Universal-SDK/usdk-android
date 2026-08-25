@@ -7,6 +7,7 @@ import android.webkit.WebChromeClient
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
+import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.ui.FullscreenAdActivity
 import android.app.Activity
 import android.content.Intent
@@ -95,12 +96,17 @@ class HtmlRenderer(
             return
         }
 
+        // Locked to whatever the publisher's activity allows, resolved now rather than in
+        // the ad activity, which cannot see the app that asked for the ad.
+        val orientation = AdWindow.orientationInheritedFrom(activity)
+
         // The activity adopts this already-loaded WebView, keeping the ClickHandler that is
         // attached to it. It used to build a second one and reload the markup, which meant
         // fullscreen clicks and load errors were never reported.
         presentationKey = PresentedAds.register(object : PresentedAd {
             override val contentView: View get() = view
             override val closeDelayMs: Long get() = CLOSE_DELAY_MS
+            override val lockedOrientation: Int = orientation
             override var closeRequester: (() -> Unit)? = null
             override fun onImpression() = run { listener?.onImpression(); Unit }
             override fun onClicked() = run { listener?.onClick(); Unit }

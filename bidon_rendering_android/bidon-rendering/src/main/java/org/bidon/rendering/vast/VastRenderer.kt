@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
+import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.vast.ui.VideoAdActivity
 import java.util.concurrent.ConcurrentHashMap
 
@@ -86,6 +87,8 @@ class VastRenderer(
                 return
             }
 
+        val orientation = AdWindow.orientationInheritedFrom(activity)
+
         // Video builds its own player surface, so unlike HTML and MRAID there is no loaded view to
         // hand over - only the way back for the events.
         val key = PresentedAds.register(object : PresentedAd {
@@ -93,6 +96,7 @@ class VastRenderer(
 
             // Video gates dismissal on the skip offset, not on a close-button delay.
             override val closeDelayMs: Long get() = 0L
+            override val lockedOrientation: Int = orientation
             override var closeRequester: (() -> Unit)? = null
 
             override fun onImpression() = run { listener?.onImpression(); Unit }

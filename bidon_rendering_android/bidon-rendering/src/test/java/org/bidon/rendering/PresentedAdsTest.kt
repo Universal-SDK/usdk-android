@@ -1,5 +1,6 @@
 package org.bidon.rendering
 
+import android.content.pm.ActivityInfo
 import android.view.View
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -11,6 +12,7 @@ class PresentedAdsTest {
     private fun stub() = object : PresentedAd {
         override val contentView: View? get() = null
         override val closeDelayMs: Long get() = 0L
+        override val lockedOrientation: Int get() = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         override var closeRequester: (() -> Unit)? = null
         override fun onImpression() = Unit
         override fun onClicked() = Unit
