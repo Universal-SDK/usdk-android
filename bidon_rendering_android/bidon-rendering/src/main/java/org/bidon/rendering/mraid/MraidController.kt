@@ -33,6 +33,11 @@ class MraidController(
         webView.fireStateChange(newState)
     }
 
+    /** Inline while the creative sits in a container, interstitial once it goes fullscreen. */
+    fun setPlacement(placement: MraidPlacementType) {
+        stateMachine.placement = placement
+    }
+
     val currentState: MraidState get() = stateMachine.current
     private var originalContainer: ViewGroup? = null
     private var expandOverlay: FrameLayout? = null

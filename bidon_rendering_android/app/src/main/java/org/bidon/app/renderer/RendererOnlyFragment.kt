@@ -135,6 +135,9 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
                 TrackingDispatcher.fire("https://wikimedia.org", "burl")
             }
             override fun onClick() { }
+            override fun onClose() { }
+            override fun onReward() { }
+
             override fun onError(error: Throwable) { }
         })
     }
@@ -221,6 +224,9 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
             override fun onImpression() {
                 TrackingDispatcher.fire("https://httpbin.org/get?pixel=burl&test=true", "burl")}
             override fun onClick() { }
+            override fun onClose() { }
+            override fun onReward() { }
+
             override fun onError(error: Throwable) { }
         })
     }
@@ -245,6 +251,9 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
                 TrackingDispatcher.fire("https://httpbin.org/get?pixel=burl&test=true", "burl")
             }
             override fun onClick() { }
+            override fun onClose() { }
+            override fun onReward() { }
+
             override fun onError(error: Throwable) { }
         })
     }
@@ -306,6 +315,9 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
                 TrackingDispatcher.fire("https://httpbin.org/get?pixel=burl&test=true", "burl")
             }
             override fun onClick() { }
+            override fun onClose() { }
+            override fun onReward() { }
+
             override fun onError(error: Throwable) { }
         })
     }
@@ -332,6 +344,9 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
                 TrackingDispatcher.fire("https://httpbin.org/get?pixel=burl&test=true", "burl")
             }
             override fun onClick() { }
+            override fun onClose() { }
+            override fun onReward() { }
+
             override fun onError(error: Throwable) { }
         })
     }

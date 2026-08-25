@@ -5,6 +5,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import org.bidon.rendering.AdRenderer
+import org.bidon.rendering.PresentedAd
+import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.ui.FullscreenAdActivity
 import android.app.Activity
 import android.content.Intent
@@ -12,6 +14,11 @@ import android.content.Intent
 class HtmlRenderer(
     context: Context
 ) : AdRenderer {
+
+    private companion object {
+        // Hardcoded until the DSP's rendering config supplies it (BID-51).
+        const val CLOSE_DELAY_MS = 3000L
+    }
 
     private val appContext = context.applicationContext
 
@@ -22,6 +29,9 @@ class HtmlRenderer(
     private var isDestroyed = false
 
     private var lastHtml: String? = null
+
+    /** Key the fullscreen activity uses to find its way back here. */
+    private var presentationKey: String? = null
 
     override fun load(
         adm: String,
@@ -80,23 +90,40 @@ class HtmlRenderer(
     }
 
     override fun showFullscreen(activity: Activity) {
-        val html = lastHtml ?: run {
+        val view = webView.takeUnless { isDestroyed } ?: run {
             listener?.onError(IllegalStateException("Ad not loaded"))
             return
         }
 
-        val intent = Intent(activity, FullscreenAdActivity::class.java).apply {
-            putExtra(FullscreenAdActivity.EXTRA_HTML, html)
-            putExtra(FullscreenAdActivity.EXTRA_CLOSE_BUTTON_DELAY_MS, 3000L)
-        }
+        // The activity adopts this already-loaded WebView, keeping the ClickHandler that is
+        // attached to it. It used to build a second one and reload the markup, which meant
+        // fullscreen clicks and load errors were never reported.
+        presentationKey = PresentedAds.register(object : PresentedAd {
+            override val contentView: View get() = view
+            override val closeDelayMs: Long get() = CLOSE_DELAY_MS
+            override var closeRequester: (() -> Unit)? = null
+            override fun onImpression() = run { listener?.onImpression(); Unit }
+            override fun onClicked() = run { listener?.onClick(); Unit }
+            override fun onClosed() = run { listener?.onClose(); Unit }
+            override fun onRewarded() = run { listener?.onReward(); Unit }
+            override fun onFailed(error: Throwable) = run { listener?.onError(error); Unit }
+        })
 
-        activity.startActivity(intent)
+        activity.startActivity(
+            Intent(activity, FullscreenAdActivity::class.java)
+                .putExtra(PresentedAds.EXTRA_KEY, presentationKey)
+        )
 
-        listener?.onImpression()
+        // The impression is reported by the activity once the ad is actually on screen, not here.
     }
 
     override fun destroy() {
         isDestroyed = true
+
+        PresentedAds.unregister(presentationKey)
+        presentationKey = null
+
+        (webView?.parent as? ViewGroup)?.removeView(webView)
 
         webView?.apply {
             stopLoading()

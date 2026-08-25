@@ -1,6 +1,7 @@
 package org.bidon.rendering
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.webkit.WebView
 import org.bidon.rendering.html.HtmlRenderer
 import android.view.View
@@ -29,13 +30,23 @@ object BidonRenderer {
         isInitialized = true
     }
 
+    /**
+     * WebView remote debugging is a process-wide switch: it exposes every WebView in the host app
+     * over Chrome DevTools, not only ours. It used to be turned on by the `debug` flag in the
+     * server's config response, which meant a server-side value could expose a production
+     * publisher's app. It is now tied to the host app being debuggable, which a released app
+     * never is.
+     */
     private fun applyConfig(config: RendererConfig?) {
         config ?: return
 
-        if (config.enableDebugging) {
+        if (isHostAppDebuggable()) {
             WebView.setWebContentsDebuggingEnabled(true)
         }
     }
+
+    private fun isHostAppDebuggable(): Boolean =
+        (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     fun createRendererByType(crtype: String): AdRenderer {
         ensureInitialized()
@@ -84,10 +95,27 @@ interface AdRenderer {
 
     fun getView(): View?
 
+    /**
+     * The renderer only detects and reports. It fires no DSP URLs of its own; the adapter maps
+     * these to the mediation SDK's events and the server fires the callbacks.
+     */
     interface Listener {
         fun onLoaded()
         fun onImpression()
         fun onClick()
+
+        /**
+         * The ad is finished and its activity has gone. Interstitial and rewarded cannot complete
+         * without this: the publisher never learns the ad ended and cannot resume its content.
+         */
+        fun onClose()
+
+        /**
+         * The user earned the reward. Only meaningful for a rewarded placement; the renderer
+         * decides when it is earned from the creative type.
+         */
+        fun onReward()
+
         fun onError(error: Throwable)
     }
 }

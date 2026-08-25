@@ -27,9 +27,16 @@ enum class MraidPlacementType {
 }
 
 class MraidStateMachine(
-    private val placement: MraidPlacementType,
+    placement: MraidPlacementType,
     private val onStateChanged: (MraidState) -> Unit
 ) {
+
+    /**
+     * Mutable because the same loaded creative can be shown inline and then fullscreen. Placement
+     * only decides whether expand and resize are permitted, so switching it is enough; the
+     * creative itself is never rebuilt.
+     */
+    var placement: MraidPlacementType = placement
 
     var current: MraidState = MraidState.LOADING
         private set

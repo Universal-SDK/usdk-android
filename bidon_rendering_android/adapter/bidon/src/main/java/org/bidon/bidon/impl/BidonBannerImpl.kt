@@ -96,6 +96,12 @@ internal class BidonBannerImpl :
                 ad?.let { emitEvent(AdEvent.Clicked(it)) }
             }
 
+            // A banner is never closed or rewarded: it is removed by the publisher, and
+            // BannerView ignores both events anyway.
+            override fun onClose() = Unit
+
+            override fun onReward() = Unit
+
             override fun onError(error: Throwable) {
                 Log.e(TAG, "Ad error: ${error.message}")
                 isAdReadyToShow = false
