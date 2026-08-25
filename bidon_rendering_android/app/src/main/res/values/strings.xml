@@ -17,6 +17,8 @@
     <string name="settings_app_key_help">The publisher app key the SDK initializes with.</string>
     <string name="settings_base_url">Base URL</string>
     <string name="settings_base_url_help">The BidOn backend the SDK talks to, for example https://sdkapi.bidon.squads.com</string>
+    <string name="settings_bundle_id">Bundle ID override</string>
+    <string name="settings_bundle_id_help">Leave empty to send the real package name. Set it to make the SDK report a different bundle in its requests. Note: with an override set the SDK cannot look up its own package, so the app version it reports goes empty.</string>
     <string name="settings_test_mode">Test mode</string>
     <string name="settings_test_mode_on">On. Impression and stats calls are marked as test, and networks that support it serve test ads.</string>
     <string name="settings_test_mode_off">Off. Traffic is reported as real.</string>
@@ -32,6 +34,7 @@
 
     <string name="settings_status_sdk_state">SDK state</string>
     <string name="settings_status_sdk_version">SDK version</string>
+    <string name="settings_status_bundle_id">Bundle ID in use</string>
     <string name="settings_status_base_url">Base URL in use</string>
 
     <string name="settings_restart">Restart app</string>
@@ -43,6 +46,8 @@
     <string name="settings_state_initialized">Initialized</string>
     <string name="settings_state_not_initialized">Not initialized</string>
     <string name="settings_not_set">Not set</string>
+    <string name="settings_bundle_id_real">%s (real package name)</string>
+    <string name="settings_bundle_id_overridden">%s (overridden)</string>
 
     <string name="load">Load</string>
     <string name="show">Show</string>

@@ -13,6 +13,7 @@
     <!-- Keys -->
     <string name="pref_app_key" translatable="false">pref_app_key</string>
     <string name="pref_base_url" translatable="false">pref_base_url</string>
+    <string name="pref_bundle_id" translatable="false">pref_bundle_id</string>
     <string name="pref_test_mode" translatable="false">pref_test_mode</string>
     <string name="pref_log_level" translatable="false">pref_log_level</string>
     <string name="pref_advertising_id" translatable="false">pref_advertising_id</string>

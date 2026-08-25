@@ -40,6 +40,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
 
         findPreference<Preference>("status_sdk_version")?.summary = BidonSdk.SdkVersion
 
+        // requireContext() is the real one, so this reports what the app is actually installed
+        // as when no override is set.
+        val bundleId = SdkSettings.load(requireContext()).bundleId
+        findPreference<Preference>("status_bundle_id")?.summary = when (bundleId) {
+            null -> getString(R.string.settings_bundle_id_real, requireContext().packageName)
+            else -> getString(R.string.settings_bundle_id_overridden, bundleId)
+        }
+
         // baseUrl resolves through the SDK's own dependency graph, which only exists once
         // initialize() has run. Reading it earlier throws.
         findPreference<Preference>("status_base_url")?.summary =

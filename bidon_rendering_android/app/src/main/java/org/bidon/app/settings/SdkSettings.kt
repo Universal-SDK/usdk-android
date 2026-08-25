@@ -17,6 +17,8 @@ import org.bidon.sdk.regulation.Gdpr
 data class SdkSettings(
     val appKey: String,
     val baseUrl: String,
+    /** Null means send the real package name. */
+    val bundleId: String?,
     val testMode: Boolean,
     val logLevel: Logger.Level,
     val advertisingId: String,
@@ -50,6 +52,7 @@ data class SdkSettings(
             return SdkSettings(
                 appKey = string(R.string.pref_app_key, R.string.pref_app_key_default),
                 baseUrl = string(R.string.pref_base_url, R.string.pref_base_url_default),
+                bundleId = optionalString(R.string.pref_bundle_id),
                 testMode = prefs.getBoolean(
                     context.getString(R.string.pref_test_mode),
                     context.resources.getBoolean(R.bool.pref_test_mode_default)
@@ -77,6 +80,7 @@ data class SdkSettings(
             val keys = listOf(
                 R.string.pref_app_key,
                 R.string.pref_base_url,
+                R.string.pref_bundle_id,
                 R.string.pref_test_mode,
                 R.string.pref_log_level,
                 R.string.pref_advertising_id,

@@ -1,5 +1,6 @@
 package org.bidon.app
 
+import android.content.Context
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
@@ -10,6 +11,7 @@ import org.bidon.app.realflow.BannerFragment
 import org.bidon.app.realflow.InterstitialFragment
 import org.bidon.app.realflow.RewardedFragment
 import org.bidon.app.renderer.RendererOnlyFragment
+import org.bidon.app.settings.BundleIdApplication
 import org.bidon.app.settings.SdkSettings
 import org.bidon.app.settings.SettingsFragment
 import org.bidon.bidon.BidonAdapter
@@ -76,7 +78,17 @@ class MainActivity : AppCompatActivity() {
             .setTestMode(settings.testMode)
             .setBaseUrl(settings.baseUrl)
             .setInitializationCallback { applyRegulation(settings) }
-            .initialize(context = this, appKey = settings.appKey)
+            .initialize(context = sdkContext(settings), appKey = settings.appKey)
+    }
+
+    /**
+     * The SDK takes its bundle id from whatever context it is initialized with, so a bundle id
+     * override means handing it a stand-in. Without an override it gets this activity, exactly as
+     * before.
+     */
+    private fun sdkContext(settings: SdkSettings): Context {
+        val bundleId = settings.bundleId ?: return this
+        return BundleIdApplication(real = application, bundleId = bundleId)
     }
 
     /**
