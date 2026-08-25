@@ -14,9 +14,12 @@ import androidx.core.view.updateLayoutParams
  */
 internal object AdWindow {
 
-    /** Android's minimum touch target. The close button used to be 120px in one activity
-     *  and 70px in another, neither converted for density. */
-    const val CLOSE_BUTTON_DP = 48
+    /**
+     * Android's minimum touch target, for any control the user has to hit. The close
+     * button used to be 120px in one activity and 70px in another, neither converted for
+     * density, so both shrank as the screen got denser.
+     */
+    const val TOUCH_TARGET_DP = 48
 
     /** Gap between a control and the edge of the safe area. */
     const val CONTROL_MARGIN_DP = 16

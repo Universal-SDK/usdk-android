@@ -76,8 +76,19 @@ class VideoAdActivity : AppCompatActivity() {
         }
 
         presentationKey = adKey
-        presentation = PresentedAds.get(adKey)
-        presentation?.let { requestedOrientation = it.lockedOrientation }
+        val presented = PresentedAds.get(adKey) ?: run {
+            // The renderer is gone, so nothing here could be reported: no impression, no close,
+            // no reward. Showing the video anyway would be an ad nobody can account for. The
+            // other two ad activities bail out the same way.
+            finish()
+            return
+        }
+        presentation = presented
+
+        // Locked so the ad cannot rotate while it is up, restarting the video and resetting the
+        // reward counter. Inherited from the publisher, resolved when the ad was shown.
+        requestedOrientation = presented.lockedOrientation
+
         vastAd = VastRenderer.getAd(adKey)
 
         eventTracker.reset()

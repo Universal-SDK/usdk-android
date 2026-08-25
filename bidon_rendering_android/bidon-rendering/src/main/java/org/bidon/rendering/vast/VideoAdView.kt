@@ -84,8 +84,8 @@ class VideoAdView(context: Context) : FrameLayout(context) {
             setImageResource(android.R.drawable.ic_lock_silent_mode_off)
             setBackgroundColor(0x66000000)
             layoutParams = LayoutParams(
-                dp(AdWindow.CLOSE_BUTTON_DP),
-                dp(AdWindow.CLOSE_BUTTON_DP)
+                dp(AdWindow.TOUCH_TARGET_DP),
+                dp(AdWindow.TOUCH_TARGET_DP)
             ).apply {
                 gravity = Gravity.BOTTOM or Gravity.START
             }

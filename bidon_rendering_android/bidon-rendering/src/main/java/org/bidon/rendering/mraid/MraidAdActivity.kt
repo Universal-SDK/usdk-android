@@ -80,8 +80,8 @@ class MraidAdActivity : AppCompatActivity() {
         closeButton = CloseButton(this).apply {
             visibility = View.GONE
             layoutParams = FrameLayout.LayoutParams(
-                dp(AdWindow.CLOSE_BUTTON_DP),
-                dp(AdWindow.CLOSE_BUTTON_DP)
+                dp(AdWindow.TOUCH_TARGET_DP),
+                dp(AdWindow.TOUCH_TARGET_DP)
             ).apply {
                 gravity = Gravity.TOP or Gravity.END
             }
