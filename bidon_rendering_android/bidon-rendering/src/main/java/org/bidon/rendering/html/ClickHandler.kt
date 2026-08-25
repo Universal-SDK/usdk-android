@@ -5,10 +5,19 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 
+/**
+ * Turns a tap on a creative into a click report and a click-through.
+ *
+ * The rule this class holds to: the ad's WebView shows the creative and nothing else. Every
+ * navigation is either handled by opening it somewhere else, or refused. It must never be allowed
+ * to load the destination itself, because then the ad silently becomes a web page with a close
+ * button over it.
+ */
 class ClickHandler(
     private val context: Context,
     private val onClick: () -> Unit,
@@ -16,78 +25,69 @@ class ClickHandler(
     private val onPageLoadError: ((String) -> Unit)? = null
 ) : WebViewClient() {
 
+    private companion object {
+        const val TAG = "ClickHandler"
+    }
+
     override fun shouldOverrideUrlLoading(
         view: WebView?,
         request: WebResourceRequest?
     ): Boolean {
-
         val uri = request?.url ?: return false
         val url = uri.toString()
 
-        if (url.startsWith("javascript:") ||
-            url.startsWith("about:blank")
-        ) {
+        // The creative talking to itself, not a click.
+        if (url.startsWith("javascript:") || url.startsWith("about:blank")) {
             return false
         }
 
-        Log.d("ClickHandler", "Intercepted click: $url")
+        Log.d(TAG, "Intercepted click: $url")
 
         onClick()
 
-        return handleUrl(uri)
+        openClickThrough(uri)
+
+        // Always true. Returning false hands the URL back to the WebView, which would replace
+        // the creative with the advertiser's page inside the ad container.
+        return true
     }
 
-    private fun handleUrl(uri: Uri): Boolean {
-        val scheme = uri.scheme ?: return false
+    private fun openClickThrough(uri: Uri) {
+        try {
+            when (uri.scheme) {
+                // Deep links into an installed app, with the creative's own fallback if the app
+                // is not there.
+                "intent" -> openIntentScheme(uri.toString())
 
-        return try {
-            when (scheme) {
-
-                "http", "https" -> {
-                    openExternal(uri)
-                    true
-                }
-
-                "market" -> {
-                    openExternal(uri)
-                    true
-                }
-
-                "intent" -> {
-                    handleIntentScheme(uri.toString())
-                    true
-                }
-
-                else -> {
-                    openExternal(uri)
-                    true
-                }
+                // http, https, market and anything else a creative might use go to whichever app
+                // claims them. A missing scheme lands here too and simply fails to resolve.
+                else -> openExternal(uri)
             }
         } catch (e: Exception) {
-            Log.e("ClickHandler", "Failed to handle url: $uri", e)
-            false
+            // Nothing claimed it, or there is no browser on the device. The click is reported
+            // either way, because the user did click; only the destination failed to open.
+            Log.e(TAG, "Could not open click-through: $uri", e)
         }
     }
 
-    private fun handleIntentScheme(url: String) {
-        try {
-            val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
-
-            val fallbackUrl = intent.getStringExtra("browser_fallback_url")
-
-            try {
-                context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            } catch (e: ActivityNotFoundException) {
-
-                if (!fallbackUrl.isNullOrEmpty()) {
-                    openExternal(Uri.parse(fallbackUrl))
-                } else {
-                    Log.w("ClickHandler", "No app and no fallback for intent")
-                }
-            }
-
+    private fun openIntentScheme(url: String) {
+        val intent = try {
+            Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
         } catch (e: Exception) {
-            Log.e("ClickHandler", "Invalid intent url: $url", e)
+            Log.e(TAG, "Invalid intent url: $url", e)
+            return
+        }
+
+        val fallbackUrl = intent.getStringExtra("browser_fallback_url")
+
+        try {
+            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: ActivityNotFoundException) {
+            if (!fallbackUrl.isNullOrEmpty()) {
+                openExternal(Uri.parse(fallbackUrl))
+            } else {
+                Log.w(TAG, "No app and no fallback for intent")
+            }
         }
     }
 
@@ -100,21 +100,29 @@ class ClickHandler(
 
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
-        Log.d("ClickHandler", "Page loaded: $url")
+        Log.d(TAG, "Page loaded: $url")
         onPageLoaded?.invoke()
     }
 
+    /**
+     * This used to override the four-argument overload, which the framework stopped calling at
+     * API 23. With minSdk 24 it could never fire, so a creative that failed to load reported
+     * nothing at all and the only thing that noticed was the mediation SDK's fill timeout.
+     */
     override fun onReceivedError(
         view: WebView?,
-        errorCode: Int,
-        description: String?,
-        failingUrl: String?
+        request: WebResourceRequest?,
+        error: WebResourceError?
     ) {
-        super.onReceivedError(view, errorCode, description, failingUrl)
+        super.onReceivedError(view, request, error)
 
-        val errorMsg = description ?: "Unknown error ($errorCode)"
-        Log.e("ClickHandler", "Load error: $errorMsg")
+        // Only the creative itself failing counts as a load failure. Creatives routinely pull in
+        // tracking pixels and assets that 404, and one of those must not fail the whole ad.
+        if (request?.isForMainFrame != true) return
 
-        onPageLoadError?.invoke(errorMsg)
+        val message = error?.description?.toString().orEmpty().ifEmpty { "Unknown error" }
+        Log.e(TAG, "Load error: $message")
+
+        onPageLoadError?.invoke(message)
     }
 }
