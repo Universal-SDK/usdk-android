@@ -8,6 +8,8 @@ import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.util.UnstableApi
 import androidx.annotation.OptIn
+import org.bidon.rendering.PresentedAd
+import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.vast.RewardedController
 import org.bidon.rendering.vast.VastAd
 import org.bidon.rendering.vast.VastEventTracker
@@ -52,6 +54,10 @@ class VideoAdActivity : AppCompatActivity() {
     private var isCompleted = false
     private var isEndCardShown = false
 
+    private var presentationKey: String? = null
+    private var presentation: PresentedAd? = null
+    private var impressionReported = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -67,10 +73,22 @@ class VideoAdActivity : AppCompatActivity() {
             return
         }
 
-        vastAd = adKey?.let { VastRenderer.takeAd(it) }
+        presentationKey = adKey
+        presentation = PresentedAds.get(adKey)
+        vastAd = VastRenderer.getAd(adKey)
 
         eventTracker.reset()
         rewardedController.reset()
+
+        // The reward was being worked out and then dropped: setListener was never called, so
+        // onUserRewarded could not fire and a rewarded video never paid the player.
+        rewardedController.setListener(object : RewardedController.Listener {
+            override fun onRewardEarned() {
+                presentation?.onRewarded()
+            }
+
+            override fun onRewardRejected(reason: String) = Unit
+        })
 
         player = VideoPlayer(this).apply {
             load(mediaUrl)
@@ -83,7 +101,7 @@ class VideoAdActivity : AppCompatActivity() {
 
             setListener(object : VideoAdView.Listener {
                 override fun onClick() {
-
+                    presentation?.onClicked()
                 }
 
                 override fun onSkip() {
@@ -99,7 +117,7 @@ class VideoAdActivity : AppCompatActivity() {
                 override fun onMuteChanged(isMuted: Boolean) {}
 
                 override fun onCtaClick() {
-
+                    presentation?.onClicked()
                 }
             })
         }
@@ -116,6 +134,15 @@ class VideoAdActivity : AppCompatActivity() {
         player?.play()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Reported here rather than at startActivity, so it means the video reached the screen.
+        if (!impressionReported) {
+            impressionReported = true
+            presentation?.onImpression()
+        }
+    }
+
     override fun onStop() {
         super.onStop()
         if (!isCompleted) {
@@ -125,6 +152,14 @@ class VideoAdActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+
+        if (isFinishing) {
+            presentation?.onClosed()
+            PresentedAds.unregister(presentationKey)
+            presentationKey?.let { VastRenderer.adRegistry.remove(it) }
+        }
+        presentation = null
+
         videoAdView?.setListener(null)
         videoAdView?.unbindPlayer()
         videoAdView = null
@@ -160,6 +195,12 @@ class VideoAdActivity : AppCompatActivity() {
                 val trackingEvents = vastAd?.trackingEvents ?: emptyList()
                 val durationMs = player?.getDuration() ?: 0L
                 eventTracker.onProgress(1f, durationMs, durationMs, trackingEvents)
+
+                // The tracker is told the video reached the end; the reward controller has to be
+                // told too. Its threshold is full completion, and the player's progress ticks
+                // never land exactly on the duration, so without this the reward was always
+                // refused with "completion threshold not reached".
+                rewardedController.onProgress(1f)
                 rewardedController.onComplete()
 
                 isCompleted = true
@@ -197,7 +238,7 @@ class VideoAdActivity : AppCompatActivity() {
                 }
 
                 override fun onClick() {
-
+                    presentation?.onClicked()
                 }
 
                 override fun onError(error: Throwable) {

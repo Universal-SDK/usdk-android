@@ -10,8 +10,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.bidon.rendering.AdRenderer
+import org.bidon.rendering.PresentedAd
+import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.vast.ui.VideoAdActivity
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 class VastRenderer(
@@ -19,22 +20,22 @@ class VastRenderer(
 ) : AdRenderer {
 
     companion object {
+        /**
+         * The parsed VAST document for the activity to pick up, under the same key as its
+         * presentation handle. Looked up rather than taken, so the activity can find it again if
+         * it is recreated; the entry is dropped when the ad closes or the renderer is destroyed.
+         */
         internal val adRegistry = ConcurrentHashMap<String, VastAd>()
 
-        internal fun putAd(ad: VastAd): String {
-            val key = UUID.randomUUID().toString()
-            adRegistry[key] = ad
-            return key
-        }
-
-        internal fun takeAd(key: String): VastAd? {
-            return adRegistry.remove(key)
-        }
+        internal fun getAd(key: String?): VastAd? = key?.let { adRegistry[it] }
     }
 
     private var vastAd: VastAd? = null
     private var listener: AdRenderer.Listener? = null
     private var loadJob: Job? = null
+
+    /** Key the video activity uses to find its way back here. */
+    private var presentationKey: String? = null
     private val scope = CoroutineScope(Dispatchers.Main)
 
     override fun load(
@@ -85,16 +86,33 @@ class VastRenderer(
                 return
             }
 
-        val adKey = putAd(ad)
+        // Video builds its own player surface, so unlike HTML and MRAID there is no loaded view to
+        // hand over - only the way back for the events.
+        val key = PresentedAds.register(object : PresentedAd {
+            override val contentView: View? get() = null
+
+            // Video gates dismissal on the skip offset, not on a close-button delay.
+            override val closeDelayMs: Long get() = 0L
+            override var closeRequester: (() -> Unit)? = null
+
+            override fun onImpression() = run { listener?.onImpression(); Unit }
+            override fun onClicked() = run { listener?.onClick(); Unit }
+            override fun onClosed() = run { listener?.onClose(); Unit }
+            override fun onRewarded() = run { listener?.onReward(); Unit }
+            override fun onFailed(error: Throwable) = run { listener?.onError(error); Unit }
+        })
+        presentationKey = key
+        adRegistry[key] = ad
 
         VideoAdActivity.start(
             context = activity,
             mediaUrl = media.url,
             clickThroughUrl = ad.videoClicks?.clickThroughUrl,
-            skipOffsetMs = ad.skipOffsetMs ?: 5000L,
-            adKey = adKey
+            skipOffsetMs = ad.skipOffsetMs ?: DEFAULT_SKIP_OFFSET_MS,
+            adKey = key
         )
-        listener?.onImpression()
+
+        // The impression is reported by the activity once the video is on screen, not here.
     }
 
     override fun getView(): View? = null
@@ -103,7 +121,15 @@ class VastRenderer(
         loadJob?.cancel()
         loadJob = null
         scope.cancel()
+
+        PresentedAds.unregister(presentationKey)
+        presentationKey?.let { adRegistry.remove(it) }
+        presentationKey = null
+
         vastAd = null
         listener = null
     }
 }
+
+// Hardcoded until the DSP's rendering config supplies it (BID-51).
+private const val DEFAULT_SKIP_OFFSET_MS = 5000L
