@@ -15,10 +15,9 @@ class MraidWebView(context: Context) : HtmlWebView(context) {
 
     private var bridge: MraidJsBridge? = null
 
-    init {
-        settings.mixedContentMode =
-            android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-    }
+    // No settings are changed here on purpose. HtmlWebView owns the WebView configuration for
+    // both HTML and MRAID; this class used to override mixedContentMode with a different value
+    // than its own base class, which meant the two disagreed and neither had been chosen.
 
     // ──────────────────────────────────────────
     // Setup

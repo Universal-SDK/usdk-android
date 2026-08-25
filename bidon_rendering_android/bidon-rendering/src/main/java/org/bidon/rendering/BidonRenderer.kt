@@ -1,6 +1,7 @@
 package org.bidon.rendering
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.webkit.WebView
 import org.bidon.rendering.html.HtmlRenderer
 import android.view.View
@@ -29,13 +30,23 @@ object BidonRenderer {
         isInitialized = true
     }
 
+    /**
+     * WebView remote debugging is a process-wide switch: it exposes every WebView in the host app
+     * over Chrome DevTools, not only ours. It used to be turned on by the `debug` flag in the
+     * server's config response, which meant a server-side value could expose a production
+     * publisher's app. It is now tied to the host app being debuggable, which a released app
+     * never is.
+     */
     private fun applyConfig(config: RendererConfig?) {
         config ?: return
 
-        if (config.enableDebugging) {
+        if (isHostAppDebuggable()) {
             WebView.setWebContentsDebuggingEnabled(true)
         }
     }
+
+    private fun isHostAppDebuggable(): Boolean =
+        (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     fun createRendererByType(crtype: String): AdRenderer {
         ensureInitialized()
