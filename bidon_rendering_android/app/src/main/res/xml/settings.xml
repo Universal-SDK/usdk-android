@@ -24,6 +24,12 @@
             app:title="@string/settings_base_url"
             app:useSimpleSummaryProvider="true" />
 
+        <EditTextPreference
+            app:dialogMessage="@string/settings_bundle_id_help"
+            app:key="@string/pref_bundle_id"
+            app:title="@string/settings_bundle_id"
+            app:useSimpleSummaryProvider="true" />
+
         <SwitchPreferenceCompat
             app:defaultValue="@bool/pref_test_mode_default"
             app:key="@string/pref_test_mode"
@@ -95,6 +101,12 @@
             app:persistent="false"
             app:selectable="false"
             app:title="@string/settings_status_sdk_version" />
+
+        <Preference
+            app:key="status_bundle_id"
+            app:persistent="false"
+            app:selectable="false"
+            app:title="@string/settings_status_bundle_id" />
 
         <Preference
             app:key="status_base_url"
