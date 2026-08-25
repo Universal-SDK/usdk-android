@@ -95,6 +95,15 @@ internal class BidonInterstitialImpl :
                 ad?.let { emitEvent(AdEvent.Clicked(it)) }
             }
 
+            override fun onClose() {
+                Log.d(TAG, "Ad closed")
+                isAdReadyToShow = false
+                ad?.let { emitEvent(AdEvent.Closed(it)) }
+            }
+
+            // Rewards do not apply to an interstitial; InterstitialImpl ignores the event.
+            override fun onReward() = Unit
+
             override fun onError(error: Throwable) {
                 Log.e(TAG, "Ad error: ${error.message}")
                 isAdReadyToShow = false

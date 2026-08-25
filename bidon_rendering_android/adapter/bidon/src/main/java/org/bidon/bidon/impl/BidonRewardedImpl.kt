@@ -95,6 +95,19 @@ internal class BidonRewardedImpl :
                 ad?.let { emitEvent(AdEvent.Clicked(it)) }
             }
 
+            override fun onClose() {
+                Log.d(TAG, "Ad closed")
+                isAdReadyToShow = false
+                ad?.let { emitEvent(AdEvent.Closed(it)) }
+            }
+
+            override fun onReward() {
+                Log.d(TAG, "User rewarded")
+                // Null reward matches the shipped adapters: the title and amount come from the
+                // server-side ad unit, not from the renderer.
+                ad?.let { emitEvent(AdEvent.OnReward(it, null)) }
+            }
+
             override fun onError(error: Throwable) {
                 Log.e(TAG, "Ad error: ${error.message}")
                 isAdReadyToShow = false

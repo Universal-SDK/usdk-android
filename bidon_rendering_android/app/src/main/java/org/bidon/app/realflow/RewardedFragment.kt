@@ -43,9 +43,11 @@ class RewardedFragment : Fragment(R.layout.fragment_rewarded) {
                 _binding?.btnShowRewarded?.isEnabled = true
             }
 
-            override fun onUserRewarded(ad: Ad, reward: Reward?) {}
-            override fun onAdShown(ad: Ad) {}
-            override fun onAdClosed(ad: Ad) {}
+            override fun onUserRewarded(ad: Ad, reward: Reward?) =
+                println("hop: rewarded onUserRewarded")
+
+            override fun onAdShown(ad: Ad) = println("hop: rewarded onAdShown")
+            override fun onAdClosed(ad: Ad) = println("hop: rewarded onAdClosed")
             override fun onAdClicked(ad: Ad) {}
             override fun onAdExpired(ad: Ad) {}
             override fun onAdLoadFailed(auctionInfo: AuctionInfo?, cause: BidonError) {}

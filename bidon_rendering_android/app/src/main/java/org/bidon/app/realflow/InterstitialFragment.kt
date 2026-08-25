@@ -41,8 +41,8 @@ class InterstitialFragment : Fragment(R.layout.fragment_interstitial) {
                 _binding?.btnShowInterstitial?.isEnabled = true
             }
 
-            override fun onAdShown(ad: Ad) {}
-            override fun onAdClosed(ad: Ad) {}
+            override fun onAdShown(ad: Ad) = println("hop: interstitial onAdShown")
+            override fun onAdClosed(ad: Ad) = println("hop: interstitial onAdClosed")
             override fun onAdClicked(ad: Ad) {}
             override fun onAdExpired(ad: Ad) {}
             override fun onAdLoadFailed(auctionInfo: AuctionInfo?, cause: BidonError) {}

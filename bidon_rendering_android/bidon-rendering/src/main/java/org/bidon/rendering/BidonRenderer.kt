@@ -95,10 +95,27 @@ interface AdRenderer {
 
     fun getView(): View?
 
+    /**
+     * The renderer only detects and reports. It fires no DSP URLs of its own; the adapter maps
+     * these to the mediation SDK's events and the server fires the callbacks.
+     */
     interface Listener {
         fun onLoaded()
         fun onImpression()
         fun onClick()
+
+        /**
+         * The ad is finished and its activity has gone. Interstitial and rewarded cannot complete
+         * without this: the publisher never learns the ad ended and cannot resume its content.
+         */
+        fun onClose()
+
+        /**
+         * The user earned the reward. Only meaningful for a rewarded placement; the renderer
+         * decides when it is earned from the creative type.
+         */
+        fun onReward()
+
         fun onError(error: Throwable)
     }
 }

@@ -1,58 +1,40 @@
 package org.bidon.rendering.mraid.ui
 
+import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.graphics.Color
 import android.widget.FrameLayout
-import android.widget.ProgressBar
 import androidx.appcompat.app.AppCompatActivity
-import org.bidon.rendering.mraid.MraidController
-import org.bidon.rendering.mraid.MraidJsBridge
-import org.bidon.rendering.mraid.MraidPlacementType
-import org.bidon.rendering.mraid.MraidWebView
+import org.bidon.rendering.PresentedAd
+import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.ui.CloseButton
-import android.util.Log
 
+/**
+ * Hosts a fullscreen MRAID creative.
+ *
+ * Like the HTML one, this adopts the WebView the renderer already loaded rather than building a
+ * second one with its own controller and bridge. That is what keeps the creative's MRAID state,
+ * its click handling and its close command connected to the renderer that owns it.
+ */
 class MraidAdActivity : AppCompatActivity() {
 
-    companion object {
-        private const val TAG = "MraidAdActivity"
-        private const val EXTRA_HTML = "extra_html"
-        private const val EXTRA_MRAID_JS = "extra_mraid_js"
-        private const val EXTRA_CLOSE_BUTTON_DELAY_MS = "extra_close_button_delay_ms"
-
-        fun start(
-            context: android.content.Context,
-            html: String,
-            mraidJs: String,
-            closeButtonDelayMs: Long = 5000L
-        ) {
-            val intent = android.content.Intent(context, MraidAdActivity::class.java).apply {
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                putExtra(EXTRA_HTML, html)
-                putExtra(EXTRA_MRAID_JS, mraidJs)
-                putExtra(EXTRA_CLOSE_BUTTON_DELAY_MS, closeButtonDelayMs)
-            }
-            context.startActivity(intent)
-        }
-    }
-
-    private var webView: MraidWebView? = null
-    private var controller: MraidController? = null
+    private var presentationKey: String? = null
+    private var presentation: PresentedAd? = null
+    private var adView: View? = null
     private var closeButton: CloseButton? = null
-    private var loadingProgressBar: ProgressBar? = null
-    private var root: FrameLayout? = null
 
-    private val showCloseBtnRunnable = Runnable {
-        Log.d(TAG, "showCloseBtnRunnable")
+    private var impressionReported = false
+    private var closeAllowed = false
+
+    private val allowCloseRunnable = Runnable {
+        closeAllowed = true
         closeButton?.visibility = View.VISIBLE
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "onCreate()")
 
         supportActionBar?.hide()
         window.decorView.systemUiVisibility =
@@ -60,126 +42,89 @@ class MraidAdActivity : AppCompatActivity() {
                     View.SYSTEM_UI_FLAG_FULLSCREEN or
                     View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
 
-        window.setBackgroundDrawableResource(android.R.color.transparent)
-
-        val html = intent.getStringExtra(EXTRA_HTML) ?: run {
-            Log.e(TAG, "ERROR: HTML")
+        presentationKey = intent.getStringExtra(PresentedAds.EXTRA_KEY)
+        val ad = PresentedAds.get(presentationKey) ?: run {
             finish()
             return
         }
-        val mraidJs = intent.getStringExtra(EXTRA_MRAID_JS) ?: run {
-            Log.e(TAG, "ERROR: MRAID JS")
+        presentation = ad
+
+        val view = ad.contentView ?: run {
+            ad.onFailed(IllegalStateException("MRAID ad has no view to display"))
             finish()
             return
         }
 
-        val wv = MraidWebView(this)
-        webView = wv
+        // mraid.close() from inside the creative dismisses this activity.
+        ad.closeRequester = { finish() }
 
-        // 2. Створюємо Controller
-        val ctrl = MraidController(
-            context = this,
-            webView = wv,
-            placement = MraidPlacementType.INTERSTITIAL,
-            onClose = {
-                Log.d(TAG, "onClose callback")
-                finish()
-            },
-            onClick = {
-                Log.d(TAG, "onClick callback")
-            }
-        )
-        controller = ctrl
-        val bridge = MraidJsBridge(ctrl)
-
-        wv.attachBridge(
-            bridge = bridge,
-            onClick = {
-                Log.d(TAG, "WebView onClick")
-            },
-            onPageLoaded = {
-                Log.d(TAG, "✅ onPageLoaded")
-                loadingProgressBar?.visibility = View.GONE
-                ctrl.onReady()
-            },
-            onPageLoadError = {
-                Log.e(TAG, "❌ onPageLoadError")
-                loadingProgressBar?.visibility = View.GONE
-            }
-        )
-
-        wv.layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        )
-        wv.setBackgroundColor(Color.TRANSPARENT)
-
-        // 6. Створюємо Root FrameLayout
-        root = FrameLayout(this).apply {
+        val root = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
             setBackgroundColor(Color.BLACK)
         }
-        root!!.addView(wv)
+        setContentView(root)
 
-        loadingProgressBar = ProgressBar(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.CENTER
-            }
-            isIndeterminate = true
-        }
-        root!!.addView(loadingProgressBar!!)
+        (view.parent as? ViewGroup)?.removeView(view)
+        view.layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        )
+        root.addView(view)
+        adView = view
+
+        val margin = (16 * resources.displayMetrics.density).toInt()
 
         closeButton = CloseButton(this).apply {
             visibility = View.GONE
             layoutParams = FrameLayout.LayoutParams(70, 70).apply {
                 gravity = Gravity.TOP or Gravity.END
-                topMargin = (16 * resources.displayMetrics.density).toInt()
-                marginEnd = (16 * resources.displayMetrics.density).toInt()
+                topMargin = margin
+                marginEnd = margin
             }
-            onClick = {
-                Log.d(TAG, "Close button clicked")
-                finish()
-            }
+            onClick = { finish() }
         }
-        root!!.addView(closeButton!!)
-        val delayMs = intent.getLongExtra(EXTRA_CLOSE_BUTTON_DELAY_MS, 5000L)
-        if (delayMs > 0) {
-            closeButton?.postDelayed(showCloseBtnRunnable, delayMs)
-        } else {
-            closeButton?.visibility = View.VISIBLE
-        }
+        root.addView(closeButton!!)
 
-        setContentView(root)
-        wv.loadMraidContent(html, mraidJs)
+        val delayMs = ad.closeDelayMs
+        if (delayMs > 0) {
+            closeButton?.postDelayed(allowCloseRunnable, delayMs)
+        } else {
+            allowCloseRunnable.run()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!impressionReported) {
+            impressionReported = true
+            presentation?.onImpression()
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "onDestroy()")
 
-        closeButton?.removeCallbacks(showCloseBtnRunnable)
+        closeButton?.removeCallbacks(allowCloseRunnable)
 
-        webView?.apply {
-            stopLoading()
-            loadUrl("about:blank")
-            destroy()
-        }
-        webView = null
-        controller?.destroy()
-        controller = null
+        // Detach only. The WebView, its controller and its bridge belong to the renderer.
+        (adView?.parent as? ViewGroup)?.removeView(adView)
+        adView = null
         closeButton = null
-        loadingProgressBar = null
-        root = null
+
+        presentation?.closeRequester = null
+        if (isFinishing) {
+            presentation?.onClosed()
+            PresentedAds.unregister(presentationKey)
+        }
+        presentation = null
     }
 
     override fun onBackPressed() {
-        Log.d(TAG, "onBackPressed()")
-        finish()
+        if (closeAllowed) {
+            super.onBackPressed()
+        }
     }
 }
