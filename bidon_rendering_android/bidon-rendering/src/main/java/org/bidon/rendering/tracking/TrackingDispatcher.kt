@@ -1,5 +1,6 @@
 package org.bidon.rendering.tracking
 
+import android.net.Uri
 import android.util.Log
 import java.net.HttpURLConnection
 import java.net.URL
@@ -34,13 +35,16 @@ object TrackingDispatcher {
 
                 val responseCode = connection.responseCode
                 if (responseCode !in 200..299) {
-                    Log.w(TAG, "Tracking pixel returned HTTP $responseCode")
+                    Log.w(TAG, "Tracking pixel to ${hostOf(url)} returned HTTP $responseCode")
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Tracking pixel failed: ${e.javaClass.simpleName}")
+                Log.w(TAG, "Tracking pixel to ${hostOf(url)} failed: ${e.javaClass.simpleName}")
             } finally {
                 connection?.disconnect()
             }
         }
     }
+
+    // Only the host is logged: tracker URLs routinely carry device identifiers in their query.
+    private fun hostOf(url: String): String = Uri.parse(url).host ?: "an invalid URL"
 }
