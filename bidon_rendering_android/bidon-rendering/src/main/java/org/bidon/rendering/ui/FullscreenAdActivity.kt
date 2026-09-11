@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
@@ -23,7 +24,12 @@ class FullscreenAdActivity : AppCompatActivity() {
     private var adView: View? = null
 
     private var impressionReported = false
-    private var closeAllowed = false
+    // Back is held until the close button is available, so the ad cannot be dismissed by an
+    // accidental press before it has been seen. A callback, not an onBackPressed override: with
+    // predictive back, which Android 16 turns on by default, onBackPressed is never called.
+    private val holdBack = object : OnBackPressedCallback(true) {
+        override fun handleOnBackPressed() = Unit
+    }
 
     /** When the close button becomes usable, kept so a recreated activity carries on counting. */
     private var closeAvailableAtMs = 0L
@@ -33,6 +39,7 @@ class FullscreenAdActivity : AppCompatActivity() {
 
         supportActionBar?.hide()
         AdWindow.goFullscreen(this)
+        onBackPressedDispatcher.addCallback(this, holdBack)
 
         presentationKey = intent.getStringExtra(PresentedAds.EXTRA_KEY)
         val ad = PresentedAds.get(presentationKey) ?: run {
@@ -76,7 +83,7 @@ class FullscreenAdActivity : AppCompatActivity() {
         closeAvailableAtMs = savedInstanceState?.closeAvailableAtMs()
             ?: (SystemClock.elapsedRealtime() + ad.closeButton.delayMs)
         closeButton.becomeAvailableAt(closeAvailableAtMs) {
-            closeAllowed = true
+            holdBack.isEnabled = false
         }
     }
 
@@ -108,13 +115,5 @@ class FullscreenAdActivity : AppCompatActivity() {
             PresentedAds.unregister(presentationKey)
         }
         presentation = null
-    }
-
-    override fun onBackPressed() {
-        // Back is held until the close button is available, so the ad cannot be dismissed by an
-        // accidental press before it has been seen.
-        if (closeAllowed) {
-            super.onBackPressed()
-        }
     }
 }
