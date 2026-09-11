@@ -10,6 +10,7 @@ import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
+import androidx.annotation.ColorInt
 import org.bidon.rendering.CloseButtonConfig
 import kotlin.math.ceil
 import kotlin.math.max
@@ -19,9 +20,9 @@ import kotlin.math.max
  *
  * Until it becomes available it shows the seconds left, or nothing if the DSP turned the
  * countdown off, and taps on it do nothing. The visible button sits [CloseButtonConfig.paddingDp]
- * from the safe area in its corner. The touch target around it is never smaller than
- * [AdWindow.TOUCH_TARGET_DP] and grows toward the middle of the screen, so a small button is
- * still easy to hit.
+ * from the safe area in its corner, and that gap belongs to the button: a tap that lands between
+ * the button and the edge closes the ad rather than reaching the creative. The touch target is
+ * never smaller than [AdWindow.TOUCH_TARGET_DP] and grows toward the middle of the screen.
  */
 @SuppressLint("ViewConstructor")
 internal class CloseButton(
@@ -48,6 +49,7 @@ internal class CloseButton(
     private val shapeHeight = dp(config.sizeDp).toFloat()
     private val shapeWidth: Float
     private val shape = RectF()
+    private val paddingPx = dp(config.paddingDp).toFloat()
 
     private var availableAtMs = 0L
     private var onAvailable: (() -> Unit)? = null
@@ -118,8 +120,8 @@ internal class CloseButton(
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val touchTarget = dp(AdWindow.TOUCH_TARGET_DP).toFloat()
         setMeasuredDimension(
-            resolveSize(ceil(max(touchTarget, shapeWidth)).toInt(), widthMeasureSpec),
-            resolveSize(ceil(max(touchTarget, shapeHeight)).toInt(), heightMeasureSpec)
+            resolveSize(ceil(max(touchTarget, shapeWidth + paddingPx)).toInt(), widthMeasureSpec),
+            resolveSize(ceil(max(touchTarget, shapeHeight + paddingPx)).toInt(), heightMeasureSpec)
         )
     }
 
@@ -132,14 +134,14 @@ internal class CloseButton(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // Drawn in the corner of the touch target rather than its middle, so the padding is
-        // measured to what the user actually sees.
-        val left = if (config.position.isLeft) 0f else width - shapeWidth
-        val top = if (config.position.isTop) 0f else height - shapeHeight
+        // Drawn in from the outer corner of the touch target by the padding, so the gap to the
+        // edge of the screen is still part of what can be tapped.
+        val left = if (config.position.isLeft) paddingPx else width - paddingPx - shapeWidth
+        val top = if (config.position.isTop) paddingPx else height - paddingPx - shapeHeight
         shape.set(left, top, left + shapeWidth, top + shapeHeight)
 
         val radius = shapeHeight / 2
-        backdropPaint.color = if (isPressed) BACKDROP_PRESSED else BACKDROP
+        backdropPaint.color = backdropFor(config.color, isPressed)
         canvas.drawRoundRect(shape, radius, radius, backdropPaint)
 
         when {
@@ -170,14 +172,26 @@ internal class CloseButton(
 
     private companion object {
         const val LABEL = "Close"
-        const val BACKDROP = 0x80000000.toInt()
-        const val BACKDROP_PRESSED = 0xCC000000.toInt()
 
         /** The cross spans half the button, the stroke an eighth of it: the look it had before. */
         const val CROSS_RATIO = 0.5f
         const val STROKE_RATIO = 0.125f
         const val TEXT_SIZE_RATIO = 0.45f
     }
+}
+
+/**
+ * The disc behind the cross or text: dark behind a light colour and light behind a dark one, so
+ * whatever colour the DSP picks stands out from it. Deeper while pressed.
+ */
+internal fun backdropFor(@ColorInt color: Int, pressed: Boolean): Int {
+    val red = (color shr 16) and 0xFF
+    val green = (color shr 8) and 0xFF
+    val blue = color and 0xFF
+    val isLight = 0.299 * red + 0.587 * green + 0.114 * blue >= 128
+    val alpha = if (pressed) 0xCC else 0x80
+    val shade = if (isLight) 0x000000 else 0xFFFFFF
+    return (alpha shl 24) or shade
 }
 
 private const val STATE_CLOSE_AVAILABLE_AT = "org.bidon.rendering.close_available_at"

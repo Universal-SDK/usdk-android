@@ -68,7 +68,7 @@ class FullscreenAdActivity : AppCompatActivity() {
         root.addView(closeButton, closeButton.cornerLayoutParams())
 
         // The creative may run under the notch and the system bars. The close button may not.
-        closeButton.insetFromSafeArea(ad.closeButton.paddingDp)
+        closeButton.insetFromSafeArea(marginDp = 0)
 
         // Rotation is locked, but a theme, language, font size or window size change still
         // recreates this activity. The countdown carries on rather than starting over.
