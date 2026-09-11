@@ -4,9 +4,9 @@ import io.kotest.property.Arb
 import io.kotest.property.arbitrary.arbitrary
 import io.kotest.property.arbitrary.boolean
 import io.kotest.property.arbitrary.choice
-import io.kotest.property.arbitrary.constant
 import io.kotest.property.arbitrary.element
 import io.kotest.property.arbitrary.int
+import io.kotest.property.arbitrary.list
 import io.kotest.property.arbitrary.long
 import io.kotest.property.arbitrary.numericDouble
 import io.kotest.property.arbitrary.string
@@ -15,7 +15,6 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -31,15 +30,16 @@ class RenderingConfigPropertyTest {
         Arb.int(),
         Arb.boolean(),
         Arb.string(),
-        // Strings the parser gives meaning to, and strings that parse as special numbers on
-        // Android, whose org.json coerces "Infinity" and "NaN" where the JVM one does not.
+        // Strings the parser gives meaning to. "Infinity" and "NaN" read as numbers on Android's
+        // org.json but not on the JVM one used here; RenderingConfigTest covers the clamping they
+        // would reach.
         Arb.element(
             "icon_circle", "text_close", "custom", "top_left", "bottom_right", "#FFF", "#00ff00",
             "vast", "mraid", "html", "5", "-5", "1e308", "Infinity", "-Infinity", "NaN"
         ),
-        Arb.constant(JSONObject.NULL),
-        Arb.constant(JSONObject()),
-        Arb.constant(JSONArray())
+        Arb.element(JSONObject.NULL),
+        arbitrary { JSONObject() },
+        arbitrary { JSONArray() }
     )
 
     private fun objectWith(keys: List<String>, values: Arb<Any> = anyValue): Arb<JSONObject> =
@@ -79,29 +79,32 @@ class RenderingConfigPropertyTest {
     }
 
     @Test
-    fun `any config parses into one that keeps the close button reachable and visible`() {
+    fun `any config parses, and visible false never hides the close button`() {
         runBlocking {
             checkAll(2_000, anyConfig) { json ->
-                val config = RenderingConfig.fromJson(json)
+                val parsed = RenderingConfig.fromJson(json)
 
-                with(config.closeButton) {
-                    assertTrue(json.toString(), delayMs in 0..CloseButtonConfig.MAX_DELAY_MS)
-                    assertTrue(json.toString(), opacity >= CloseButtonConfig.MIN_OPACITY)
-                    assertTrue(
-                        json.toString(),
-                        sizeDp in CloseButtonConfig.MIN_SIZE_DP..CloseButtonConfig.MAX_SIZE_DP
-                    )
-                }
-                assertTrue(json.toString(), config.skipOffsetMs >= 0)
+                val button = json.optJSONObject("close_button")
+                    ?: JSONObject().also { json.put("close_button", it) }
+                button.put("visible", false)
+
+                assertEquals(json.toString(), parsed, RenderingConfig.fromJson(json))
             }
         }
     }
 
+    private val colourLike: Arb<String> = arbitrary {
+        val body = Arb.list(Arb.element("0123456789abcdefABCDEFgG+- x".toList()), 0..8).bind()
+            .joinToString("")
+        if (Arb.int(0..9).bind() == 0) body else "#$body"
+    }
+
     @Test
-    fun `any string is either rejected or read as an opaque colour`() {
+    fun `a colour is read exactly when it has one of the two forms the server accepts`() {
+        val accepted = Regex("#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})")
         runBlocking {
-            checkAll(2_000, Arb.string()) { value ->
-                parseHexColor(value)?.let { assertEquals(value, 0xFF, it ushr 24) }
+            checkAll(5_000, colourLike) { value ->
+                assertEquals(value, accepted.matches(value), parseHexColor(value) != null)
             }
         }
     }

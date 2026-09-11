@@ -176,6 +176,17 @@ class RenderingConfigTest {
     }
 
     @Test
+    fun `infinite numbers are clamped like any other out of range value`() {
+        // Android's org.json reads the string "Infinity" as a number. The JVM one these tests run
+        // on does not, so the clamping is checked directly.
+        assertEquals(30_000L, millisWithin(Double.POSITIVE_INFINITY, CloseButtonConfig.MAX_DELAY_MS))
+        assertEquals(0L, millisWithin(Double.NEGATIVE_INFINITY, CloseButtonConfig.MAX_DELAY_MS))
+        assertEquals(Long.MAX_VALUE, millisWithin(Double.POSITIVE_INFINITY, Long.MAX_VALUE))
+        assertEquals(48, roundedWithin(Double.POSITIVE_INFINITY, 16..48))
+        assertEquals(16, roundedWithin(Double.NEGATIVE_INFINITY, 16..48))
+    }
+
+    @Test
     fun `hex colours in both forms the server accepts`() {
         assertEquals(0xFFFFFFFF.toInt(), parseHexColor("#FFF"))
         assertEquals(0xFFFFFFFF.toInt(), parseHexColor("#ffffff"))

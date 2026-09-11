@@ -194,9 +194,7 @@ private fun closeButtonFrom(json: JSONObject?): CloseButtonConfig {
 private fun impressionTrackingFrom(json: JSONObject?): ImpressionTracking {
     val default = ImpressionTracking()
     return ImpressionTracking(
-        minViewablePercent = json.number("min_viewable_pct")
-            ?.coerceIn(0.0, 100.0)
-            ?.roundToInt()
+        minViewablePercent = json.number("min_viewable_pct")?.let { roundedWithin(it, 0..100) }
             ?: default.minViewablePercent,
         minViewableMs = json.millis(
             "min_viewable_seconds",
@@ -234,7 +232,16 @@ private fun JSONObject?.number(key: String): Double? =
 
 /** A number of seconds at [key] as milliseconds within 0..[max], or [default] when there is none. */
 private fun JSONObject?.millis(key: String, default: Long, max: Long): Long =
-    number(key)?.let { (it * 1000).coerceIn(0.0, max.toDouble()).roundToLong() } ?: default
+    number(key)?.let { millisWithin(it, max) } ?: default
 
 private fun JSONObject?.dp(key: String, range: IntRange, default: Int): Int =
-    number(key)?.coerceIn(range.first.toDouble(), range.last.toDouble())?.roundToInt() ?: default
+    number(key)?.let { roundedWithin(it, range) } ?: default
+
+// The clamping, apart from the JSON so it can be tested with infinities: Android's org.json reads
+// the string "Infinity" as a number, while the JVM one the tests run on does not.
+
+internal fun millisWithin(seconds: Double, max: Long): Long =
+    (seconds * 1000).coerceIn(0.0, max.toDouble()).roundToLong()
+
+internal fun roundedWithin(value: Double, range: IntRange): Int =
+    value.coerceIn(range.first.toDouble(), range.last.toDouble()).roundToInt()
