@@ -1,6 +1,6 @@
 package org.bidon.rendering
 
-/** Which renderer a creative needs. */
+/** Which renderer a creative needs. More types may be added. */
 enum class CreativeType {
     HTML,
     MRAID,

@@ -114,14 +114,18 @@ data class CloseButtonConfig internal constructor(
         require(color ushr 24 == 0xFF) { "color must be opaque, was 0x%08X".format(color) }
     }
 
+    /**
+     * The disc or pill behind is black or white, whichever contrasts more with [color]. More
+     * styles may be added.
+     */
     enum class Style {
-        /** A cross on a dark disc. */
+        /** A cross on a disc. */
         ICON_X,
 
-        /** A cross on a dark disc, ringed in the button colour. */
+        /** A cross on a disc, ringed in the button colour. */
         ICON_CIRCLE,
 
-        /** The word "Close" on a dark pill. */
+        /** The word "Close" on a pill. */
         TEXT
     }
 

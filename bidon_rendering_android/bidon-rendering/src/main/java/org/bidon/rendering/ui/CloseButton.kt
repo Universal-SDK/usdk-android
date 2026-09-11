@@ -16,6 +16,7 @@ import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.R
 import kotlin.math.ceil
 import kotlin.math.max
+import kotlin.math.pow
 
 /**
  * The close button of a fullscreen ad, drawn the way the DSP's [CloseButtonConfig] asks.
@@ -134,7 +135,7 @@ internal class CloseButton(
 
     override fun drawableStateChanged() {
         super.drawableStateChanged()
-        // The backdrop darkens while pressed; the colour is picked in onDraw.
+        // The disc deepens while pressed; its colour is picked in onDraw.
         invalidate()
     }
 
@@ -187,18 +188,28 @@ internal class CloseButton(
 }
 
 /**
- * The disc behind the cross or text: dark behind a light colour and light behind a dark one, so
- * whatever colour the DSP picks stands out from it. Deeper while pressed.
+ * The disc behind the cross or text: black or white, whichever contrasts more with the colour the
+ * DSP picked. Mostly opaque, so the creative behind it matters little, and more so while pressed.
  */
 internal fun backdropFor(@ColorInt color: Int, pressed: Boolean): Int {
-    val red = (color shr 16) and 0xFF
-    val green = (color shr 8) and 0xFF
-    val blue = color and 0xFF
-    val isLight = 0.299 * red + 0.587 * green + 0.114 * blue >= 128
-    val alpha = if (pressed) 0xCC else 0x80
-    val shade = if (isLight) 0x000000 else 0xFFFFFF
+    val alpha = if (pressed) 0xE6 else 0xB3
+    val shade = if (relativeLuminance(color) > LUMINANCE_CUTOFF) 0x000000 else 0xFFFFFF
     return (alpha shl 24) or shade
 }
+
+/** WCAG relative luminance: 0 for black, 1 for white. */
+private fun relativeLuminance(@ColorInt color: Int): Double {
+    fun linear(channel: Int): Double {
+        val c = channel / 255.0
+        return if (c <= 0.03928) c / 12.92 else ((c + 0.055) / 1.055).pow(2.4)
+    }
+    return 0.2126 * linear((color shr 16) and 0xFF) +
+        0.7152 * linear((color shr 8) and 0xFF) +
+        0.0722 * linear(color and 0xFF)
+}
+
+// Above this luminance black contrasts more with a colour than white does; below it, white.
+private const val LUMINANCE_CUTOFF = 0.179
 
 private const val STATE_CLOSE_AVAILABLE_AT = "org.bidon.rendering.close_available_at"
 
