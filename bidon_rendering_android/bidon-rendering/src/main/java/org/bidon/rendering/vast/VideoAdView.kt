@@ -10,6 +10,7 @@ import android.view.View
 import android.widget.*
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
+import org.bidon.rendering.RenderingConfig
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.ui.dp
 import org.bidon.rendering.ui.insetFromSafeArea
@@ -35,7 +36,7 @@ class VideoAdView(context: Context) : FrameLayout(context) {
     private val ctaButton: TextView
 
     private var clickThroughUrl: String? = null
-    private var skipOffsetMs = 5000L
+    private var skipOffsetMs = RenderingConfig.DEFAULT_SKIP_OFFSET_MS
     private var skipEnabled = false
 
     init {

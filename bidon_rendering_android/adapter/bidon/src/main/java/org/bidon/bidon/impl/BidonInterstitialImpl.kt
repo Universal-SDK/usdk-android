@@ -5,9 +5,10 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableSharedFlow
 import org.bidon.bidon.BidonDemandId
 import org.bidon.bidon.BidonFullscreenAuctionParams
-import org.bidon.bidon.creativeTypeOf
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.BidonRenderer
+import org.bidon.rendering.CreativeType
+import org.bidon.rendering.RenderingConfig
 import org.bidon.sdk.adapter.AdAuctionParamSource
 import org.bidon.sdk.adapter.AdAuctionParams
 import org.bidon.sdk.adapter.AdEvent
@@ -43,23 +44,24 @@ internal class BidonInterstitialImpl :
         val ext = adUnit.extra
 
         val adm = ext?.optString("payload").orEmpty()
-        val crtype = creativeTypeOf(adm)
+        val rendering = RenderingConfig.fromJson(ext?.optJSONObject("rendering"))
 
         BidonFullscreenAuctionParams(
             activity = activity,
             adm = adm,
-            crtype = crtype,
+            creativeType = CreativeType.of(adm, rendering),
+            rendering = rendering,
             price = adUnit.pricefloor,
             adUnit = adUnit
         )
     }
 
     override fun load(adParams: BidonFullscreenAuctionParams) {
-        Log.d(TAG, "load() crtype=${adParams.crtype}")
+        Log.d(TAG, "load() creativeType=${adParams.creativeType}")
 
         val ad = getAd()
 
-        renderer = BidonRenderer.createRendererByType(adParams.crtype)
+        renderer = BidonRenderer.createRenderer(adParams.creativeType, adParams.rendering)
         renderer?.load(adParams.adm, object : AdRenderer.Listener {
             override fun onLoaded() {
                 Log.d(TAG, "Ad loaded")

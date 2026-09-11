@@ -48,31 +48,31 @@ object BidonRenderer {
     private fun isHostAppDebuggable(): Boolean =
         (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
-    fun createRendererByType(crtype: String): AdRenderer {
+    /**
+     * A renderer for one ad. [rendering] is the DSP's config for this bid; one renderer shows one
+     * ad, so it keeps that config for its whole life. Without one it uses the server's defaults.
+     */
+    fun createRenderer(
+        type: CreativeType,
+        rendering: RenderingConfig = RenderingConfig()
+    ): AdRenderer {
         ensureInitialized()
 
-        return when (crtype.uppercase()) {
-            "HTML"  -> HtmlRenderer(appContext)
-            "VAST"  -> VastRenderer(appContext)
-            "MRAID" -> MraidRenderer(appContext)
-            else    -> HtmlRenderer(appContext)
+        return when (type) {
+            CreativeType.HTML -> HtmlRenderer(appContext, rendering)
+            CreativeType.VAST -> VastRenderer(appContext, rendering)
+            CreativeType.MRAID -> MraidRenderer(appContext, rendering)
         }
     }
 
-    fun createHtmlRenderer(): AdRenderer {
-        ensureInitialized()
-        return HtmlRenderer(appContext)
-    }
+    fun createHtmlRenderer(rendering: RenderingConfig = RenderingConfig()): AdRenderer =
+        createRenderer(CreativeType.HTML, rendering)
 
-    fun createVastRenderer(): AdRenderer {
-        ensureInitialized()
-        return VastRenderer(appContext)
-    }
+    fun createVastRenderer(rendering: RenderingConfig = RenderingConfig()): AdRenderer =
+        createRenderer(CreativeType.VAST, rendering)
 
-    fun createMraidRenderer(): AdRenderer {
-        ensureInitialized()
-        return MraidRenderer(appContext)
-    }
+    fun createMraidRenderer(rendering: RenderingConfig = RenderingConfig()): AdRenderer =
+        createRenderer(CreativeType.MRAID, rendering)
 
     private fun ensureInitialized() {
         check(isInitialized) {

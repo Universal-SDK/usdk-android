@@ -82,7 +82,7 @@ class FullscreenAdActivity : AppCompatActivity() {
         // The creative may run under the notch and the system bars. The close button may not.
         closeButton!!.insetFromSafeArea(AdWindow.CONTROL_MARGIN_DP)
 
-        val delayMs = ad.closeDelayMs
+        val delayMs = ad.closeButton.delayMs
         if (delayMs > 0) {
             closeButton?.postDelayed(allowCloseRunnable, delayMs)
         } else {

@@ -11,7 +11,7 @@ class PresentedAdsTest {
 
     private fun stub() = object : PresentedAd {
         override val contentView: View? get() = null
-        override val closeDelayMs: Long get() = 0L
+        override val closeButton: CloseButtonConfig get() = CloseButtonConfig()
         override val lockedOrientation: Int get() = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         override var closeRequester: (() -> Unit)? = null
         override fun onImpression() = Unit

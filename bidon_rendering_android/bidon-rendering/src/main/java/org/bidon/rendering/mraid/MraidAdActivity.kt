@@ -92,7 +92,7 @@ class MraidAdActivity : AppCompatActivity() {
         // Was missing entirely here: the close button could sit under a notch or gesture bar.
         closeButton!!.insetFromSafeArea(AdWindow.CONTROL_MARGIN_DP)
 
-        val delayMs = ad.closeDelayMs
+        val delayMs = ad.closeButton.delayMs
         if (delayMs > 0) {
             closeButton?.postDelayed(allowCloseRunnable, delayMs)
         } else {
