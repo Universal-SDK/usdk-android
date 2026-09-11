@@ -1,7 +1,7 @@
 package org.bidon.rendering.ui
 
 import android.os.Bundle
-import android.view.Gravity
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -21,15 +21,9 @@ class FullscreenAdActivity : AppCompatActivity() {
     private var presentationKey: String? = null
     private var presentation: PresentedAd? = null
     private var adView: View? = null
-    private var closeButton: CloseButton? = null
 
     private var impressionReported = false
     private var closeAllowed = false
-
-    private val allowCloseRunnable = Runnable {
-        closeAllowed = true
-        closeButton?.visibility = View.VISIBLE
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,28 +61,15 @@ class FullscreenAdActivity : AppCompatActivity() {
         root.addView(view)
         adView = view
 
-        closeButton = CloseButton(this).apply {
-            visibility = View.GONE
-            layoutParams = FrameLayout.LayoutParams(
-                dp(AdWindow.TOUCH_TARGET_DP),
-                dp(AdWindow.TOUCH_TARGET_DP)
-            ).apply {
-                gravity = Gravity.TOP or Gravity.END
-            }
-            onClick = { finish() }
-        }
-        root.addView(closeButton!!)
+        val closeButton = CloseButton(this, ad.closeButton).apply { onClick = { finish() } }
+        root.addView(closeButton, closeButton.cornerLayoutParams())
 
         // The creative may run under the notch and the system bars. The close button may not.
-        closeButton!!.insetFromSafeArea(AdWindow.CONTROL_MARGIN_DP)
+        closeButton.insetFromSafeArea(ad.closeButton.paddingDp)
 
-        val delayMs = ad.closeButton.delayMs
-        if (delayMs > 0) {
-            closeButton?.postDelayed(allowCloseRunnable, delayMs)
-        } else {
-            allowCloseRunnable.run()
+        closeButton.becomeAvailableAt(SystemClock.elapsedRealtime() + ad.closeButton.delayMs) {
+            closeAllowed = true
         }
-
     }
 
     override fun onResume() {
@@ -104,13 +85,10 @@ class FullscreenAdActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
 
-        closeButton?.removeCallbacks(allowCloseRunnable)
-
         // Detach but never destroy: the WebView belongs to the renderer, which reuses it if the
         // ad is shown again and tears it down in its own destroy().
         (adView?.parent as? ViewGroup)?.removeView(adView)
         adView = null
-        closeButton = null
 
         if (isFinishing) {
             presentation?.onClosed()
