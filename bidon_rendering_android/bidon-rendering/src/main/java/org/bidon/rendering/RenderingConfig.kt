@@ -23,9 +23,9 @@ data class RenderingConfig(
     val skipOffsetMs: Long = DEFAULT_SKIP_OFFSET_MS,
 
     /**
-     * The creative type the DSP declared, or null if it declared none. The server fills in
-     * `static_image` when the DSP says nothing, so that value counts as none, and so do the types
-     * no renderer here handles.
+     * The creative type the DSP declared, when it is one that settles what the markup cannot:
+     * HTML or MRAID. VAST markup is recognised on its own. The server fills in `static_image` when
+     * the DSP says nothing, so that value counts as none, and so does anything else.
      */
     val declaredCreativeType: CreativeType? = null,
 
@@ -200,7 +200,6 @@ private fun impressionTrackingFrom(json: JSONObject?): ImpressionTracking {
 }
 
 private fun declaredTypeOf(type: String): CreativeType? = when (type) {
-    "vast" -> CreativeType.VAST
     "mraid" -> CreativeType.MRAID
     "html" -> CreativeType.HTML
     else -> null

@@ -10,12 +10,9 @@ enum class CreativeType {
         /**
          * The type to render [adm] as.
          *
-         * VAST markup is always video, since no other renderer can show it. Otherwise the type the
-         * DSP declared wins: the markup alone cannot tell an MRAID creative from HTML that merely
-         * mentions mraid.js. With nothing declared, the markup is the only evidence left.
-         *
-         * A declared VAST that is not VAST markup still goes to the VAST renderer. It fails to
-         * parse there and is reported as an error, rather than being shown as a web page.
+         * VAST markup is always video, since no other renderer can show it. Otherwise a declared
+         * HTML or MRAID type wins: the markup alone cannot tell an MRAID creative from HTML that
+         * merely mentions mraid.js. With nothing declared, the markup is the only evidence left.
          */
         fun of(adm: String, rendering: RenderingConfig): CreativeType {
             val declared = rendering.declaredCreativeType

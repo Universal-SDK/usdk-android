@@ -1,5 +1,6 @@
 package org.bidon.rendering
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -87,9 +88,11 @@ class CreativeTypeTest {
     }
 
     @Test
-    fun `a declared vast that is not vast markup still goes to the vast renderer`() {
-        // Its parser rejects the markup and the failure is reported, instead of the markup being
-        // shown as a web page.
-        assertEquals(CreativeType.VAST, CreativeType.of("<div/>", declared(CreativeType.VAST)))
+    fun `a bid declaring vast is routed by its markup`() {
+        // VAST markup is recognised on its own, so a declared vast adds nothing. Markup that is not
+        // VAST must not be sent to the video renderer only to fail there.
+        val declaredVast = RenderingConfig.fromJson(JSONObject("""{ "creative": { "type": "vast" } }"""))
+        assertEquals(CreativeType.HTML, CreativeType.of("<div/>", declaredVast))
+        assertEquals(CreativeType.MRAID, CreativeType.of("<script src=\"mraid.js\"></script>", declaredVast))
     }
 }

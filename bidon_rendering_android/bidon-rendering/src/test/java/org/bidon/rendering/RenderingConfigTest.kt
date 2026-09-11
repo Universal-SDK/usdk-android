@@ -147,11 +147,11 @@ class RenderingConfigTest {
     }
 
     @Test
-    fun `only types a renderer handles count as declared`() {
+    fun `only html and mraid count as declared`() {
         fun declared(type: String) =
             parse("""{ "creative": { "type": "$type" } }""").declaredCreativeType
 
-        assertEquals(CreativeType.VAST, declared("vast"))
+        assertNull(declared("vast"))
         assertEquals(CreativeType.MRAID, declared("mraid"))
         assertEquals(CreativeType.HTML, declared("html"))
         assertNull(declared("static_image"))
