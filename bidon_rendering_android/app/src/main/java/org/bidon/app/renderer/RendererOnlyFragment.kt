@@ -7,6 +7,8 @@ import com.demo.tetris.R
 import com.demo.tetris.databinding.FragmentRendererOnlyBinding
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.BidonRenderer
+import org.bidon.rendering.CloseButtonConfig
+import org.bidon.rendering.RenderingConfig
 
 /**
  * The renderer on its own, with hardcoded creatives pasted straight in.
@@ -31,6 +33,27 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
     private var isVastLoaded = false
     private var isMraidLoaded = false
     private var isMraidInterstitialLoaded = false
+
+    // Stand-ins for the rendering config a DSP sends with its bid, so the close button options
+    // can be seen without an auction.
+    private val ringedButtonTopLeft = RenderingConfig(
+        closeButton = CloseButtonConfig(
+            delayMs = 8_000,
+            style = CloseButtonConfig.Style.ICON_CIRCLE,
+            sizeDp = 36,
+            position = CloseButtonConfig.Position.TOP_LEFT,
+            color = 0xFFFFD600.toInt(),
+            opacity = 1f,
+            paddingDp = 16
+        )
+    )
+
+    private val textButtonBottomRight = RenderingConfig(
+        closeButton = CloseButtonConfig(
+            style = CloseButtonConfig.Style.TEXT,
+            position = CloseButtonConfig.Position.BOTTOM_RIGHT
+        )
+    )
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -146,7 +169,7 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
     // ---------------- INTERSTITIAL ----------------
 
     private fun loadInterstitial() {
-        interstitialRenderer = BidonRenderer.createHtmlRenderer()
+        interstitialRenderer = BidonRenderer.createHtmlRenderer(ringedButtonTopLeft)
 
 
 
@@ -315,7 +338,7 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
     // ---------------- MRAID INTERSTITIAL ----------------
 
     private fun loadMraidInterstitial() {
-        mraidInterstitialRenderer = BidonRenderer.createMraidRenderer()
+        mraidInterstitialRenderer = BidonRenderer.createMraidRenderer(textButtonBottomRight)
         val mraidHtml = """
             <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><title>Ad</title></head><body><script src='mraid.js'></script> <script> var BASE_URL = 'https://cdn-ww.adikteev.com/craftsman/Hbz20iChA9f/48d6033c9db4d7d03c7b16a472364a49585b8bd3/'; var AK_CLICK_DESTINATION_URL = (false && 'android' === 'ios') ? 'https://www.adikteev.com?cr=48d6033c9db4d7d03c7b16a472364a49585b8bd3' : 'https://click-geo.adikteev.com/v1/click?user_id=&bidrequest_id=019eca06-aca2-70bf-91c0-e6527b83b55e&creativeGroupId=178040&impression_id=Lnh-L2_zidqFF-yklqcnP2&android_id=27ea682c281e7dc4fb8e2291c811a7c4b26b93a3&deviceId=27ea682c281e7dc4fb8e2291c811a7c4b26b93a3&supplier=344&campaign=52300&creativeId=525852&expires=1781649895&signature=6wJJxoLbM52bHtCCjTtk8TCGWNbKCgt0siW8WzSl_v4&adSession=yg6L9wP0-klQUtjZxkUQxe&h=480&w=320&crAlgorithm=&device_model=Google+Pixel+3&ip_addr=94.24.105.28&osv=12&supplier_name=appodeal&publisherAppId=com.demo.tetris&creativeGroupName=Auto_Test_CreativeGroup&ak_protocol_version=ak_bidder&country=ESP&creativeName=48d6033c9db4d7d03c7b16a472364a49585b8bd3&creativeType=creative_mraid_banner&os_raw=android&user_agent=TW96aWxsYS81LjAgKExpbnV4OyBBbmRyb2lkIDEyOyBQaXhlbCAzIEJ1aWxkL1NQMUEuMjEwODEyLjAxNi5DMTsgd3YpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIFZlcnNpb24vNC4wIENocm9tZS8xMTQuMC41NzM1LjEzMSBNb2JpbGUgU2FmYXJpLzUzNy4zNg&zip=30600&country_a2=ES&retina=0&algorithm=&bid_on=0&city=archena&device_type=4&android_id_plain=013b8c47-8beb-41b4-aefe-60fe466f9fd8&ch=mobile&os=android'; var AK_CLICK_PIXEL_URL = (false && 'android' === 'ios') ? 'https://click-geo.adikteev.com/v1/click?android_id=27ea682c281e7dc4fb8e2291c811a7c4b26b93a3&creativeGroupId=178040&user_id=&campaign=52300&deviceId=27ea682c281e7dc4fb8e2291c811a7c4b26b93a3&impression_id=Lnh-L2_zidqFF-yklqcnP2&creativeId=525852&supplier=344&bidrequest_id=019eca06-aca2-70bf-91c0-e6527b83b55e&expires=1781649895&signature=vhx_N3FEfWmhyrQ4H9JsjulJxMhyuyBPSPyYI0ycYtg&device_model=Google+Pixel+3&android_id_plain=013b8c47-8beb-41b4-aefe-60fe466f9fd8&creativeGroupName=Auto_Test_CreativeGroup&device_type=4&bid_on=0&country_a2=ES&city=archena&country=ESP&noredirect=1&osv=12&retina=0&zip=30600&crAlgorithm=&creativeType=creative_mraid_banner&h=480&os_raw=android&user_agent=TW96aWxsYS81LjAgKExpbnV4OyBBbmRyb2lkIDEyOyBQaXhlbCAzIEJ1aWxkL1NQMUEuMjEwODEyLjAxNi5DMTsgd3YpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIFZlcnNpb24vNC4wIENocm9tZS8xMTQuMC41NzM1LjEzMSBNb2JpbGUgU2FmYXJpLzUzNy4zNg&adSession=yg6L9wP0-klQUtjZxkUQxe&os=android&w=320&ch=mobile&creativeName=48d6033c9db4d7d03c7b16a472364a49585b8bd3&ip_addr=94.24.105.28&publisherAppId=com.demo.tetris&algorithm=&click_id=jHRnwPzXM02mXdx3pX1Fao&supplier_name=appodeal&ak_protocol_version=ak_bidder' : undefined; </script> <script src='https://cdn-ww.adikteev.com/craftsman/Hbz20iChA9f/48d6033c9db4d7d03c7b16a472364a49585b8bd3/playable.js'></script><img src="https://impression-eu.adikteev.com/3.0?adSession=yg6L9wP0-klQUtjZxkUQxe&ak_protocol_version=ak_bidder&algorithm=&android_id=27ea682c281e7dc4fb8e2291c811a7c4b26b93a3&android_id_plain=013b8c47-8beb-41b4-aefe-60fe466f9fd8&bid_on=0&bidrequest_id=019eca06-aca2-70bf-91c0-e6527b83b55e&campaign=52300&ch=mobile&city=archena&click_id=jHRnwPzXM02mXdx3pX1Fao&client_cpm_usd=8D9BA29CD83FBB83239D350A2B9B45EAC9E41C8443295193&connection_type=wifi&country=ESP&country_a2=ES&crAlgorithm=&creativeGroupId=178040&creativeGroupName=Auto_Test_CreativeGroup&creativeId=525852&creativeName=48d6033c9db4d7d03c7b16a472364a49585b8bd3&creativeType=creative_mraid_banner&deviceFamily=android&deviceId=27ea682c281e7dc4fb8e2291c811a7c4b26b93a3&device_model=Google+Pixel+3&device_name=Google+Google+Pixel+3&device_type=4&fm=0&h=480&impression_id=Lnh-L2_zidqFF-yklqcnP2&ip_addr=94.24.105.28&os=android&os_raw=android&osv=12&publisherAppId=com.demo.tetris&rbm=1.01&retina=0&s2s=1&supplier=344&supplier_name=appodeal&ts=1781505895&user_agent=TW96aWxsYS81LjAgKExpbnV4OyBBbmRyb2lkIDEyOyBQaXhlbCAzIEJ1aWxkL1NQMUEuMjEwODEyLjAxNi5DMTsgd3YpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIFZlcnNpb24vNC4wIENocm9tZS8xMTQuMC41NzM1LjEzMSBNb2JpbGUgU2FmYXJpLzUzNy4zNg&user_id=&w=320&zip=30600&cpm=${'$'}{AUCTION_PRICE}" style="display:none;"/></body></html>
         """.trimIndent()
