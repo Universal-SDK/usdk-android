@@ -9,9 +9,11 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
+import android.widget.Button
 import android.widget.FrameLayout
 import androidx.annotation.ColorInt
 import org.bidon.rendering.CloseButtonConfig
+import org.bidon.rendering.R
 import kotlin.math.ceil
 import kotlin.math.max
 
@@ -46,6 +48,7 @@ internal class CloseButton(
         isFakeBoldText = true
     }
 
+    private val label = context.getString(R.string.bidon_rendering_close)
     private val shapeHeight = dp(config.sizeDp).toFloat()
     private val shapeWidth: Float
     private val shape = RectF()
@@ -57,11 +60,12 @@ internal class CloseButton(
 
     init {
         alpha = config.opacity
-        contentDescription = "Close ad"
+        contentDescription = context.getString(R.string.bidon_rendering_close_ad)
+        isFocusable = true
         strokePaint.strokeWidth = shapeHeight * STROKE_RATIO
         textPaint.textSize = shapeHeight * TEXT_SIZE_RATIO
         shapeWidth = when (config.style) {
-            CloseButtonConfig.Style.TEXT -> textPaint.measureText(LABEL) + shapeHeight
+            CloseButtonConfig.Style.TEXT -> textPaint.measureText(label) + shapeHeight
             else -> shapeHeight
         }
 
@@ -117,6 +121,9 @@ internal class CloseButton(
         super.onDetachedFromWindow()
     }
 
+    // Announced as a button by screen readers, not as a bare view.
+    override fun getAccessibilityClassName(): CharSequence = Button::class.java.name
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val touchTarget = dp(AdWindow.TOUCH_TARGET_DP).toFloat()
         setMeasuredDimension(
@@ -146,7 +153,7 @@ internal class CloseButton(
 
         when {
             secondsLeft > 0 -> drawCentred(canvas, secondsLeft.toString())
-            config.style == CloseButtonConfig.Style.TEXT -> drawCentred(canvas, LABEL)
+            config.style == CloseButtonConfig.Style.TEXT -> drawCentred(canvas, label)
             else -> {
                 drawCross(canvas)
                 if (config.style == CloseButtonConfig.Style.ICON_CIRCLE) {
@@ -171,7 +178,6 @@ internal class CloseButton(
     }
 
     private companion object {
-        const val LABEL = "Close"
 
         /** The cross spans half the button, the stroke an eighth of it: the look it had before. */
         const val CROSS_RATIO = 0.5f

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Drawn on the close button when the DSP asks for a text button. -->
+    <string name="bidon_rendering_close">Close</string>
+    <!-- What screen readers say for the close button of a fullscreen ad. -->
+    <string name="bidon_rendering_close_ad">Close ad</string>
+</resources>
