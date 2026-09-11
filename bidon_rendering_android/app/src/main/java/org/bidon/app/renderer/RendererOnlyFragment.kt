@@ -7,7 +7,6 @@ import com.demo.tetris.R
 import com.demo.tetris.databinding.FragmentRendererOnlyBinding
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.BidonRenderer
-import org.bidon.rendering.tracking.TrackingDispatcher
 
 /**
  * The renderer on its own, with hardcoded creatives pasted straight in.
@@ -127,13 +126,9 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
 """.trimIndent()
 
         bannerRenderer?.load(adm = html, listener = object : AdRenderer.Listener {
-            override fun onLoaded() { isBannerLoaded = true; binding.btnShowHtmlBanner.isEnabled = true
-                TrackingDispatcher.fire("https://wikimedia.org", "nurl")
-            }
+            override fun onLoaded() { isBannerLoaded = true; binding.btnShowHtmlBanner.isEnabled = true }
 
-            override fun onImpression() { 
-                TrackingDispatcher.fire("https://wikimedia.org", "burl")
-            }
+            override fun onImpression() { }
             override fun onClick() { }
             override fun onClose() { }
             override fun onReward() { }
@@ -218,11 +213,8 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
 """.trimIndent()
 
         interstitialRenderer?.load(adm = html, listener = object : AdRenderer.Listener {
-            override fun onLoaded() { isInterstitialLoaded = true; binding.btnShowHtmlInterstitial.isEnabled = true
-                TrackingDispatcher.fire("https://httpbin.org/get?pixel=nurl&test=true", "nurl")
-            }
-            override fun onImpression() {
-                TrackingDispatcher.fire("https://httpbin.org/get?pixel=burl&test=true", "burl")}
+            override fun onLoaded() { isInterstitialLoaded = true; binding.btnShowHtmlInterstitial.isEnabled = true }
+            override fun onImpression() { }
             override fun onClick() { }
             override fun onClose() { }
             override fun onReward() { }
@@ -244,12 +236,8 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
         """.trimIndent()
         vastRenderer = BidonRenderer.createVastRenderer()
         vastRenderer?.load(adm = vastXml, listener = object : AdRenderer.Listener {
-            override fun onLoaded() { isVastLoaded = true; binding.btnShowVast.isEnabled = true
-                TrackingDispatcher.fire("https://httpbin.org/get?pixel=nurl&test=true", "nurl")
-            }
-            override fun onImpression() { 
-                TrackingDispatcher.fire("https://httpbin.org/get?pixel=burl&test=true", "burl")
-            }
+            override fun onLoaded() { isVastLoaded = true; binding.btnShowVast.isEnabled = true }
+            override fun onImpression() { }
             override fun onClick() { }
             override fun onClose() { }
             override fun onReward() { }
@@ -308,12 +296,8 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
         """.trimIndent()
 
         mraidRenderer?.load(adm = mraidHtml, listener = object : AdRenderer.Listener {
-            override fun onLoaded() { isMraidLoaded = true; binding.btnShowMraidBanner.isEnabled = true
-                TrackingDispatcher.fire("https://httpbin.org/get?pixel=nurl&test=true", "nurl")
-            }
-            override fun onImpression() { 
-                TrackingDispatcher.fire("https://httpbin.org/get?pixel=burl&test=true", "burl")
-            }
+            override fun onLoaded() { isMraidLoaded = true; binding.btnShowMraidBanner.isEnabled = true }
+            override fun onImpression() { }
             override fun onClick() { }
             override fun onClose() { }
             override fun onReward() { }
@@ -337,12 +321,8 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
         """.trimIndent()
 
         mraidInterstitialRenderer?.load(adm = mraidHtml, listener = object : AdRenderer.Listener {
-            override fun onLoaded() { isMraidInterstitialLoaded = true; binding.btnShowMraidInterstitial.isEnabled = true
-                TrackingDispatcher.fire("https://httpbin.org/get?pixel=nurl&test=true", "nurl")
-            }
-            override fun onImpression() { 
-                TrackingDispatcher.fire("https://httpbin.org/get?pixel=burl&test=true", "burl")
-            }
+            override fun onLoaded() { isMraidInterstitialLoaded = true; binding.btnShowMraidInterstitial.isEnabled = true }
+            override fun onImpression() { }
             override fun onClick() { }
             override fun onClose() { }
             override fun onReward() { }

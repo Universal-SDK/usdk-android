@@ -8,7 +8,6 @@ import org.bidon.bidon.BidonDemandId
 import org.bidon.bidon.creativeTypeOf
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.BidonRenderer
-import org.bidon.rendering.tracking.TrackingDispatcher
 import org.bidon.sdk.adapter.AdAuctionParamSource
 import org.bidon.sdk.adapter.AdAuctionParams
 import org.bidon.sdk.adapter.AdEvent
@@ -37,7 +36,6 @@ internal class BidonBannerImpl :
     override var isAdReadyToShow: Boolean = false
 
     private var renderer: AdRenderer? = null
-    private var pendingBurl: String? = null
     private var isImpressionSent = false
 
     override fun getAuctionParam(
@@ -47,15 +45,11 @@ internal class BidonBannerImpl :
 
         val adm = ext?.optString("payload").orEmpty()
         val crtype = creativeTypeOf(adm)
-        val nurl = ext?.optString("nurl")?.ifBlank { null }
-        val burl = ext?.optString("burl")?.ifBlank { null }
 
         BidonBannerAuctionParams(
             activity = activity,
             adm = adm,
             crtype = crtype,
-            nurl = nurl,
-            burl = burl,
             price = adUnit.pricefloor,
             adUnit = adUnit
         )
@@ -63,13 +57,6 @@ internal class BidonBannerImpl :
 
     override fun load(adParams: BidonBannerAuctionParams) {
         Log.d(TAG, "load() crtype=${adParams.crtype}")
-
-        pendingBurl = adParams.burl
-
-        adParams.nurl?.let {
-            Log.d(TAG, "Firing nurl")
-            TrackingDispatcher.fire(it, "nurl")
-        }
 
         val ad = getAd()
 
@@ -84,10 +71,6 @@ internal class BidonBannerImpl :
             override fun onImpression() {
                 if (!isImpressionSent) {
                     isImpressionSent = true
-                    pendingBurl?.let {
-                        Log.d(TAG, "Firing burl")
-                        TrackingDispatcher.fire(it, "burl")
-                    }
                     ad?.let { emitEvent(AdEvent.Shown(it)) }
                 }
             }
@@ -118,7 +101,6 @@ internal class BidonBannerImpl :
     override fun destroy() {
         renderer?.destroy()
         renderer = null
-        pendingBurl = null
         isAdReadyToShow = false
         isImpressionSent = false
     }
