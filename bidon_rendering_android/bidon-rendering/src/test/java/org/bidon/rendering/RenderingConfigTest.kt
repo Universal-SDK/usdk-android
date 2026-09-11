@@ -192,6 +192,7 @@ class RenderingConfigTest {
     fun `a config built in code cannot bypass the limits`() {
         assertThrows(IllegalArgumentException::class.java) { CloseButtonConfig(delayMs = 30_001) }
         assertThrows(IllegalArgumentException::class.java) { CloseButtonConfig(opacity = 0.1f) }
+        assertThrows(IllegalArgumentException::class.java) { CloseButtonConfig(opacity = Float.NaN) }
         assertThrows(IllegalArgumentException::class.java) { CloseButtonConfig(sizeDp = 100) }
         assertThrows(IllegalArgumentException::class.java) { CloseButtonConfig(color = 0x80FFFFFF.toInt()) }
         assertThrows(IllegalArgumentException::class.java) { RenderingConfig(skipOffsetMs = -1) }

@@ -1,5 +1,6 @@
 package org.bidon.rendering
 
+import androidx.annotation.ColorInt
 import org.json.JSONObject
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
@@ -12,8 +13,13 @@ import kotlin.math.roundToLong
  *
  * Only the settings the renderer acts on are modelled. The server's object carries more (end
  * cards, store kit, background and so on), and those are ignored until something renders them.
+ *
+ * A host gets one only from [fromJson]. The constructors stay inside the library, so a field can
+ * be added without breaking a host built against an older version, and nothing outside can get
+ * past the limits.
  */
-data class RenderingConfig(
+@ConsistentCopyVisibility
+data class RenderingConfig internal constructor(
     val closeButton: CloseButtonConfig = CloseButtonConfig(),
 
     /**
@@ -27,9 +33,9 @@ data class RenderingConfig(
      * HTML or MRAID. VAST markup is recognised on its own. The server fills in `static_image` when
      * the DSP says nothing, so that value counts as none, and so does anything else.
      */
-    val declaredCreativeType: CreativeType? = null,
+    internal val declaredCreativeType: CreativeType? = null,
 
-    val impressionTracking: ImpressionTracking = ImpressionTracking()
+    internal val impressionTracking: ImpressionTracking = ImpressionTracking()
 ) {
     init {
         require(skipOffsetMs >= 0) { "skipOffsetMs must not be negative, was $skipOffsetMs" }
@@ -72,7 +78,8 @@ data class RenderingConfig(
  * policy and the MRAID spec, so the limits below keep the button reachable and visible whatever
  * the DSP asks for.
  */
-data class CloseButtonConfig(
+@ConsistentCopyVisibility
+data class CloseButtonConfig internal constructor(
     /** How long after the ad appears before the button can be used. */
     val delayMs: Long = 5_000,
 
@@ -87,7 +94,7 @@ data class CloseButtonConfig(
     val position: Position = Position.TOP_RIGHT,
 
     /** Colour of the cross, ring or text, as an opaque ARGB int. */
-    val color: Int = 0xFFFFFFFF.toInt(),
+    @ColorInt val color: Int = 0xFFFFFFFF.toInt(),
 
     /** Opacity of the whole button. */
     val opacity: Float = 0.9f,
@@ -104,7 +111,7 @@ data class CloseButtonConfig(
         require(paddingDp in 0..MAX_PADDING_DP) {
             "paddingDp must be within 0..$MAX_PADDING_DP, was $paddingDp"
         }
-        require(color ushr 24 == 0xFF) { "color must be opaque" }
+        require(color ushr 24 == 0xFF) { "color must be opaque, was 0x%08X".format(color) }
     }
 
     enum class Style {
@@ -134,7 +141,7 @@ data class CloseButtonConfig(
  * When an impression counts as viewable. Carried for viewability-gated impressions (BID-52);
  * nothing acts on it yet.
  */
-data class ImpressionTracking(
+internal data class ImpressionTracking(
     val minViewablePercent: Int = 50,
     val minViewableMs: Long = 1_000
 ) {

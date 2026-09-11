@@ -7,8 +7,8 @@ import com.demo.tetris.R
 import com.demo.tetris.databinding.FragmentRendererOnlyBinding
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.BidonRenderer
-import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.RenderingConfig
+import org.json.JSONObject
 
 /**
  * The renderer on its own, with hardcoded creatives pasted straight in.
@@ -36,23 +36,21 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
 
     // Stand-ins for the rendering config a DSP sends with its bid, so the close button options
     // can be seen without an auction.
-    private val ringedButtonTopLeft = RenderingConfig(
-        closeButton = CloseButtonConfig(
-            delayMs = 8_000,
-            style = CloseButtonConfig.Style.ICON_CIRCLE,
-            sizeDp = 36,
-            position = CloseButtonConfig.Position.TOP_LEFT,
-            color = 0xFFFFD600.toInt(),
-            opacity = 1f,
-            paddingDp = 16
+    private val ringedButtonTopLeft = RenderingConfig.fromJson(
+        JSONObject(
+            """
+            {
+              "close_button": {
+                "delay_seconds": 8, "style": "icon_circle", "size_dp": 36, "position": "top_left",
+                "color": "#FFD600", "opacity": 1, "padding_dp": 16
+              }
+            }
+            """
         )
     )
 
-    private val textButtonBottomRight = RenderingConfig(
-        closeButton = CloseButtonConfig(
-            style = CloseButtonConfig.Style.TEXT,
-            position = CloseButtonConfig.Position.BOTTOM_RIGHT
-        )
+    private val textButtonBottomRight = RenderingConfig.fromJson(
+        JSONObject("""{ "close_button": { "style": "text_close", "position": "bottom_right" } }""")
     )
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
