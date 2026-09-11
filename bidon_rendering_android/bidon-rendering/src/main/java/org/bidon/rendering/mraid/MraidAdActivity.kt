@@ -81,8 +81,9 @@ class MraidAdActivity : AppCompatActivity() {
         // Was missing entirely here: the close button could sit under a notch or gesture bar.
         closeButton.insetFromSafeArea(marginDp = 0)
 
-        // Rotation is locked, but a theme, language, font size or window size change still
-        // recreates this activity. The countdown carries on rather than starting over.
+        // Rotation is locked and size changes are handled in place, but a theme, language, font
+        // size or display density change still recreates this activity. The countdown carries on
+        // rather than starting over.
         closeAvailableAtMs = savedInstanceState?.closeAvailableAtMs()
             ?: (SystemClock.elapsedRealtime() + ad.closeButton.delayMs)
         closeButton.becomeAvailableAt(closeAvailableAtMs) {
