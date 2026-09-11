@@ -25,6 +25,9 @@ class FullscreenAdActivity : AppCompatActivity() {
     private var impressionReported = false
     private var closeAllowed = false
 
+    /** When the close button becomes usable, kept so a recreated activity carries on counting. */
+    private var closeAvailableAtMs = 0L
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -67,9 +70,18 @@ class FullscreenAdActivity : AppCompatActivity() {
         // The creative may run under the notch and the system bars. The close button may not.
         closeButton.insetFromSafeArea(ad.closeButton.paddingDp)
 
-        closeButton.becomeAvailableAt(SystemClock.elapsedRealtime() + ad.closeButton.delayMs) {
+        // Rotation is locked, but a theme, language, font size or window size change still
+        // recreates this activity. The countdown carries on rather than starting over.
+        closeAvailableAtMs = savedInstanceState?.closeAvailableAtMs()
+            ?: (SystemClock.elapsedRealtime() + ad.closeButton.delayMs)
+        closeButton.becomeAvailableAt(closeAvailableAtMs) {
             closeAllowed = true
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putCloseAvailableAtMs(closeAvailableAtMs)
     }
 
     override fun onResume() {

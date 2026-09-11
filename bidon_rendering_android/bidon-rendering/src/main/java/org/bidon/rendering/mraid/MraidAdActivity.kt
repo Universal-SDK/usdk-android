@@ -11,7 +11,9 @@ import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.ui.CloseButton
+import org.bidon.rendering.ui.closeAvailableAtMs
 import org.bidon.rendering.ui.insetFromSafeArea
+import org.bidon.rendering.ui.putCloseAvailableAtMs
 
 /**
  * Hosts a fullscreen MRAID creative.
@@ -28,6 +30,9 @@ class MraidAdActivity : AppCompatActivity() {
 
     private var impressionReported = false
     private var closeAllowed = false
+
+    /** When the close button becomes usable, kept so a recreated activity carries on counting. */
+    private var closeAvailableAtMs = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -76,9 +81,18 @@ class MraidAdActivity : AppCompatActivity() {
         // Was missing entirely here: the close button could sit under a notch or gesture bar.
         closeButton.insetFromSafeArea(ad.closeButton.paddingDp)
 
-        closeButton.becomeAvailableAt(SystemClock.elapsedRealtime() + ad.closeButton.delayMs) {
+        // Rotation is locked, but a theme, language, font size or window size change still
+        // recreates this activity. The countdown carries on rather than starting over.
+        closeAvailableAtMs = savedInstanceState?.closeAvailableAtMs()
+            ?: (SystemClock.elapsedRealtime() + ad.closeButton.delayMs)
+        closeButton.becomeAvailableAt(closeAvailableAtMs) {
             closeAllowed = true
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putCloseAvailableAtMs(closeAvailableAtMs)
     }
 
     override fun onResume() {

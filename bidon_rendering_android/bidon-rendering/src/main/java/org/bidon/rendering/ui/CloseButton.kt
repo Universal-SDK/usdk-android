@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
@@ -178,6 +179,15 @@ internal class CloseButton(
         const val TEXT_SIZE_RATIO = 0.45f
     }
 }
+
+private const val STATE_CLOSE_AVAILABLE_AT = "org.bidon.rendering.close_available_at"
+
+/** When the close button of the activity this state was saved from becomes usable, if saved. */
+internal fun Bundle.closeAvailableAtMs(): Long? =
+    if (containsKey(STATE_CLOSE_AVAILABLE_AT)) getLong(STATE_CLOSE_AVAILABLE_AT) else null
+
+internal fun Bundle.putCloseAvailableAtMs(availableAtMs: Long) =
+    putLong(STATE_CLOSE_AVAILABLE_AT, availableAtMs)
 
 /** The countdown arithmetic, kept apart from the view so it can be tested on the JVM. */
 internal object Countdown {
