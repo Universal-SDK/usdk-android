@@ -39,6 +39,9 @@ data class RenderingConfig internal constructor(
 ) {
     init {
         require(skipOffsetMs >= 0) { "skipOffsetMs must not be negative, was $skipOffsetMs" }
+        require(declaredCreativeType != CreativeType.VAST) {
+            "VAST is recognised from the markup and cannot be declared"
+        }
     }
 
     companion object {
@@ -94,7 +97,7 @@ data class CloseButtonConfig internal constructor(
     val position: Position = Position.TOP_RIGHT,
 
     /** Colour of the cross, ring or text, as an opaque ARGB int. */
-    @ColorInt val color: Int = 0xFFFFFFFF.toInt(),
+    @get:ColorInt val color: Int = 0xFFFFFFFF.toInt(),
 
     /** Opacity of the whole button. */
     val opacity: Float = 0.9f,

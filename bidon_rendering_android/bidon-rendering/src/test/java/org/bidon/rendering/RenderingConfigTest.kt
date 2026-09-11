@@ -207,5 +207,8 @@ class RenderingConfigTest {
         assertThrows(IllegalArgumentException::class.java) { CloseButtonConfig(sizeDp = 100) }
         assertThrows(IllegalArgumentException::class.java) { CloseButtonConfig(color = 0x80FFFFFF.toInt()) }
         assertThrows(IllegalArgumentException::class.java) { RenderingConfig(skipOffsetMs = -1) }
+        assertThrows(IllegalArgumentException::class.java) {
+            RenderingConfig(declaredCreativeType = CreativeType.VAST)
+        }
     }
 }

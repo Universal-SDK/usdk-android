@@ -26,7 +26,7 @@ class FullscreenAdActivity : AppCompatActivity() {
     private var impressionReported = false
     // Back is held until the close button is available, so the ad cannot be dismissed by an
     // accidental press before it has been seen. A callback, not an onBackPressed override: with
-    // predictive back, which Android 16 turns on by default, onBackPressed is never called.
+    // predictive back, on by default for apps targeting Android 16, onBackPressed is never called.
     private val holdBack = object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() = Unit
     }
