@@ -2,17 +2,19 @@ package org.bidon.rendering.mraid.ui
 
 import android.graphics.Color
 import android.os.Bundle
-import android.view.Gravity
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.ui.CloseButton
-import org.bidon.rendering.ui.dp
+import org.bidon.rendering.ui.closeAvailableAtMs
 import org.bidon.rendering.ui.insetFromSafeArea
+import org.bidon.rendering.ui.putCloseAvailableAtMs
 
 /**
  * Hosts a fullscreen MRAID creative.
@@ -26,21 +28,24 @@ class MraidAdActivity : AppCompatActivity() {
     private var presentationKey: String? = null
     private var presentation: PresentedAd? = null
     private var adView: View? = null
-    private var closeButton: CloseButton? = null
 
     private var impressionReported = false
-    private var closeAllowed = false
-
-    private val allowCloseRunnable = Runnable {
-        closeAllowed = true
-        closeButton?.visibility = View.VISIBLE
+    // Back is held until the close button is available, so the ad cannot be dismissed by an
+    // accidental press before it has been seen. A callback, not an onBackPressed override: with
+    // predictive back, on by default for apps targeting Android 16, onBackPressed is never called.
+    private val holdBack = object : OnBackPressedCallback(true) {
+        override fun handleOnBackPressed() = Unit
     }
+
+    /** When the close button becomes usable, kept so a recreated activity carries on counting. */
+    private var closeAvailableAtMs = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         supportActionBar?.hide()
         AdWindow.goFullscreen(this)
+        onBackPressedDispatcher.addCallback(this, holdBack)
 
         presentationKey = intent.getStringExtra(PresentedAds.EXTRA_KEY)
         val ad = PresentedAds.get(presentationKey) ?: run {
@@ -77,27 +82,25 @@ class MraidAdActivity : AppCompatActivity() {
         root.addView(view)
         adView = view
 
-        closeButton = CloseButton(this).apply {
-            visibility = View.GONE
-            layoutParams = FrameLayout.LayoutParams(
-                dp(AdWindow.TOUCH_TARGET_DP),
-                dp(AdWindow.TOUCH_TARGET_DP)
-            ).apply {
-                gravity = Gravity.TOP or Gravity.END
-            }
-            onClick = { finish() }
-        }
-        root.addView(closeButton!!)
+        val closeButton = CloseButton(this, ad.closeButton).apply { onClick = { finish() } }
+        root.addView(closeButton, closeButton.cornerLayoutParams())
 
         // Was missing entirely here: the close button could sit under a notch or gesture bar.
-        closeButton!!.insetFromSafeArea(AdWindow.CONTROL_MARGIN_DP)
+        closeButton.insetFromSafeArea(marginDp = 0)
 
-        val delayMs = ad.closeDelayMs
-        if (delayMs > 0) {
-            closeButton?.postDelayed(allowCloseRunnable, delayMs)
-        } else {
-            allowCloseRunnable.run()
+        // Rotation is locked and size changes are handled in place, but a theme, language, font
+        // size or display density change still recreates this activity. The countdown carries on
+        // rather than starting over.
+        closeAvailableAtMs = savedInstanceState?.closeAvailableAtMs()
+            ?: (SystemClock.elapsedRealtime() + ad.closeButton.delayMs)
+        closeButton.becomeAvailableAt(closeAvailableAtMs) {
+            holdBack.isEnabled = false
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putCloseAvailableAtMs(closeAvailableAtMs)
     }
 
     override fun onResume() {
@@ -111,12 +114,9 @@ class MraidAdActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
 
-        closeButton?.removeCallbacks(allowCloseRunnable)
-
         // Detach only. The WebView, its controller and its bridge belong to the renderer.
         (adView?.parent as? ViewGroup)?.removeView(adView)
         adView = null
-        closeButton = null
 
         presentation?.closeRequester = null
         if (isFinishing) {
@@ -124,11 +124,5 @@ class MraidAdActivity : AppCompatActivity() {
             PresentedAds.unregister(presentationKey)
         }
         presentation = null
-    }
-
-    override fun onBackPressed() {
-        if (closeAllowed) {
-            super.onBackPressed()
-        }
     }
 }

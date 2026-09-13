@@ -6,19 +6,17 @@ import android.content.Intent
 import android.view.View
 import android.view.ViewGroup
 import org.bidon.rendering.AdRenderer
+import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
+import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.mraid.ui.MraidAdActivity
 
 class MraidRenderer(
-    private val context: Context
+    private val context: Context,
+    private val rendering: AdRenderingConfig
 ) : AdRenderer {
-
-    private companion object {
-        // Hardcoded until the DSP's rendering config supplies it (BID-51).
-        const val CLOSE_DELAY_MS = 5000L
-    }
 
     private var webView: MraidWebView? = null
     private var controller: MraidController? = null
@@ -96,7 +94,7 @@ class MraidRenderer(
 
         val presented = object : PresentedAd {
             override val contentView: View get() = view
-            override val closeDelayMs: Long get() = CLOSE_DELAY_MS
+            override val closeButton: CloseButtonConfig get() = rendering.closeButton
             override val lockedOrientation: Int = orientation
             override var closeRequester: (() -> Unit)? = null
             override fun onImpression() = run { listener?.onImpression(); Unit }

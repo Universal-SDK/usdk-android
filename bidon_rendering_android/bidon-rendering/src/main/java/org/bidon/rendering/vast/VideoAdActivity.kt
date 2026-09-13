@@ -9,6 +9,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.annotation.OptIn
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
+import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.vast.RewardedController
 import org.bidon.rendering.vast.VastAd
@@ -29,7 +30,7 @@ class VideoAdActivity : AppCompatActivity() {
             context: Context,
             mediaUrl: String,
             clickThroughUrl: String? = null,
-            skipOffsetMs: Long = 5000L,
+            skipOffsetMs: Long,
             adKey: String? = null
         ) {
             val intent = Intent(context, VideoAdActivity::class.java).apply {
@@ -67,7 +68,7 @@ class VideoAdActivity : AppCompatActivity() {
 
         val mediaUrl = intent.getStringExtra(EXTRA_MEDIA_URL)
         val clickUrl = intent.getStringExtra(EXTRA_CLICK_URL)
-        val skipOffsetMs = intent.getLongExtra(EXTRA_SKIP_OFFSET_MS, 1000L)
+        val skipOffsetMs = intent.getLongExtra(EXTRA_SKIP_OFFSET_MS, AdRenderingConfig.DEFAULT_SKIP_OFFSET_MS)
         val adKey = intent.getStringExtra(EXTRA_AD_KEY)
 
         if (mediaUrl.isNullOrBlank()) {

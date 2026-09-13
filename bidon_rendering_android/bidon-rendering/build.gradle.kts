@@ -34,6 +34,9 @@ dependencies {
     implementation("io.coil-kt:coil:2.7.0")
 
     testImplementation(libs.junit)
+    // org.json in the Android jar is a stub on the JVM; tests need a real implementation.
+    testImplementation("org.json:json:20240303")
+    testImplementation("io.kotest:kotest-property:5.9.1")
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation("androidx.test:runner:1.6.2")

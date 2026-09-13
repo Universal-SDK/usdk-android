@@ -10,14 +10,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.bidon.rendering.AdRenderer
+import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
+import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.vast.ui.VideoAdActivity
 import java.util.concurrent.ConcurrentHashMap
 
 class VastRenderer(
-    private val context: Context
+    private val context: Context,
+    private val rendering: AdRenderingConfig
 ) : AdRenderer {
 
     companion object {
@@ -94,8 +97,8 @@ class VastRenderer(
         val key = PresentedAds.register(object : PresentedAd {
             override val contentView: View? get() = null
 
-            // Video gates dismissal on the skip offset, not on a close-button delay.
-            override val closeDelayMs: Long get() = 0L
+            // Video gates dismissal on the skip offset and draws its own controls.
+            override val closeButton: CloseButtonConfig get() = rendering.closeButton
             override val lockedOrientation: Int = orientation
             override var closeRequester: (() -> Unit)? = null
 
@@ -112,7 +115,8 @@ class VastRenderer(
             context = activity,
             mediaUrl = media.url,
             clickThroughUrl = ad.videoClicks?.clickThroughUrl,
-            skipOffsetMs = ad.skipOffsetMs ?: DEFAULT_SKIP_OFFSET_MS,
+            // The document's skip offset is set for this creative; the DSP's is general.
+            skipOffsetMs = ad.skipOffsetMs ?: rendering.skipOffsetMs,
             adKey = key
         )
 
@@ -134,6 +138,3 @@ class VastRenderer(
         listener = null
     }
 }
-
-// Hardcoded until the DSP's rendering config supplies it (BID-51).
-private const val DEFAULT_SKIP_OFFSET_MS = 5000L

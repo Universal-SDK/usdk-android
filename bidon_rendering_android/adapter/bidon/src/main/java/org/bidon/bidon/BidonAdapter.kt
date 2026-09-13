@@ -16,16 +16,6 @@ import org.json.JSONObject
 
 internal val BidonDemandId = DemandId("adikteev")
 
-/**
- * The auction response carries the creative in `ext.payload` but does not say what kind it is,
- * so we detect it from the markup.
- */
-internal fun creativeTypeOf(adm: String): String = when {
-    adm.contains("<VAST", ignoreCase = true) -> "VAST"
-    adm.contains("mraid.js", ignoreCase = true) -> "MRAID"
-    else -> "HTML"
-}
-
 @Suppress("unused")
 class BidonAdapter :
     Adapter.Bidding,

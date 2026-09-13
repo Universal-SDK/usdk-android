@@ -25,8 +25,11 @@ internal interface PresentedAd {
      */
     val contentView: View?
 
-    /** How long after the ad appears before the close button can be used. */
-    val closeDelayMs: Long
+    /**
+     * The DSP's close button: when it can be used and how it looks. Video ignores it, since it
+     * has its own skip and end card controls.
+     */
+    val closeButton: CloseButtonConfig
 
     /**
      * The orientation this ad locks to, inherited from the publisher's activity when it was

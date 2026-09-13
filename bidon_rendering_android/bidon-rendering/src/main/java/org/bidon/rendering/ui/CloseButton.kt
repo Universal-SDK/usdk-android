@@ -1,253 +1,249 @@
-/*package org.bidon.rendering.ui
-
-import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Path
-import android.util.AttributeSet
-import android.view.MotionEvent
-import android.view.View
-import androidx.core.content.ContextCompat
-
-class CloseButton @JvmOverloads constructor(
-    context: Context,
-    attrs: AttributeSet? = null,
-    defStyleAttr: Int = 0
-) : View(context, attrs, defStyleAttr) {
-
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        style = Paint.Style.STROKE
-        strokeWidth = 8f
-        strokeCap = Paint.Cap.ROUND
-    }
-
-    private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#80000000") // напівпрозорий чорний
-    }
-
-    private val path = Path()
-
-    var onClick: (() -> Unit)? = null
-
-    private var isPressed = false
-
-    init {
-        // Обробка натискань
-        setOnClickListener {
-            onClick?.invoke()
-        }
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-
-        val width = width.toFloat()
-        val height = height.toFloat()
-        val centerX = width / 2
-        val centerY = height / 2
-        val size = minOf(width, height) * 0.6f
-
-        // Фон (коло)
-        canvas.drawCircle(centerX, centerY, size / 2 + 8, backgroundPaint)
-
-        // Хрестик (дві лінії)
-        path.reset()
-
-        // Лінія 1: зліва-зверху направо-вниз
-        path.moveTo(centerX - size / 2, centerY - size / 2)
-        path.lineTo(centerX + size / 2, centerY + size / 2)
-
-        // Лінія 2: справа-зверху наліво-вниз
-        path.moveTo(centerX + size / 2, centerY - size / 2)
-        path.lineTo(centerX - size / 2, centerY + size / 2)
-
-        canvas.drawPath(path, paint)
-    }
-
-    override fun performClick(): Boolean {
-        super.performClick()
-        return true
-    }
-
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        when (event.action) {
-            MotionEvent.ACTION_DOWN -> {
-                isPressed = true
-                backgroundPaint.color = Color.parseColor("#CC000000") // темніший фон
-                invalidate()
-                performClick()
-                return true
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                isPressed = false
-                backgroundPaint.color = Color.parseColor("#80000000") // повертаємо початковий колір
-                invalidate()
-            }
-        }
-        return super.onTouchEvent(event)
-    }
-
-    /**
-     * Встановити колір хрестика
-     */
-    fun setCrossColor(color: Int) {
-        paint.color = color
-        invalidate()
-    }
-
-    /**
-     * Встановити колір фону
-     */
-    fun setBtnBackgroundColor(color: Int) {
-        backgroundPaint.color = color
-        invalidate()
-    }
-
-    /**
-     * Встановити розмір кнопки (в dp)
-     */
-    fun setSize(dp: Int) {
-        val pixels = (dp * resources.displayMetrics.density).toInt()
-        layoutParams = layoutParams.apply {
-            width = pixels
-            height = pixels
-        }
-        requestLayout()
-    }
-}*/
-
-
-
 package org.bidon.rendering.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Path
-import android.util.AttributeSet
-import android.view.MotionEvent
+import android.graphics.RectF
+import android.os.Bundle
+import android.os.SystemClock
+import android.view.Gravity
 import android.view.View
+import android.widget.Button
+import android.widget.FrameLayout
+import androidx.annotation.ColorInt
+import org.bidon.rendering.CloseButtonConfig
+import org.bidon.rendering.R
+import kotlin.math.ceil
+import kotlin.math.max
+import kotlin.math.pow
 
-class CloseButton @JvmOverloads constructor(
+/**
+ * The close button of a fullscreen ad, drawn the way the DSP's [CloseButtonConfig] asks.
+ *
+ * Until it becomes available it shows the seconds left, or nothing if the DSP turned the
+ * countdown off, and taps on it do nothing. The visible button sits [CloseButtonConfig.paddingDp]
+ * from the safe area in its corner, and that gap belongs to the button: a tap that lands between
+ * the button and the edge closes the ad rather than reaching the creative. The touch target is
+ * never smaller than [AdWindow.TOUCH_TARGET_DP] and grows toward the middle of the screen.
+ */
+@SuppressLint("ViewConstructor")
+internal class CloseButton(
     context: Context,
-    attrs: AttributeSet? = null,
-    defStyleAttr: Int = 0
-) : View(context, attrs, defStyleAttr) {
+    private val config: CloseButtonConfig
+) : View(context) {
 
-    private val defaultBgColor = Color.parseColor("#80000000")
-    private val pressedBgColor = Color.parseColor("#CC000000")
-    private val crossColor = Color.WHITE
+    var onClick: (() -> Unit)? = null
 
-    private val crossPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = crossColor
+    private val backdropPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = config.color
         style = Paint.Style.STROKE
-        strokeWidth = 6f * resources.displayMetrics.density
         strokeCap = Paint.Cap.ROUND
     }
 
-    private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = defaultBgColor
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = config.color
+        textAlign = Paint.Align.CENTER
+        isFakeBoldText = true
     }
 
-    private val path = Path()
-    var onClick: (() -> Unit)? = null
+    private val label = context.getString(R.string.bidon_rendering_close)
+    private val shapeHeight = dp(config.sizeDp).toFloat()
+    private val shapeWidth: Float
+    private val shape = RectF()
+    private val paddingPx = dp(config.paddingDp).toFloat()
 
-    private var isPressedState = false
+    private var availableAtMs = 0L
+    private var onAvailable: (() -> Unit)? = null
+    private var secondsLeft = 0
 
     init {
-        isClickable = true
+        alpha = config.opacity
+        contentDescription = context.getString(R.string.bidon_rendering_close_ad)
         isFocusable = true
-        contentDescription = "Close ad"
+        strokePaint.strokeWidth = shapeHeight * STROKE_RATIO
+        textPaint.textSize = shapeHeight * TEXT_SIZE_RATIO
+        shapeWidth = when (config.style) {
+            CloseButtonConfig.Style.TEXT -> textPaint.measureText(label) + shapeHeight
+            else -> shapeHeight
+        }
+
+        setOnClickListener { onClick?.invoke() }
+        isEnabled = false
+        visibility = INVISIBLE
     }
 
+    /** Layout parameters that put the button in its corner of a [FrameLayout]. */
+    fun cornerLayoutParams(): FrameLayout.LayoutParams = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.WRAP_CONTENT,
+        FrameLayout.LayoutParams.WRAP_CONTENT,
+        config.position.gravity
+    )
+
+    /**
+     * Makes the button usable at [availableAtMs], a [SystemClock.elapsedRealtime] time, counting
+     * down until then. An activity recreated mid-countdown passes the same time again, so the
+     * countdown carries on instead of starting over.
+     */
+    fun becomeAvailableAt(availableAtMs: Long, onAvailable: () -> Unit) {
+        this.availableAtMs = availableAtMs
+        this.onAvailable = onAvailable
+        removeCallbacks(tick)
+        tick.run()
+    }
+
+    private val tick: Runnable = object : Runnable {
+        override fun run() {
+            // Never longer than the delay itself, whatever time was handed in.
+            val remainingMs = (availableAtMs - SystemClock.elapsedRealtime())
+                .coerceAtMost(config.delayMs)
+
+            if (remainingMs <= 0) {
+                secondsLeft = 0
+                isEnabled = true
+                visibility = VISIBLE
+                invalidate()
+                onAvailable?.invoke()
+                onAvailable = null
+                return
+            }
+
+            secondsLeft = Countdown.secondsLeft(remainingMs)
+            visibility = if (config.showCountdown) VISIBLE else INVISIBLE
+            invalidate()
+            postDelayed(this, Countdown.untilNextTick(remainingMs))
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(tick)
+        super.onDetachedFromWindow()
+    }
+
+    // Announced as a button by screen readers, not as a bare view.
+    override fun getAccessibilityClassName(): CharSequence = Button::class.java.name
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val minSize = (48 * resources.displayMetrics.density).toInt()
+        val touchTarget = dp(AdWindow.TOUCH_TARGET_DP).toFloat()
+        setMeasuredDimension(
+            resolveSize(ceil(max(touchTarget, shapeWidth + paddingPx)).toInt(), widthMeasureSpec),
+            resolveSize(ceil(max(touchTarget, shapeHeight + paddingPx)).toInt(), heightMeasureSpec)
+        )
+    }
 
-        val width = resolveSize(minSize, widthMeasureSpec)
-        val height = resolveSize(minSize, heightMeasureSpec)
-
-        setMeasuredDimension(width, height)
+    override fun drawableStateChanged() {
+        super.drawableStateChanged()
+        // The disc deepens while pressed; its colour is picked in onDraw.
+        invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val cx = w / 2
-        val cy = h / 2
-        val size = minOf(w, h) * 0.5f
+        // Drawn in from the outer corner of the touch target by the padding, so the gap to the
+        // edge of the screen is still part of what can be tapped.
+        val left = if (config.position.isLeft) paddingPx else width - paddingPx - shapeWidth
+        val top = if (config.position.isTop) paddingPx else height - paddingPx - shapeHeight
+        shape.set(left, top, left + shapeWidth, top + shapeHeight)
 
-        canvas.drawCircle(cx, cy, size, backgroundPaint)
+        val radius = shapeHeight / 2
+        backdropPaint.color = backdropFor(config.color, isPressed)
+        canvas.drawRoundRect(shape, radius, radius, backdropPaint)
 
-        path.reset()
-
-        path.moveTo(cx - size / 2, cy - size / 2)
-        path.lineTo(cx + size / 2, cy + size / 2)
-
-        path.moveTo(cx + size / 2, cy - size / 2)
-        path.lineTo(cx - size / 2, cy + size / 2)
-
-        canvas.drawPath(path, crossPaint)
-    }
-
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        when (event.action) {
-
-            MotionEvent.ACTION_DOWN -> {
-                isPressedState = true
-                backgroundPaint.color = pressedBgColor
-                invalidate()
-                return true
-            }
-
-            MotionEvent.ACTION_UP -> {
-                if (isPressedState) {
-                    performClick()
+        when {
+            secondsLeft > 0 -> drawCentred(canvas, secondsLeft.toString())
+            config.style == CloseButtonConfig.Style.TEXT -> drawCentred(canvas, label)
+            else -> {
+                drawCross(canvas)
+                if (config.style == CloseButtonConfig.Style.ICON_CIRCLE) {
+                    val ring = radius - strokePaint.strokeWidth / 2
+                    canvas.drawCircle(shape.centerX(), shape.centerY(), ring, strokePaint)
                 }
-
-                isPressedState = false
-                backgroundPaint.color = defaultBgColor
-                invalidate()
-                return true
-            }
-
-            MotionEvent.ACTION_CANCEL -> {
-                isPressedState = false
-                backgroundPaint.color = defaultBgColor
-                invalidate()
-                return true
             }
         }
-
-        return super.onTouchEvent(event)
     }
 
-    override fun performClick(): Boolean {
-        super.performClick()
-        onClick?.invoke()
-        return true
+    private fun drawCross(canvas: Canvas) {
+        val arm = shapeHeight * CROSS_RATIO / 2
+        val cx = shape.centerX()
+        val cy = shape.centerY()
+        canvas.drawLine(cx - arm, cy - arm, cx + arm, cy + arm, strokePaint)
+        canvas.drawLine(cx + arm, cy - arm, cx - arm, cy + arm, strokePaint)
     }
 
-    fun setCrossColor(color: Int) {
-        crossPaint.color = color
-        invalidate()
+    private fun drawCentred(canvas: Canvas, text: String) {
+        val baseline = shape.centerY() - (textPaint.descent() + textPaint.ascent()) / 2
+        canvas.drawText(text, shape.centerX(), baseline, textPaint)
     }
 
-    fun setBackgroundColorCustom(color: Int) {
-        backgroundPaint.color = color
-        invalidate()
-    }
+    private companion object {
 
-    fun setSizeDp(dp: Int) {
-        val px = (dp * resources.displayMetrics.density).toInt()
-        layoutParams = layoutParams.apply {
-            width = px
-            height = px
-        }
-        requestLayout()
+        /** The cross spans half the button, the stroke an eighth of it: the look it had before. */
+        const val CROSS_RATIO = 0.5f
+        const val STROKE_RATIO = 0.125f
+        const val TEXT_SIZE_RATIO = 0.45f
     }
 }
+
+/**
+ * The disc behind the cross or text: black or white, whichever contrasts more with the colour the
+ * DSP picked. Mostly opaque, so the creative behind it matters little, and more so while pressed.
+ */
+internal fun backdropFor(@ColorInt color: Int, pressed: Boolean): Int {
+    val alpha = if (pressed) 0xE6 else 0xB3
+    val shade = if (relativeLuminance(color) > LUMINANCE_CUTOFF) 0x000000 else 0xFFFFFF
+    return (alpha shl 24) or shade
+}
+
+/** WCAG relative luminance: 0 for black, 1 for white. */
+private fun relativeLuminance(@ColorInt color: Int): Double {
+    fun linear(channel: Int): Double {
+        val c = channel / 255.0
+        return if (c <= 0.03928) c / 12.92 else ((c + 0.055) / 1.055).pow(2.4)
+    }
+    return 0.2126 * linear((color shr 16) and 0xFF) +
+        0.7152 * linear((color shr 8) and 0xFF) +
+        0.0722 * linear(color and 0xFF)
+}
+
+// Above this luminance black contrasts more with a colour than white does; below it, white.
+private const val LUMINANCE_CUTOFF = 0.179
+
+private const val STATE_CLOSE_AVAILABLE_AT = "org.bidon.rendering.close_available_at"
+
+/** When the close button of the activity this state was saved from becomes usable, if saved. */
+internal fun Bundle.closeAvailableAtMs(): Long? =
+    if (containsKey(STATE_CLOSE_AVAILABLE_AT)) getLong(STATE_CLOSE_AVAILABLE_AT) else null
+
+internal fun Bundle.putCloseAvailableAtMs(availableAtMs: Long) =
+    putLong(STATE_CLOSE_AVAILABLE_AT, availableAtMs)
+
+/** The countdown arithmetic, kept apart from the view so it can be tested on the JVM. */
+internal object Countdown {
+
+    /** Whole seconds to show for [remainingMs]: with 4.3 s left the button shows 5. */
+    fun secondsLeft(remainingMs: Long): Int = ((remainingMs + 999) / 1000).toInt()
+
+    /** How long until the number shown next changes. */
+    fun untilNextTick(remainingMs: Long): Long = remainingMs - (secondsLeft(remainingMs) - 1) * 1000L
+}
+
+// Absolute sides on purpose: the DSP asked for a corner of the screen, not a reading direction.
+@get:SuppressLint("RtlHardcoded")
+private val CloseButtonConfig.Position.gravity: Int
+    get() = when (this) {
+        CloseButtonConfig.Position.TOP_LEFT -> Gravity.TOP or Gravity.LEFT
+        CloseButtonConfig.Position.TOP_RIGHT -> Gravity.TOP or Gravity.RIGHT
+        CloseButtonConfig.Position.BOTTOM_LEFT -> Gravity.BOTTOM or Gravity.LEFT
+        CloseButtonConfig.Position.BOTTOM_RIGHT -> Gravity.BOTTOM or Gravity.RIGHT
+    }
+
+private val CloseButtonConfig.Position.isLeft: Boolean
+    get() = this == CloseButtonConfig.Position.TOP_LEFT ||
+        this == CloseButtonConfig.Position.BOTTOM_LEFT
+
+private val CloseButtonConfig.Position.isTop: Boolean
+    get() = this == CloseButtonConfig.Position.TOP_LEFT ||
+        this == CloseButtonConfig.Position.TOP_RIGHT

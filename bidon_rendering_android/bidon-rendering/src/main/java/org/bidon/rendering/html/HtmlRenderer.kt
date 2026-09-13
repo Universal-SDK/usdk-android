@@ -5,21 +5,19 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import org.bidon.rendering.AdRenderer
+import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
+import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.ui.FullscreenAdActivity
 import android.app.Activity
 import android.content.Intent
 
 class HtmlRenderer(
-    context: Context
+    context: Context,
+    private val rendering: AdRenderingConfig
 ) : AdRenderer {
-
-    private companion object {
-        // Hardcoded until the DSP's rendering config supplies it (BID-51).
-        const val CLOSE_DELAY_MS = 3000L
-    }
 
     private val appContext = context.applicationContext
 
@@ -105,7 +103,7 @@ class HtmlRenderer(
         // fullscreen clicks and load errors were never reported.
         presentationKey = PresentedAds.register(object : PresentedAd {
             override val contentView: View get() = view
-            override val closeDelayMs: Long get() = CLOSE_DELAY_MS
+            override val closeButton: CloseButtonConfig get() = rendering.closeButton
             override val lockedOrientation: Int = orientation
             override var closeRequester: (() -> Unit)? = null
             override fun onImpression() = run { listener?.onImpression(); Unit }
