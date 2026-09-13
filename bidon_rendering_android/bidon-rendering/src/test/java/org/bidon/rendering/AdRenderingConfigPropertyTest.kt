@@ -22,7 +22,7 @@ import org.junit.Test
  * against configs nobody would write by hand: every field present or missing, and each one
  * holding any JSON type, huge or negative numbers, or strings that only look like numbers.
  */
-class RenderingConfigPropertyTest {
+class AdRenderingConfigPropertyTest {
 
     private val anyValue: Arb<Any> = Arb.choice(
         Arb.numericDouble(),
@@ -31,7 +31,7 @@ class RenderingConfigPropertyTest {
         Arb.boolean(),
         Arb.string(),
         // Strings the parser gives meaning to. "Infinity" and "NaN" read as numbers on Android's
-        // org.json but not on the JVM one used here; RenderingConfigTest covers the clamping they
+        // org.json but not on the JVM one used here; AdRenderingConfigTest covers the clamping they
         // would reach.
         Arb.element(
             "icon_circle", "text_close", "custom", "top_left", "bottom_right", "#FFF", "#00ff00",
@@ -82,13 +82,13 @@ class RenderingConfigPropertyTest {
     fun `any config parses, and visible false never hides the close button`() {
         runBlocking {
             checkAll(2_000, anyConfig) { json ->
-                val parsed = RenderingConfig.fromJson(json)
+                val parsed = AdRenderingConfig.fromJson(json)
 
                 val button = json.optJSONObject("close_button")
                     ?: JSONObject().also { json.put("close_button", it) }
                 button.put("visible", false)
 
-                assertEquals(json.toString(), parsed, RenderingConfig.fromJson(json))
+                assertEquals(json.toString(), parsed, AdRenderingConfig.fromJson(json))
             }
         }
     }

@@ -8,7 +8,7 @@ import org.bidon.bidon.BidonDemandId
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.CreativeType
-import org.bidon.rendering.RenderingConfig
+import org.bidon.rendering.AdRenderingConfig
 import org.bidon.sdk.adapter.AdAuctionParamSource
 import org.bidon.sdk.adapter.AdAuctionParams
 import org.bidon.sdk.adapter.AdEvent
@@ -45,7 +45,7 @@ internal class BidonBannerImpl :
         val ext = adUnit.extra
 
         val adm = ext?.optString("payload").orEmpty()
-        val rendering = RenderingConfig.fromJson(ext?.optJSONObject("rendering"))
+        val rendering = AdRenderingConfig.fromJson(ext?.optJSONObject("rendering"))
 
         BidonBannerAuctionParams(
             activity = activity,

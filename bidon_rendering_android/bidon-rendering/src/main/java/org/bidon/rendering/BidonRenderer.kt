@@ -54,7 +54,7 @@ object BidonRenderer {
      */
     fun createRenderer(
         type: CreativeType,
-        rendering: RenderingConfig = RenderingConfig()
+        rendering: AdRenderingConfig = AdRenderingConfig()
     ): AdRenderer {
         ensureInitialized()
 
@@ -65,13 +65,13 @@ object BidonRenderer {
         }
     }
 
-    fun createHtmlRenderer(rendering: RenderingConfig = RenderingConfig()): AdRenderer =
+    fun createHtmlRenderer(rendering: AdRenderingConfig = AdRenderingConfig()): AdRenderer =
         createRenderer(CreativeType.HTML, rendering)
 
-    fun createVastRenderer(rendering: RenderingConfig = RenderingConfig()): AdRenderer =
+    fun createVastRenderer(rendering: AdRenderingConfig = AdRenderingConfig()): AdRenderer =
         createRenderer(CreativeType.VAST, rendering)
 
-    fun createMraidRenderer(rendering: RenderingConfig = RenderingConfig()): AdRenderer =
+    fun createMraidRenderer(rendering: AdRenderingConfig = AdRenderingConfig()): AdRenderer =
         createRenderer(CreativeType.MRAID, rendering)
 
     private fun ensureInitialized() {

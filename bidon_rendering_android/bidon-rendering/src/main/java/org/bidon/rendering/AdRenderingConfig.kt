@@ -19,7 +19,7 @@ import kotlin.math.roundToLong
  * past the limits.
  */
 @ConsistentCopyVisibility
-data class RenderingConfig internal constructor(
+data class AdRenderingConfig internal constructor(
     val closeButton: CloseButtonConfig = CloseButtonConfig(),
 
     /**
@@ -55,10 +55,10 @@ data class RenderingConfig internal constructor(
          * user's screen: anything absent, of the wrong type or unknown falls back to its default,
          * and a number out of range is clamped to the nearest allowed value.
          */
-        fun fromJson(json: JSONObject?): RenderingConfig {
+        fun fromJson(json: JSONObject?): AdRenderingConfig {
             val container = json?.optJSONObject("container")
             val creative = json?.optJSONObject("creative")
-            return RenderingConfig(
+            return AdRenderingConfig(
                 closeButton = closeButtonFrom(json?.optJSONObject("close_button")),
                 skipOffsetMs = container.millis(
                     "skip_offset_seconds",

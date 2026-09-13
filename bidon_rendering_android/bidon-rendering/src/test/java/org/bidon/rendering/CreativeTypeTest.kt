@@ -11,9 +11,9 @@ import org.junit.Test
  */
 class CreativeTypeTest {
 
-    private val undeclared = RenderingConfig()
+    private val undeclared = AdRenderingConfig()
 
-    private fun declared(type: CreativeType) = RenderingConfig(declaredCreativeType = type)
+    private fun declared(type: CreativeType) = AdRenderingConfig(declaredCreativeType = type)
 
     @Test
     fun `plain markup is html`() {
@@ -91,7 +91,7 @@ class CreativeTypeTest {
     fun `a bid declaring vast is routed by its markup`() {
         // VAST markup is recognised on its own, so a declared vast adds nothing. Markup that is not
         // VAST must not be sent to the video renderer only to fail there.
-        val declaredVast = RenderingConfig.fromJson(JSONObject("""{ "creative": { "type": "vast" } }"""))
+        val declaredVast = AdRenderingConfig.fromJson(JSONObject("""{ "creative": { "type": "vast" } }"""))
         assertEquals(CreativeType.HTML, CreativeType.of("<div/>", declaredVast))
         assertEquals(CreativeType.MRAID, CreativeType.of("<script src=\"mraid.js\"></script>", declaredVast))
     }

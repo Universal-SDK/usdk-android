@@ -14,7 +14,7 @@ enum class CreativeType {
          * HTML or MRAID type wins: the markup alone cannot tell an MRAID creative from HTML that
          * merely mentions mraid.js. With nothing declared, the markup is the only evidence left.
          */
-        fun of(adm: String, rendering: RenderingConfig): CreativeType {
+        fun of(adm: String, rendering: AdRenderingConfig): CreativeType {
             val declared = rendering.declaredCreativeType
             return when {
                 adm.contains("<VAST", ignoreCase = true) -> VAST

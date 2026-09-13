@@ -9,13 +9,13 @@ import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
-import org.bidon.rendering.RenderingConfig
+import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.mraid.ui.MraidAdActivity
 
 class MraidRenderer(
     private val context: Context,
-    private val rendering: RenderingConfig
+    private val rendering: AdRenderingConfig
 ) : AdRenderer {
 
     private var webView: MraidWebView? = null

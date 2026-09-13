@@ -6,7 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
-class RenderingConfigTest {
+class AdRenderingConfigTest {
 
     /**
      * The `rendering` object of a live staging auction on 2026-09-11. The DSP sent no config, so
@@ -41,7 +41,7 @@ class RenderingConfigTest {
         }
     """.trimIndent()
 
-    private fun parse(json: String) = RenderingConfig.fromJson(JSONObject(json))
+    private fun parse(json: String) = AdRenderingConfig.fromJson(JSONObject(json))
 
     private fun closeButton(fields: String) = parse("""{ "close_button": { $fields } }""").closeButton
 
@@ -49,12 +49,12 @@ class RenderingConfigTest {
     fun `the renderer defaults are the server defaults`() {
         // Until the config reaches the device, the renderer runs on its own defaults. Keeping them
         // equal to the server's means nothing changes on screen the day it starts arriving.
-        assertEquals(RenderingConfig(), parse(liveServerDefaults))
+        assertEquals(AdRenderingConfig(), parse(liveServerDefaults))
     }
 
     @Test
     fun `the defaults are the values the server documents`() {
-        val config = RenderingConfig()
+        val config = AdRenderingConfig()
         with(config.closeButton) {
             assertEquals(5_000L, delayMs)
             assertEquals(true, showCountdown)
@@ -73,8 +73,8 @@ class RenderingConfigTest {
 
     @Test
     fun `no config means the defaults`() {
-        assertEquals(RenderingConfig(), RenderingConfig.fromJson(null))
-        assertEquals(RenderingConfig(), RenderingConfig.fromJson(JSONObject()))
+        assertEquals(AdRenderingConfig(), AdRenderingConfig.fromJson(null))
+        assertEquals(AdRenderingConfig(), AdRenderingConfig.fromJson(JSONObject()))
     }
 
     @Test
@@ -96,7 +96,7 @@ class RenderingConfigTest {
             """
         )
         assertEquals(
-            RenderingConfig(
+            AdRenderingConfig(
                 closeButton = CloseButtonConfig(
                     delayMs = 7_500,
                     showCountdown = false,
@@ -168,7 +168,7 @@ class RenderingConfigTest {
 
     @Test
     fun `values of the wrong type fall back to the defaults`() {
-        assertEquals(RenderingConfig(), parse("""{ "close_button": "x", "container": 5, "creative": [] }"""))
+        assertEquals(AdRenderingConfig(), parse("""{ "close_button": "x", "container": 5, "creative": [] }"""))
         assertEquals(
             CloseButtonConfig(),
             closeButton(""" "delay_seconds": "soon", "countdown_visible": 3, "opacity": null """)
@@ -206,9 +206,9 @@ class RenderingConfigTest {
         assertThrows(IllegalArgumentException::class.java) { CloseButtonConfig(opacity = Float.NaN) }
         assertThrows(IllegalArgumentException::class.java) { CloseButtonConfig(sizeDp = 100) }
         assertThrows(IllegalArgumentException::class.java) { CloseButtonConfig(color = 0x80FFFFFF.toInt()) }
-        assertThrows(IllegalArgumentException::class.java) { RenderingConfig(skipOffsetMs = -1) }
+        assertThrows(IllegalArgumentException::class.java) { AdRenderingConfig(skipOffsetMs = -1) }
         assertThrows(IllegalArgumentException::class.java) {
-            RenderingConfig(declaredCreativeType = CreativeType.VAST)
+            AdRenderingConfig(declaredCreativeType = CreativeType.VAST)
         }
     }
 }

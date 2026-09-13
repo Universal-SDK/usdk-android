@@ -8,7 +8,7 @@ import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
-import org.bidon.rendering.RenderingConfig
+import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.ui.FullscreenAdActivity
 import android.app.Activity
@@ -16,7 +16,7 @@ import android.content.Intent
 
 class HtmlRenderer(
     context: Context,
-    private val rendering: RenderingConfig
+    private val rendering: AdRenderingConfig
 ) : AdRenderer {
 
     private val appContext = context.applicationContext

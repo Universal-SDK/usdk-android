@@ -7,7 +7,7 @@ import com.demo.tetris.R
 import com.demo.tetris.databinding.FragmentRendererOnlyBinding
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.BidonRenderer
-import org.bidon.rendering.RenderingConfig
+import org.bidon.rendering.AdRenderingConfig
 import org.json.JSONObject
 
 /**
@@ -36,7 +36,7 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
 
     // Stand-ins for the rendering config a DSP sends with its bid, so the close button options
     // can be seen without an auction.
-    private val ringedButtonTopLeft = RenderingConfig.fromJson(
+    private val ringedButtonTopLeft = AdRenderingConfig.fromJson(
         JSONObject(
             """
             {
@@ -49,7 +49,7 @@ class RendererOnlyFragment : Fragment(R.layout.fragment_renderer_only) {
         )
     )
 
-    private val textButtonBottomRight = RenderingConfig.fromJson(
+    private val textButtonBottomRight = AdRenderingConfig.fromJson(
         JSONObject("""{ "close_button": { "style": "text_close", "position": "bottom_right" } }""")
     )
 
