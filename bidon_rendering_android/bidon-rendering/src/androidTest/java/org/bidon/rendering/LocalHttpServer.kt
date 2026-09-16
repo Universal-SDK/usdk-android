@@ -7,12 +7,14 @@ import java.net.Socket
 import java.net.SocketException
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import kotlin.concurrent.thread
 
 /**
  * A minimal HTTP server on the device's loopback interface, for tests that need the renderer's real
  * connections: a wrapped VAST document, a video, a tracking pixel. It serves canned bodies by path,
- * answers 404 for anything else, and records the path and query of every request.
+ * can leave a path hanging, answers 404 for anything else, and records the path and query of every
+ * request.
  */
 class LocalHttpServer : Closeable {
 
@@ -26,6 +28,8 @@ class LocalHttpServer : Closeable {
     private val socket = ServerSocket(0, 0, InetAddress.getByName(HOST))
     private val bodies = ConcurrentHashMap<String, Body>()
     private val requests = Collections.synchronizedList(mutableListOf<String>())
+    private val stalled = ConcurrentHashMap.newKeySet<String>()
+    private val closed = CountDownLatch(1)
 
     init {
         thread(isDaemon = true) {
@@ -47,12 +51,18 @@ class LocalHttpServer : Closeable {
         bodies[path] = Body(contentType, bytes)
     }
 
+    /** Accepts requests for [path] and never answers them, like a server that stopped responding. */
+    fun stall(path: String) {
+        stalled += path
+    }
+
     /** How many requests asked for exactly this path and query. */
     fun requestCount(pathAndQuery: String): Int = synchronized(requests) {
         requests.count { it == pathAndQuery }
     }
 
     override fun close() {
+        closed.countDown()
         socket.close()
     }
 
@@ -64,6 +74,11 @@ class LocalHttpServer : Closeable {
                 val pathAndQuery = reader.readLine()?.split(" ")?.getOrNull(1) ?: return
                 while (reader.readLine().orEmpty().isNotEmpty()) Unit
                 requests += pathAndQuery
+
+                if (pathAndQuery.substringBefore("?") in stalled) {
+                    closed.await()
+                    return
+                }
 
                 val body = bodies[pathAndQuery.substringBefore("?")]
                 val head = if (body == null) {

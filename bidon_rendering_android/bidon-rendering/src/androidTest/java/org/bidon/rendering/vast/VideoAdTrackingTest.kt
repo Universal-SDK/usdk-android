@@ -22,6 +22,7 @@ import org.bidon.rendering.vast.ui.VideoAdActivity
 import org.bidon.rendering.vast.ui.VideoAdView
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,7 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * is counted when playback starts, not when the screen opens, and only once for the ad, even when
  * the screen is recreated and the video starts over. A click sends the trackers of what was
  * clicked: the video's for the video, the end card's for the end card. A tap that opens nothing is
- * not a click at all.
+ * not a click at all, and neither is a tap on a video that has not started playing.
  */
 @RunWith(AndroidJUnit4::class)
 class VideoAdTrackingTest {
@@ -174,6 +175,29 @@ class VideoAdTrackingTest {
             assertEquals(2, server.requestCount("/click/video"))
             assertEquals(0, server.requestCount("/click/end-card"))
             assertEquals(2, events.clicks.get())
+        }
+    }
+
+    @Test
+    fun aTapWhileTheVideoIsStillLoadingIsNotAClick() {
+        server.stall("/video.mp4")
+        val events = Events()
+
+        showAd(vast("/video.mp4"), events) {
+            val screen = waitFor("the ad screen") { resumedVideoScreen() }
+            onMain {
+                val video = screen.window.decorView.find(VideoAdView::class.java)!!
+                video.find(View::class.java) { it.javaClass == View::class.java && it.isClickable }!!.performClick()
+                assertFalse(
+                    "Learn More is offered before the video plays",
+                    video.find(TextView::class.java) { it.text == "Learn More" }!!.isShown
+                )
+            }
+            SystemClock.sleep(500)
+
+            assertEquals(0, events.impressions.get())
+            assertEquals(0, events.clicks.get())
+            assertEquals(0, server.requestCount("/click/video"))
         }
     }
 
