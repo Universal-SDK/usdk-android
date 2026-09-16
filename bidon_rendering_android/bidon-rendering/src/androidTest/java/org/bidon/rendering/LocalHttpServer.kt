@@ -56,10 +56,12 @@ class LocalHttpServer : Closeable {
         stalled += path
     }
 
-    /** How many requests asked for exactly this path and query. */
-    fun requestCount(pathAndQuery: String): Int = synchronized(requests) {
-        requests.count { it == pathAndQuery }
+    /** The path and query of every request for [path], whatever its query. */
+    fun requestsTo(path: String): List<String> = synchronized(requests) {
+        requests.filter { it.substringBefore("?") == path }
     }
+
+    fun requestCount(path: String): Int = requestsTo(path).size
 
     override fun close() {
         closed.countDown()

@@ -9,9 +9,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The buyer's impression and click trackers have to survive parsing, including the ones a wrapper
- * adds on its way to the ad: every level of a wrapper chain belongs to someone who counts the
- * impression. Companion click trackers are kept apart from the video's, since each belongs to a
+ * The buyer's impression and click trackers have to survive parsing, including the impression and
+ * video click trackers a wrapper adds on its way to the ad: every level of a wrapper chain belongs
+ * to someone who counts the impression. Companion click trackers are kept apart from the video's, since each belongs to a
  * different click.
  *
  * Instrumented because the parser is built on android.util.Xml, which has no implementation on the

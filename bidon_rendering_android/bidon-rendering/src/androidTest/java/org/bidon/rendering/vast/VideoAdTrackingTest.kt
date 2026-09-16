@@ -76,21 +76,21 @@ class VideoAdTrackingTest {
     private fun vast(mediaPath: String, clickThrough: String? = "bidon-test://advertiser") = """
         <VAST version="4.2"><Ad id="1"><InLine>
         <AdSystem>test</AdSystem><AdTitle>test</AdTitle>
-        <Impression><![CDATA[${server.url("/impression/dsp")}]]></Impression>
+        <Impression><![CDATA[${server.url("/impression/dsp?cb=[CACHEBUSTING]")}]]></Impression>
         <Impression><![CDATA[${server.url("/impression/verifier")}]]></Impression>
         <Creatives>
         <Creative><Linear skipoffset="00:00:01">
         <Duration>00:00:10</Duration>
         <VideoClicks>
         ${clickThrough?.let { "<ClickThrough><![CDATA[$it]]></ClickThrough>" }.orEmpty()}
-        <ClickTracking><![CDATA[${server.url("/click/video")}]]></ClickTracking>
+        <ClickTracking><![CDATA[${server.url("/click/video?at=[ADPLAYHEAD]")}]]></ClickTracking>
         </VideoClicks>
         <MediaFiles><MediaFile delivery="progressive" type="video/mp4" width="64" height="64"><![CDATA[${server.url(mediaPath)}]]></MediaFile></MediaFiles>
         </Linear></Creative>
         <Creative><CompanionAds><Companion width="64" height="64">
         <StaticResource creativeType="image/png"><![CDATA[${server.url("/end-card.png")}]]></StaticResource>
         ${clickThrough?.let { "<CompanionClickThrough><![CDATA[$it]]></CompanionClickThrough>" }.orEmpty()}
-        <CompanionClickTracking><![CDATA[${server.url("/click/end-card")}]]></CompanionClickTracking>
+        <CompanionClickTracking><![CDATA[${server.url("/click/end-card?cb=[CACHEBUSTING]")}]]></CompanionClickTracking>
         </Companion></CompanionAds></Creative>
         </Creatives>
         </InLine></Ad></VAST>
@@ -107,10 +107,15 @@ class VideoAdTrackingTest {
                 scenario.onActivity { renderer.showFullscreen(it) }
                 block()
             } finally {
-                onMain {
-                    resumedActivities().filterIsInstance<VideoAdActivity>().forEach(Activity::finish)
-                    renderer.destroy()
-                }
+                // Stop answering first, so a stalled video download is not left open under a closing screen.
+                server.close()
+                // Whatever stage a failed test left the ad screen in, it must not play on into the next
+                // test. Nothing here throws, so it cannot hide the failure that led here.
+                val screens = videoScreens()
+                onMain { screens.forEach(Activity::finish) }
+                val deadline = SystemClock.uptimeMillis() + 5_000
+                while (videoScreens().isNotEmpty() && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(50)
+                onMain { renderer.destroy() }
             }
         }
     }
@@ -137,6 +142,7 @@ class VideoAdTrackingTest {
             assertEquals(1, events.impressions.get())
             assertEquals(1, server.requestCount("/impression/dsp"))
             assertEquals(1, server.requestCount("/impression/verifier"))
+            assertMacrosFilledIn("/impression/dsp")
         }
     }
 
@@ -175,6 +181,7 @@ class VideoAdTrackingTest {
             assertEquals(2, server.requestCount("/click/video"))
             assertEquals(0, server.requestCount("/click/end-card"))
             assertEquals(2, events.clicks.get())
+            assertMacrosFilledIn("/click/video")
         }
     }
 
@@ -224,16 +231,23 @@ class VideoAdTrackingTest {
             assertEquals(2, server.requestCount("/click/end-card"))
             assertEquals(0, server.requestCount("/click/video"))
             assertEquals(2, events.clicks.get())
+            assertMacrosFilledIn("/click/end-card")
         }
     }
 
     @Test
-    fun aTapThatOpensNothingIsNotAClick() {
+    fun aTapWithNoClickThroughIsNotAClick() = assertTapsOpeningNothingAreNotClicks(clickThrough = null)
+
+    @Test
+    fun aTapOnAnEmptyClickThroughIsNotAClick() = assertTapsOpeningNothingAreNotClicks(clickThrough = "")
+
+    /** Taps the playing video, then its end card, when neither has anywhere to go. */
+    private fun assertTapsOpeningNothingAreNotClicks(clickThrough: String?) {
         server.serve("/video.mp4", "video/mp4", testVideo())
         server.serve("/end-card.png", "image/png", testImage())
         val events = Events()
 
-        showAd(vast("/video.mp4", clickThrough = null), events) {
+        showAd(vast("/video.mp4", clickThrough), events) {
             val screen = waitFor("the video to play") { resumedVideoScreen()?.takeIf { it.isPlaying() } }
             onMain {
                 screen.window.decorView.find(VideoAdView::class.java)!!
@@ -261,11 +275,23 @@ class VideoAdTrackingTest {
         Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it)
     }.toByteArray()
 
-    private fun resumedActivities(): Collection<Activity> =
-        ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+    private fun assertMacrosFilledIn(path: String) {
+        val sent = server.requestsTo(path)
+        assertTrue("nothing was sent to $path", sent.isNotEmpty())
+        sent.forEach { assertFalse("a macro was sent unfilled: $it", "[" in it || "%5B" in it.uppercase()) }
+    }
 
-    private fun resumedVideoScreen(): VideoAdActivity? =
-        onMain { resumedActivities().filterIsInstance<VideoAdActivity>().firstOrNull() }
+    /** Every video ad screen that has not been destroyed yet. */
+    private fun videoScreens(): List<VideoAdActivity> = onMain {
+        Stage.values().filter { it != Stage.DESTROYED }
+            .flatMap { ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(it) }
+            .filterIsInstance<VideoAdActivity>()
+    }
+
+    private fun resumedVideoScreen(): VideoAdActivity? = onMain {
+        ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+            .filterIsInstance<VideoAdActivity>().firstOrNull()
+    }
 
     private fun VideoAdActivity.isPlaying(): Boolean =
         onMain { window.decorView.find(PlayerView::class.java)?.player?.isPlaying == true }

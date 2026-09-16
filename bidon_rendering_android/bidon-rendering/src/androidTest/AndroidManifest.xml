@@ -4,7 +4,8 @@
     <!-- Tests serve documents, videos and pixels from a local server. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <application>
+    <!-- Cleartext for the local test server on 127.0.0.1, whatever the test APK's target SDK. -->
+    <application android:usesCleartextTraffic="true">
         <!-- An empty screen for tests that need a view attached to a real window. -->
         <activity
             android:name="org.bidon.rendering.ui.BlankActivity"
