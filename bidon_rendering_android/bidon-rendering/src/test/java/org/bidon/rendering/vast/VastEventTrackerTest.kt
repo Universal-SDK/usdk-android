@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Sends the buyer's impression trackers.
+ * Sends the buyer's impression and click trackers.
  *
  * When they are sent is the video screen's decision; what this checks is that every URL goes out,
  * and with the same macros filled in as the progress events, so a buyer reading `[ADPLAYHEAD]` or
@@ -30,5 +30,27 @@ class VastEventTrackerTest {
         assertTrue(sent[0], "[" !in sent[0])
         assertTrue(sent[0], sent[0].endsWith("&at=00:00:00"))
         assertEquals("https://verifier.example/impression", sent[1])
+    }
+
+    @Test
+    fun `every click tracker is sent on each click, at the playhead of that click`() {
+        val clickTrackers = listOf(
+            "https://dsp.example/click?at=[ADPLAYHEAD]",
+            "https://verifier.example/click"
+        )
+
+        tracker.onProgress(0.4f, 30_000, 12_500, emptyList())
+        tracker.onClick(clickTrackers)
+        tracker.onClick(clickTrackers)
+
+        assertEquals(
+            listOf(
+                "https://dsp.example/click?at=00:00:12",
+                "https://verifier.example/click",
+                "https://dsp.example/click?at=00:00:12",
+                "https://verifier.example/click"
+            ),
+            sent
+        )
     }
 }

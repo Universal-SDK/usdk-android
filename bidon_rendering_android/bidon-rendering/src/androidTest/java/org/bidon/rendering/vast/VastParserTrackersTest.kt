@@ -11,7 +11,8 @@ import org.junit.runner.RunWith
 /**
  * The buyer's impression and click trackers have to survive parsing, including the ones a wrapper
  * adds on its way to the ad: every level of a wrapper chain belongs to someone who counts the
- * impression.
+ * impression. Companion click trackers are kept apart from the video's, since each belongs to a
+ * different click.
  *
  * Instrumented because the parser is built on android.util.Xml, which has no implementation on the
  * JVM. The wrapper chain goes through a local server, the way a real wrapper is fetched.
@@ -28,7 +29,7 @@ class VastParserTrackersTest {
 
     private fun parse(xml: String): VastAd = runBlocking { VastParser().parse(xml).getOrThrow() }
 
-    private fun inline(impressions: String, videoClicks: String = "") = """
+    private fun inline(impressions: String, videoClicks: String = "", companionAds: String = "") = """
         <VAST version="4.2"><Ad id="1"><InLine>
         <AdSystem>test</AdSystem><AdTitle>test</AdTitle>
         $impressions
@@ -38,6 +39,7 @@ class VastParserTrackersTest {
         <VideoClicks><ClickThrough><![CDATA[https://example.com/advertiser]]></ClickThrough>$videoClicks</VideoClicks>
         <MediaFiles><MediaFile delivery="progressive" type="video/mp4" width="360" height="640"><![CDATA[https://example.com/video.mp4]]></MediaFile></MediaFiles>
         </Linear></Creative>
+        $companionAds
         </Creatives>
         </InLine></Ad></VAST>
     """.trimIndent()
@@ -90,5 +92,29 @@ class VastParserTrackersTest {
             listOf("https://exchange.example/click", "https://dsp.example/click"),
             ad.videoClicks?.clickTrackingUrls
         )
+    }
+
+    @Test
+    fun companionClickTrackersStayWithTheCompanion() {
+        val ad = parse(
+            inline(
+                impressions = "<Impression><![CDATA[https://dsp.example/impression]]></Impression>",
+                videoClicks = "<ClickTracking><![CDATA[https://dsp.example/video-click]]></ClickTracking>",
+                companionAds = """
+                    <Creative><CompanionAds><Companion width="360" height="640">
+                    <StaticResource creativeType="image/png"><![CDATA[https://example.com/end-card.png]]></StaticResource>
+                    <CompanionClickThrough><![CDATA[https://example.com/advertiser]]></CompanionClickThrough>
+                    <CompanionClickTracking><![CDATA[https://dsp.example/end-card-click]]></CompanionClickTracking>
+                    <CompanionClickTracking><![CDATA[https://verifier.example/end-card-click]]></CompanionClickTracking>
+                    </Companion></CompanionAds></Creative>
+                """
+            )
+        )
+
+        assertEquals(
+            listOf("https://dsp.example/end-card-click", "https://verifier.example/end-card-click"),
+            ad.companions.single().clickTrackingUrls
+        )
+        assertEquals(listOf("https://dsp.example/video-click"), ad.videoClicks?.clickTrackingUrls)
     }
 }

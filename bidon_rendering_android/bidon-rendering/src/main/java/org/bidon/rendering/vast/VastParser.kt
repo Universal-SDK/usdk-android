@@ -319,6 +319,8 @@ class VastParser {
             var iframeUrl: String? = null
             var clickThroughUrl: String? = null
 
+            val clickTrackingUrls = mutableListOf<String>()
+
             val trackingEvents = mutableListOf<TrackingEvent>()
 
             val startDepth = parser.depth
@@ -351,6 +353,12 @@ class VastParser {
                             "CompanionClickThrough" -> {
                                 clickThroughUrl =
                                     parser.nextText().trim()
+                            }
+
+                            "CompanionClickTracking" -> {
+                                clickTrackingUrls.add(
+                                    parser.nextText().trim()
+                                )
                             }
 
                             // Companion tracking lives inside the Companion element, so the
@@ -407,6 +415,7 @@ class VastParser {
                 height = height,
                 resource = resource,
                 clickThroughUrl = clickThroughUrl,
+                clickTrackingUrls = clickTrackingUrls,
                 trackingEvents = trackingEvents
             )
 

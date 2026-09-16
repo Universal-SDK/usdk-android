@@ -88,6 +88,15 @@ class VastEventTracker internal constructor(
         sendAll(impressionUrls)
     }
 
+    /**
+     * Called on every click on the video or its end card.
+     * @param clickTrackingUrls The trackers of what was clicked: the video's `<ClickTracking>`, or
+     * the companion's `<CompanionClickTracking>`
+     */
+    fun onClick(clickTrackingUrls: List<String>) {
+        sendAll(clickTrackingUrls)
+    }
+
     fun onSkip(trackingEvents: List<TrackingEvent>) {
         if (skipped) return
 

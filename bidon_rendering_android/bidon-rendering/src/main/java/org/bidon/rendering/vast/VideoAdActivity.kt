@@ -132,9 +132,7 @@ class VideoAdActivity : AppCompatActivity() {
             setSkipOffset(skipOffset)
 
             setListener(object : VideoAdView.Listener {
-                override fun onClick() {
-                    presentation?.onClicked()
-                }
+                override fun onClick() = reportVideoClick()
 
                 override fun onSkip() {
                     val trackingEvents = vastAd?.trackingEvents ?: emptyList()
@@ -149,9 +147,7 @@ class VideoAdActivity : AppCompatActivity() {
 
                 override fun onMuteChanged(isMuted: Boolean) {}
 
-                override fun onCtaClick() {
-                    presentation?.onClicked()
-                }
+                override fun onCtaClick() = reportVideoClick()
             })
         }
 
@@ -251,6 +247,11 @@ class VideoAdActivity : AppCompatActivity() {
         presentation?.onImpression()
     }
 
+    private fun reportVideoClick() {
+        eventTracker.onClick(vastAd?.videoClicks?.clickTrackingUrls.orEmpty())
+        presentation?.onClicked()
+    }
+
     private fun showEndCard() {
         if (isEndCardShown) return
 
@@ -276,6 +277,7 @@ class VideoAdActivity : AppCompatActivity() {
                 }
 
                 override fun onClick() {
+                    eventTracker.onClick(companion.clickTrackingUrls)
                     presentation?.onClicked()
                 }
 
