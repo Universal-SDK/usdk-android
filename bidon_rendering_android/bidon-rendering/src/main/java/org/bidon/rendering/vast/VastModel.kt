@@ -12,7 +12,7 @@ data class VastAd(
 
     val videoClicks: VideoClicks? = null,
 
-    val skipOffsetMs: Long? = null,
+    val skipOffset: SkipOffset? = null,
 
     val adParameters: String? = null,
 

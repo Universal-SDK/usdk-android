@@ -115,8 +115,7 @@ class VastRenderer(
             context = activity,
             mediaUrl = media.url,
             clickThroughUrl = ad.videoClicks?.clickThroughUrl,
-            // The document's skip offset is set for this creative; the DSP's is general.
-            skipOffsetMs = ad.skipOffsetMs ?: rendering.skipOffsetMs,
+            fallbackSkipOffsetMs = rendering.skipOffsetMs,
             adKey = key
         )
 

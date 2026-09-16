@@ -12,6 +12,7 @@ import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.vast.RewardedController
+import org.bidon.rendering.vast.SkipOffset
 import org.bidon.rendering.vast.VastAd
 import org.bidon.rendering.vast.VastEventTracker
 import org.bidon.rendering.vast.VastRenderer
@@ -23,21 +24,21 @@ class VideoAdActivity : AppCompatActivity() {
     companion object {
         private const val EXTRA_MEDIA_URL = "extra_media_url"
         private const val EXTRA_CLICK_URL = "extra_click_url"
-        private const val EXTRA_SKIP_OFFSET_MS = "extra_skip_offset_ms"
+        private const val EXTRA_FALLBACK_SKIP_OFFSET_MS = "extra_fallback_skip_offset_ms"
         private const val EXTRA_AD_KEY = "extra_ad_key"
 
         fun start(
             context: Context,
             mediaUrl: String,
             clickThroughUrl: String? = null,
-            skipOffsetMs: Long,
+            fallbackSkipOffsetMs: Long,
             adKey: String? = null
         ) {
             val intent = Intent(context, VideoAdActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 putExtra(EXTRA_MEDIA_URL, mediaUrl)
                 putExtra(EXTRA_CLICK_URL, clickThroughUrl)
-                putExtra(EXTRA_SKIP_OFFSET_MS, skipOffsetMs)
+                putExtra(EXTRA_FALLBACK_SKIP_OFFSET_MS, fallbackSkipOffsetMs)
                 putExtra(EXTRA_AD_KEY, adKey)
             }
             context.startActivity(intent)
@@ -68,7 +69,8 @@ class VideoAdActivity : AppCompatActivity() {
 
         val mediaUrl = intent.getStringExtra(EXTRA_MEDIA_URL)
         val clickUrl = intent.getStringExtra(EXTRA_CLICK_URL)
-        val skipOffsetMs = intent.getLongExtra(EXTRA_SKIP_OFFSET_MS, AdRenderingConfig.DEFAULT_SKIP_OFFSET_MS)
+        val fallbackSkipOffsetMs =
+            intent.getLongExtra(EXTRA_FALLBACK_SKIP_OFFSET_MS, AdRenderingConfig.DEFAULT_SKIP_OFFSET_MS)
         val adKey = intent.getStringExtra(EXTRA_AD_KEY)
 
         if (mediaUrl.isNullOrBlank()) {
@@ -91,6 +93,8 @@ class VideoAdActivity : AppCompatActivity() {
         requestedOrientation = presented.lockedOrientation
 
         vastAd = VastRenderer.getAd(adKey)
+        // The document's skip offset is set for this creative; the DSP's is general.
+        val skipOffset = vastAd?.skipOffset ?: SkipOffset.Time(fallbackSkipOffsetMs)
 
         eventTracker.reset()
         rewardedController.reset()
@@ -112,7 +116,7 @@ class VideoAdActivity : AppCompatActivity() {
         val adView = VideoAdView(this).apply {
             player?.let { bindPlayer(it) }
             setClickThroughUrl(clickUrl)
-            setSkipOffsetMs(skipOffsetMs)
+            setSkipOffset(skipOffset)
 
             setListener(object : VideoAdView.Listener {
                 override fun onClick() {
