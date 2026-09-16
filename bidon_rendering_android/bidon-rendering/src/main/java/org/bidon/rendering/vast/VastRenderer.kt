@@ -119,7 +119,7 @@ class VastRenderer(
             adKey = key
         )
 
-        // The impression is reported by the activity once the video is on screen, not here.
+        // The impression is reported by the activity once the video starts playing, not here.
     }
 
     override fun getView(): View? = null

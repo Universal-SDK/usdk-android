@@ -3,7 +3,15 @@ package org.bidon.rendering.vast
 import org.bidon.rendering.tracking.TrackingDispatcher
 import java.util.UUID
 
-class VastEventTracker {
+/**
+ * Sends the buyer's trackers for one showing of a video ad: its impression, progress, skip, click
+ * and companion view events, with the VAST macros filled in.
+ */
+class VastEventTracker internal constructor(
+    private val send: (String) -> Unit
+) {
+
+    constructor() : this(TrackingDispatcher::fire)
 
     private var started = false
     private var firstQuartile = false
@@ -71,6 +79,15 @@ class VastEventTracker {
         }
     }
 
+    /**
+     * Called when the video impression is counted. When that is, and that it happens once for the
+     * ad, is the video screen's call; every URL given here is sent.
+     * @param impressionUrls The `<Impression>` URLs of the whole wrapper chain
+     */
+    fun onImpression(impressionUrls: List<String>) {
+        sendAll(impressionUrls)
+    }
+
     fun onSkip(trackingEvents: List<TrackingEvent>) {
         if (skipped) return
 
@@ -99,10 +116,12 @@ class VastEventTracker {
             .asSequence()
             .filter { it.event.equals(event, ignoreCase = true) }
             .forEach { tracking ->
-                TrackingDispatcher.fire(
-                    substituteMacros(tracking.url, durationMs, positionMs)
-                )
+                send(substituteMacros(tracking.url, durationMs, positionMs))
             }
+    }
+
+    private fun sendAll(urls: List<String>) {
+        urls.forEach { send(substituteMacros(it, 0L, currentPositionMs)) }
     }
 
     private fun substituteMacros(

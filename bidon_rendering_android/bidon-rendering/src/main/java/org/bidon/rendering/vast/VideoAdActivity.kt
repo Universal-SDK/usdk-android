@@ -27,6 +27,7 @@ class VideoAdActivity : AppCompatActivity() {
         private const val EXTRA_CLICK_URL = "extra_click_url"
         private const val EXTRA_FALLBACK_SKIP_OFFSET_MS = "extra_fallback_skip_offset_ms"
         private const val EXTRA_AD_KEY = "extra_ad_key"
+        private const val STATE_IMPRESSION_REPORTED = "impression_reported"
 
         fun start(
             context: Context,
@@ -66,6 +67,8 @@ class VideoAdActivity : AppCompatActivity() {
 
     private var presentationKey: String? = null
     private var presentation: PresentedAd? = null
+
+    // Kept across recreation: the video starts over on the new screen, but the ad was already seen.
     private var impressionReported = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,6 +99,7 @@ class VideoAdActivity : AppCompatActivity() {
             return
         }
         presentation = presented
+        impressionReported = savedInstanceState?.getBoolean(STATE_IMPRESSION_REPORTED) ?: false
 
         // Locked so the ad cannot rotate while it is up, restarting the video and resetting the
         // reward counter. Inherited from the publisher, resolved when the ad was shown.
@@ -163,13 +167,9 @@ class VideoAdActivity : AppCompatActivity() {
         player?.play()
     }
 
-    override fun onResume() {
-        super.onResume()
-        // Reported here rather than at startActivity, so it means the video reached the screen.
-        if (!impressionReported) {
-            impressionReported = true
-            presentation?.onImpression()
-        }
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_IMPRESSION_REPORTED, impressionReported)
     }
 
     override fun onStop() {
@@ -203,7 +203,7 @@ class VideoAdActivity : AppCompatActivity() {
         player?.addListener(object : VideoPlayer.Listener {
 
             override fun onReady() {}
-            override fun onStarted() {}
+            override fun onStarted() = reportImpression()
             override fun onPaused() {}
 
             override fun onProgress(positionMs: Long, durationMs: Long) {
@@ -236,6 +236,19 @@ class VideoAdActivity : AppCompatActivity() {
                 finish()
             }
         })
+    }
+
+    /**
+     * The impression is counted when the video starts playing, which is when a video impression is
+     * counted by the standard buyers measure against. The screen opening is not enough: a video that
+     * never loads was never seen. The SDK and the buyer's pixels are told together, so both count
+     * the same impressions.
+     */
+    private fun reportImpression() {
+        if (impressionReported) return
+        impressionReported = true
+        eventTracker.onImpression(vastAd?.impressions.orEmpty())
+        presentation?.onImpression()
     }
 
     private fun showEndCard() {

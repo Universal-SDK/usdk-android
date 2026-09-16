@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Tests serve documents, videos and pixels from a local server. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application>
         <!-- An empty screen for tests that need a view attached to a real window. -->
         <activity
