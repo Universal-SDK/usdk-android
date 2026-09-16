@@ -6,8 +6,10 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
-import androidx.core.view.doOnAttach
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.doOnAttach
 import androidx.core.view.updateLayoutParams
 
 /**
@@ -57,14 +59,21 @@ internal object AdWindow {
         else -> ActivityInfo.SCREEN_ORIENTATION_LOCKED
     }
 
-    /** Hides the system bars and lets the creative draw edge to edge behind them. */
+    /**
+     * Hides the status bar and lets the creative draw edge to edge, behind a navigation bar the
+     * theme makes transparent.
+     *
+     * The navigation bar stays shown on purpose. While it is hidden Android turns the back gesture
+     * off, so on a phone with gesture navigation the swipe reached the ad as a tap: Back did
+     * nothing and the advertiser's page opened instead.
+     */
     fun goFullscreen(activity: Activity) {
-        activity.window.decorView.systemUiVisibility =
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        val window = activity.window
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.statusBars())
+        }
     }
 }
 
