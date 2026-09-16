@@ -70,7 +70,7 @@ class VastParser {
 
             var isWrapper = false
             var wrapperUrl: String? = null
-            var skipOffsetMs: Long? = null
+            var skipOffset: SkipOffset? = null
 
             val impressions = mutableListOf<String>()
 
@@ -107,7 +107,7 @@ class VastParser {
                         "Linear" -> {
                             val skipAttr = parser.getAttributeValue(null, "skipoffset")
                             if (skipAttr != null) {
-                                skipOffsetMs = parseSkipOffset(skipAttr)
+                                skipOffset = SkipOffset.parse(skipAttr)
                             }
                         }
 
@@ -213,7 +213,7 @@ class VastParser {
                         clickThroughUrl = clickThroughUrl,
                         clickTrackingUrls = clickTrackingUrls
                     ),
-                    skipOffsetMs = skipOffsetMs
+                    skipOffset = skipOffset
                 )
             )
 
@@ -228,33 +228,6 @@ class VastParser {
                     )
                 )
             )
-        }
-    }
-
-    private fun parseSkipOffset(skipAttr: String): Long? {
-        return try {
-            when {
-                skipAttr.contains(":") -> {
-                    val parts = skipAttr.split(":")
-                    if (parts.size >= 3) {
-                        val hours = parts[0].toIntOrNull() ?: 0
-                        val minutes = parts[1].toIntOrNull() ?: 0
-
-                        val secondsPart = parts[2].split(".")[0]
-                        val seconds = secondsPart.toIntOrNull() ?: 0
-
-                        ((hours * 3600) + (minutes * 60) + seconds).toLong() * 1000
-                    } else null
-                }
-
-                skipAttr.all { it.isDigit() } -> {
-                    skipAttr.toLongOrNull()
-                }
-
-                else -> null
-            }
-        } catch (_: Exception) {
-            null
         }
     }
 

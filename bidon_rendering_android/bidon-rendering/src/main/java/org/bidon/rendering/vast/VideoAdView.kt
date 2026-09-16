@@ -15,6 +15,7 @@ import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.ui.clickOnlyOnTap
 import org.bidon.rendering.ui.dp
 import org.bidon.rendering.ui.insetFromSafeArea
+import org.bidon.rendering.vast.SkipOffset
 import org.bidon.rendering.vast.player.VideoPlayer
 
 @UnstableApi
@@ -37,7 +38,7 @@ class VideoAdView(context: Context) : FrameLayout(context) {
     private val ctaButton: TextView
 
     private var clickThroughUrl: String? = null
-    private var skipOffsetMs = AdRenderingConfig.DEFAULT_SKIP_OFFSET_MS
+    private var skipOffset: SkipOffset = SkipOffset.Time(AdRenderingConfig.DEFAULT_SKIP_OFFSET_MS)
     private var skipEnabled = false
 
     init {
@@ -169,7 +170,7 @@ class VideoAdView(context: Context) : FrameLayout(context) {
 
             override fun onProgress(positionMs: Long, durationMs: Long) {
                 updateCountdown(positionMs, durationMs)
-                handleSkip(positionMs)
+                handleSkip(positionMs, durationMs)
 
                 if (durationMs > 0 && !clickThroughUrl.isNullOrBlank()) {
                     ctaButton.visibility = View.VISIBLE
@@ -190,8 +191,8 @@ class VideoAdView(context: Context) : FrameLayout(context) {
         ctaButton.visibility = if (url.isNullOrBlank()) View.GONE else View.VISIBLE
     }
 
-    fun setSkipOffsetMs(offset: Long) {
-        skipOffsetMs = offset
+    fun setSkipOffset(offset: SkipOffset) {
+        skipOffset = offset
     }
 
     private fun updateCountdown(positionMs: Long, durationMs: Long) {
@@ -200,9 +201,10 @@ class VideoAdView(context: Context) : FrameLayout(context) {
         countdownView.text = String.format("%02d:%02d", sec / 60, sec % 60)
     }
 
-    private fun handleSkip(positionMs: Long) {
+    private fun handleSkip(positionMs: Long, durationMs: Long) {
         if (skipEnabled) return
-        if (positionMs >= skipOffsetMs) {
+        val availableAtMs = skipOffset.availableAtMs(durationMs) ?: return
+        if (positionMs >= availableAtMs) {
             skipEnabled = true
             skipButton.visibility = View.VISIBLE
         }
