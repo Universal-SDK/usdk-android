@@ -17,6 +17,7 @@ import org.bidon.rendering.html.HtmlWebView
 import org.bidon.rendering.vast.CompanionResource
 import org.bidon.rendering.vast.VastCompanion
 import org.bidon.rendering.ui.AdWindow
+import org.bidon.rendering.ui.clickOnlyOnTap
 import org.bidon.rendering.ui.dp
 import org.bidon.rendering.ui.insetFromSafeArea
 
@@ -146,6 +147,7 @@ class EndCardView(
                 listener?.onClick()
                 openClickThrough()
             }
+            clickOnlyOnTap()
 
             load(url) {
                 crossfade(true)
