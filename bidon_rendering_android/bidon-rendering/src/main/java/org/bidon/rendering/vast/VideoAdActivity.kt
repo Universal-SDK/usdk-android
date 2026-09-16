@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.util.UnstableApi
 import androidx.annotation.OptIn
@@ -55,6 +56,13 @@ class VideoAdActivity : AppCompatActivity() {
     private var isCompleted = false
     private var isEndCardShown = false
 
+    // Back is held until the video completes or is skipped, so it cannot cut a rewarded video short
+    // of its reward. A callback, not an onBackPressed override: with predictive back, on by default
+    // for apps targeting Android 16, onBackPressed is never called.
+    private val holdBack = object : OnBackPressedCallback(true) {
+        override fun handleOnBackPressed() = Unit
+    }
+
     private var presentationKey: String? = null
     private var presentation: PresentedAd? = null
     private var impressionReported = false
@@ -65,6 +73,7 @@ class VideoAdActivity : AppCompatActivity() {
         // Was SCREEN_ORIENTATION_SENSOR, which invited the rotation that recreated this
         // activity and restarted the video from the beginning.
         AdWindow.goFullscreen(this)
+        onBackPressedDispatcher.addCallback(this, holdBack)
 
         val mediaUrl = intent.getStringExtra(EXTRA_MEDIA_URL)
         val clickUrl = intent.getStringExtra(EXTRA_CLICK_URL)
@@ -124,6 +133,7 @@ class VideoAdActivity : AppCompatActivity() {
                     eventTracker.onSkip(trackingEvents)
                     rewardedController.onSkip()
                     isCompleted = true
+                    holdBack.isEnabled = false
                     // Skipping ends the video, not the ad. The companion end card,
                     // when the VAST has one, still gets its turn.
                     showEndCard()
@@ -185,11 +195,6 @@ class VideoAdActivity : AppCompatActivity() {
         player = null
     }
 
-    override fun onBackPressed() {
-        if (!isCompleted) return
-        super.onBackPressed()
-    }
-
     private fun observePlayer() {
         player?.addListener(object : VideoPlayer.Listener {
 
@@ -219,6 +224,7 @@ class VideoAdActivity : AppCompatActivity() {
                 rewardedController.onComplete()
 
                 isCompleted = true
+                holdBack.isEnabled = false
                 showEndCard()
             }
 
