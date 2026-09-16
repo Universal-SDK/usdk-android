@@ -12,6 +12,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.ui.AdWindow
+import org.bidon.rendering.ui.clickOnlyOnTap
 import org.bidon.rendering.ui.dp
 import org.bidon.rendering.ui.insetFromSafeArea
 import org.bidon.rendering.vast.player.VideoPlayer
@@ -125,6 +126,7 @@ class VideoAdView(context: Context) : FrameLayout(context) {
                 listener?.onClick()
                 openClickThrough()
             }
+            clickOnlyOnTap()
         })
 
         addView(countdownView)
