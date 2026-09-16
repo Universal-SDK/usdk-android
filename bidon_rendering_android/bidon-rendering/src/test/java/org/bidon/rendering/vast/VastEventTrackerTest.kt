@@ -3,6 +3,7 @@ package org.bidon.rendering.vast
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Locale
 
 /**
  * Sends the buyer's impression and click trackers.
@@ -52,5 +53,20 @@ class VastEventTrackerTest {
             ),
             sent
         )
+    }
+
+    @Test
+    fun `the playhead is written in ASCII digits whatever the device language`() {
+        val deviceLocale = Locale.getDefault()
+        // Persian formats numbers with its own digits by default, and so do Arabic and Bengali.
+        Locale.setDefault(Locale.forLanguageTag("fa"))
+        try {
+            tracker.onProgress(0.4f, 30_000, 12_500, emptyList())
+            tracker.onClick(listOf("https://dsp.example/click?at=[ADPLAYHEAD]"))
+        } finally {
+            Locale.setDefault(deviceLocale)
+        }
+
+        assertEquals(listOf("https://dsp.example/click?at=00:00:12"), sent)
     }
 }

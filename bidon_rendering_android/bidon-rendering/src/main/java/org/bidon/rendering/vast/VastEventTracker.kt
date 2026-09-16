@@ -1,6 +1,7 @@
 package org.bidon.rendering.vast
 
 import org.bidon.rendering.tracking.TrackingDispatcher
+import java.util.Locale
 import java.util.UUID
 
 /**
@@ -144,7 +145,8 @@ class VastEventTracker internal constructor(
         val hours = playheadSeconds / 3600
         val minutes = (playheadSeconds % 3600) / 60
         val seconds = playheadSeconds % 60
-        val adPlayhead = String.format("%02d:%02d:%02d", hours, minutes, seconds)
+        // Locale.ROOT, or a device set to Persian, Arabic or Bengali writes the playhead in its own digits.
+        val adPlayhead = String.format(Locale.ROOT, "%02d:%02d:%02d", hours, minutes, seconds)
 
         return url
             .replace("[TIMESTAMP]", timestamp.toString())
