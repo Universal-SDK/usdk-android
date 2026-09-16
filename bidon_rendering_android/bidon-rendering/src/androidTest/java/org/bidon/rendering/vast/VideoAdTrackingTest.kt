@@ -36,7 +36,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * The impression is what the buyer bills on, so it has to mean that the video actually played: it
  * is counted when playback starts, not when the screen opens, and only once for the ad, even when
  * the screen is recreated and the video starts over. A click sends the trackers of what was
- * clicked: the video's for the video, the end card's for the end card.
+ * clicked: the video's for the video, the end card's for the end card. A tap that opens nothing is
+ * not a click at all.
  */
 @RunWith(AndroidJUnit4::class)
 class VideoAdTrackingTest {
@@ -71,7 +72,7 @@ class VideoAdTrackingTest {
 
     // The click-throughs lead nowhere on purpose: nothing claims the scheme, so no browser opens
     // over the ad while the test is still clicking on it.
-    private fun vast(mediaPath: String) = """
+    private fun vast(mediaPath: String, clickThrough: String? = "bidon-test://advertiser") = """
         <VAST version="4.2"><Ad id="1"><InLine>
         <AdSystem>test</AdSystem><AdTitle>test</AdTitle>
         <Impression><![CDATA[${server.url("/impression/dsp")}]]></Impression>
@@ -80,14 +81,14 @@ class VideoAdTrackingTest {
         <Creative><Linear skipoffset="00:00:01">
         <Duration>00:00:10</Duration>
         <VideoClicks>
-        <ClickThrough><![CDATA[bidon-test://advertiser]]></ClickThrough>
+        ${clickThrough?.let { "<ClickThrough><![CDATA[$it]]></ClickThrough>" }.orEmpty()}
         <ClickTracking><![CDATA[${server.url("/click/video")}]]></ClickTracking>
         </VideoClicks>
         <MediaFiles><MediaFile delivery="progressive" type="video/mp4" width="64" height="64"><![CDATA[${server.url(mediaPath)}]]></MediaFile></MediaFiles>
         </Linear></Creative>
         <Creative><CompanionAds><Companion width="64" height="64">
         <StaticResource creativeType="image/png"><![CDATA[${server.url("/end-card.png")}]]></StaticResource>
-        <CompanionClickThrough><![CDATA[bidon-test://advertiser]]></CompanionClickThrough>
+        ${clickThrough?.let { "<CompanionClickThrough><![CDATA[$it]]></CompanionClickThrough>" }.orEmpty()}
         <CompanionClickTracking><![CDATA[${server.url("/click/end-card")}]]></CompanionClickTracking>
         </Companion></CompanionAds></Creative>
         </Creatives>
@@ -199,6 +200,33 @@ class VideoAdTrackingTest {
             assertEquals(2, server.requestCount("/click/end-card"))
             assertEquals(0, server.requestCount("/click/video"))
             assertEquals(2, events.clicks.get())
+        }
+    }
+
+    @Test
+    fun aTapThatOpensNothingIsNotAClick() {
+        server.serve("/video.mp4", "video/mp4", testVideo())
+        server.serve("/end-card.png", "image/png", testImage())
+        val events = Events()
+
+        showAd(vast("/video.mp4", clickThrough = null), events) {
+            val screen = waitFor("the video to play") { resumedVideoScreen()?.takeIf { it.isPlaying() } }
+            onMain {
+                screen.window.decorView.find(VideoAdView::class.java)!!
+                    .find(View::class.java) { it.javaClass == View::class.java && it.isClickable }!!
+                    .performClick()
+            }
+            val skip = waitFor("Skip") {
+                onMain { screen.window.decorView.find(TextView::class.java) { it.text == "Skip" && it.isShown } }
+            }
+            onMain { skip.performClick() }
+            val endCard = waitFor("the end card") { onMain { screen.window.decorView.find(EndCardView::class.java) } }
+            onMain { endCard.find(ImageView::class.java)!!.performClick() }
+            SystemClock.sleep(1_000)
+
+            assertEquals(0, events.clicks.get())
+            assertEquals(0, server.requestCount("/click/video"))
+            assertEquals(0, server.requestCount("/click/end-card"))
         }
     }
 

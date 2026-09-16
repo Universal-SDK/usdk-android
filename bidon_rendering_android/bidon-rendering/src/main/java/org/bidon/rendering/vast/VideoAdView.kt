@@ -124,6 +124,9 @@ class VideoAdView(context: Context) : FrameLayout(context) {
             isClickable = true
             isFocusable = true
             setOnClickListener {
+                // A tap that opens nothing is not a click: without a click-through it would be
+                // reported to the publisher, the server and the buyer as one.
+                if (clickThroughUrl.isNullOrBlank()) return@setOnClickListener
                 listener?.onClick()
                 openClickThrough()
             }

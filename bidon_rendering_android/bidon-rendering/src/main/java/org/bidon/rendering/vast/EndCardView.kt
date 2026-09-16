@@ -144,6 +144,8 @@ class EndCardView(
             )
 
             setOnClickListener {
+                // A tap that opens nothing is not a click, as on the video.
+                if (clickThroughUrl.isNullOrBlank()) return@setOnClickListener
                 listener?.onClick()
                 openClickThrough()
             }
