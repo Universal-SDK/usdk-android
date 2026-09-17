@@ -18,6 +18,10 @@ import org.bidon.bidon.BidonAdapter
 import org.bidon.rendering.BidonRenderer
 import org.bidon.sdk.BidonSdk
 
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
+
 /**
  * Holds the bottom navigation and initializes both SDKs. All ad work lives in the fragments:
  *
@@ -37,6 +41,12 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.fragmentContainer) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(top = systemBars.top)
+            insets
+        }
 
         BidonRenderer.init(this)
 
