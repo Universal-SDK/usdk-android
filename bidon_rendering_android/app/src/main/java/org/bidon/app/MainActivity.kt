@@ -3,6 +3,9 @@ package org.bidon.app
 import android.content.Context
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.commit
 import com.demo.tetris.R
@@ -37,6 +40,15 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // The app targets SDK 35, so from Android 15 the window draws behind the system bars and
+        // the app bar. A plain container has to inset itself or its content ends up under them; the
+        // bottom navigation is a Material view and already does this on its own.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.fragmentContainer) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(top = systemBars.top)
+            insets
+        }
 
         BidonRenderer.init(this)
 
