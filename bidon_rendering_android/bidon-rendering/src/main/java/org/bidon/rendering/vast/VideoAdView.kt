@@ -41,6 +41,10 @@ class VideoAdView(context: Context) : FrameLayout(context) {
     private var skipOffset: SkipOffset = SkipOffset.Time(AdRenderingConfig.DEFAULT_SKIP_OFFSET_MS)
     private var skipEnabled = false
 
+    // The video takes clicks only once it is playing, which is when its impression is counted. While
+    // it loads, a tap would be a click on an ad that has not been seen.
+    private var playbackStarted = false
+
     init {
         setBackgroundColor(Color.BLACK)
 
@@ -124,6 +128,9 @@ class VideoAdView(context: Context) : FrameLayout(context) {
             isClickable = true
             isFocusable = true
             setOnClickListener {
+                // A tap that opens nothing is not a click: without a click-through it would be
+                // reported to the publisher, the server and the buyer as one.
+                if (!playbackStarted || clickThroughUrl.isNullOrBlank()) return@setOnClickListener
                 listener?.onClick()
                 openClickThrough()
             }
@@ -153,6 +160,8 @@ class VideoAdView(context: Context) : FrameLayout(context) {
 
         skipEnabled = false
         skipButton.visibility = View.GONE
+        playbackStarted = false
+        updateCtaButton()
 
         player.addListener(object : VideoPlayer.Listener {
 
@@ -160,6 +169,8 @@ class VideoAdView(context: Context) : FrameLayout(context) {
 
             override fun onStarted() {
                 // Do NOT reset skipEnabled here — skip offset may already have passed
+                playbackStarted = true
+                updateCtaButton()
             }
 
             override fun onPaused() {}
@@ -171,10 +182,6 @@ class VideoAdView(context: Context) : FrameLayout(context) {
             override fun onProgress(positionMs: Long, durationMs: Long) {
                 updateCountdown(positionMs, durationMs)
                 handleSkip(positionMs, durationMs)
-
-                if (durationMs > 0 && !clickThroughUrl.isNullOrBlank()) {
-                    ctaButton.visibility = View.VISIBLE
-                }
             }
 
             override fun onError(error: Throwable) {}
@@ -188,7 +195,12 @@ class VideoAdView(context: Context) : FrameLayout(context) {
 
     fun setClickThroughUrl(url: String?) {
         clickThroughUrl = url
-        ctaButton.visibility = if (url.isNullOrBlank()) View.GONE else View.VISIBLE
+        updateCtaButton()
+    }
+
+    private fun updateCtaButton() {
+        val clickable = playbackStarted && !clickThroughUrl.isNullOrBlank()
+        ctaButton.visibility = if (clickable) View.VISIBLE else View.GONE
     }
 
     fun setSkipOffset(offset: SkipOffset) {

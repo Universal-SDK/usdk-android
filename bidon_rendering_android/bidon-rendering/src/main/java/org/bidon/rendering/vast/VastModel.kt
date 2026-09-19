@@ -62,6 +62,8 @@ data class VastCompanion(
 
     val clickThroughUrl: String? = null,
 
+    val clickTrackingUrls: List<String> = emptyList(),
+
     val trackingEvents: List<TrackingEvent> = emptyList()
 )
 

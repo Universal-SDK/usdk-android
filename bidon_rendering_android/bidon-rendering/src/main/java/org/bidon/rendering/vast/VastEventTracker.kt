@@ -1,9 +1,18 @@
 package org.bidon.rendering.vast
 
 import org.bidon.rendering.tracking.TrackingDispatcher
+import java.util.Locale
 import java.util.UUID
 
-class VastEventTracker {
+/**
+ * Sends the buyer's trackers for one showing of a video ad: its impression, progress, skip, click
+ * and companion view events, with the VAST macros filled in.
+ */
+class VastEventTracker internal constructor(
+    private val send: (String) -> Unit
+) {
+
+    constructor() : this(TrackingDispatcher::fire)
 
     private var started = false
     private var firstQuartile = false
@@ -71,6 +80,24 @@ class VastEventTracker {
         }
     }
 
+    /**
+     * Called when the video impression is counted. When that is, and that it happens once for the
+     * ad, is the video screen's call; every URL given here is sent.
+     * @param impressionUrls The `<Impression>` URLs of the whole wrapper chain
+     */
+    fun onImpression(impressionUrls: List<String>) {
+        sendAll(impressionUrls)
+    }
+
+    /**
+     * Called on every click on the video or its end card.
+     * @param clickTrackingUrls The trackers of what was clicked: the video's `<ClickTracking>`, or
+     * the companion's `<CompanionClickTracking>`
+     */
+    fun onClick(clickTrackingUrls: List<String>) {
+        sendAll(clickTrackingUrls)
+    }
+
     fun onSkip(trackingEvents: List<TrackingEvent>) {
         if (skipped) return
 
@@ -99,10 +126,12 @@ class VastEventTracker {
             .asSequence()
             .filter { it.event.equals(event, ignoreCase = true) }
             .forEach { tracking ->
-                TrackingDispatcher.fire(
-                    substituteMacros(tracking.url, durationMs, positionMs)
-                )
+                send(substituteMacros(tracking.url, durationMs, positionMs))
             }
+    }
+
+    private fun sendAll(urls: List<String>) {
+        urls.forEach { send(substituteMacros(it, 0L, currentPositionMs)) }
     }
 
     private fun substituteMacros(
@@ -116,7 +145,8 @@ class VastEventTracker {
         val hours = playheadSeconds / 3600
         val minutes = (playheadSeconds % 3600) / 60
         val seconds = playheadSeconds % 60
-        val adPlayhead = String.format("%02d:%02d:%02d", hours, minutes, seconds)
+        // Locale.ROOT, or a device set to Persian, Arabic or Bengali writes the playhead in its own digits.
+        val adPlayhead = String.format(Locale.ROOT, "%02d:%02d:%02d", hours, minutes, seconds)
 
         return url
             .replace("[TIMESTAMP]", timestamp.toString())
