@@ -34,6 +34,9 @@ class BackgroundTelemetryTest {
     private val store = RecordingStore()
     private val failures = CopyOnWriteArrayList<Throwable>()
 
+    /** Set by the tests that make telemetry fail on purpose. */
+    private var failureExpected = false
+
     /** Released at the end of every test, so no telemetry thread stays blocked inside a store after its test. */
     private val release = CountDownLatch(1)
 
@@ -99,6 +102,23 @@ class BackgroundTelemetryTest {
     }
 
     @Test
+    fun `a backlog records its overflow in one write, once the thread has caught up`() {
+        val telemetry = start(capacity = 2)
+        var refills = 5
+        // Each of the first appends hands over more than the handoff can take, so events keep overflowing while the
+        // thread works through its backlog.
+        store.onAppend = {
+            if (refills-- > 0) repeat(3) { telemetry.emit(event("more")) }
+        }
+
+        telemetry.emit(event("first"))
+
+        awaitUntil { store.payloads.size + (store.dropped[DropReason.OVERFLOW] ?: 0L) == 16L }
+        assertTrue(store.dropped.getValue(DropReason.OVERFLOW) > 0)
+        assertEquals(1, store.countDroppedCalls.get())
+    }
+
+    @Test
     fun `a sync requested while the handoff is full still reaches the store`() {
         store.blockAppends(release)
         val telemetry = start(capacity = 4)
@@ -128,6 +148,7 @@ class BackgroundTelemetryTest {
 
     @Test
     fun `an event that fails to encode switches telemetry off and is reported once`() {
+        failureExpected = true
         val broken = IllegalStateException("broken event")
         val telemetry = start()
 
@@ -146,6 +167,7 @@ class BackgroundTelemetryTest {
 
     @Test
     fun `a store that throws switches telemetry off and is reported once`() {
+        failureExpected = true
         store.failAppends(OutOfMemoryError("store"))
         val telemetry = start()
 
@@ -161,6 +183,7 @@ class BackgroundTelemetryTest {
 
     @Test
     fun `a store that cannot be opened switches telemetry off and is reported once`() {
+        failureExpected = true
         val telemetry = start { throw IOException("no disk") }
 
         awaitUntil { failures.isNotEmpty() }
@@ -254,9 +277,14 @@ class BackgroundTelemetryTest {
 
     private fun event(text: String) = TelemetryEvent { text.encodeToByteArray() }
 
+    /**
+     * Waits for [condition]. Unless the test expects telemetry to fail, a failure on the telemetry thread ends the
+     * wait at once and is reported as it is, instead of as a condition that was never met.
+     */
     private fun awaitUntil(condition: () -> Boolean) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
         while (!condition()) {
+            if (!failureExpected) failures.firstOrNull()?.let { throw AssertionError("telemetry failed", it) }
             check(System.nanoTime() < deadline) { "condition not met within 5 s" }
             Thread.sleep(5)
         }
@@ -269,6 +297,11 @@ class BackgroundTelemetryTest {
         val ttls: MutableList<Long> = CopyOnWriteArrayList()
         val syncs = AtomicInteger()
         val dropped: MutableMap<DropReason, Long> = ConcurrentHashMap()
+        val countDroppedCalls = AtomicInteger()
+
+        /** Runs on the telemetry thread at the start of every append. */
+        @Volatile
+        var onAppend: () -> Unit = {}
 
         private val appendStarted = CountDownLatch(1)
 
@@ -290,6 +323,7 @@ class BackgroundTelemetryTest {
 
         override fun append(payload: ByteArray, ttlMillis: Long) {
             appendStarted.countDown()
+            onAppend()
             gate?.await()
             failure?.let { throw it }
             payloads += payload.decodeToString()
@@ -301,6 +335,7 @@ class BackgroundTelemetryTest {
         }
 
         override fun countDropped(reason: DropReason, count: Long) {
+            countDroppedCalls.incrementAndGet()
             dropped.merge(reason, count, Long::plus)
         }
     }

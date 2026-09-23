@@ -51,9 +51,14 @@ internal class BackgroundTelemetry private constructor(
             while (true) {
                 val event = handoff.take()
                 if (event !== WAKE_UP) store.append(event.encode(), ttlMillis)
-                val lost = overflow.getAndSet(0)
-                if (lost > 0) store.countDropped(DropReason.OVERFLOW, lost)
-                if (syncRequested.getAndSet(false)) store.sync()
+                val syncing = syncRequested.getAndSet(false)
+                // Overflow means the thread is behind. Recording it after every event would add a durable write to
+                // each one exactly when there is no time for it, so it waits until the backlog is gone, or for a sync.
+                if (syncing || handoff.isEmpty()) {
+                    val lost = overflow.getAndSet(0)
+                    if (lost > 0) store.countDropped(DropReason.OVERFLOW, lost)
+                }
+                if (syncing) store.sync()
             }
         } catch (failure: Throwable) {
             running = false

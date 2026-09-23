@@ -49,7 +49,10 @@ class TelemetryOffTheMainThreadTest {
             telemetry.sync()
         }
 
-        assertTrue("events never stored; is the flag in the test manifest?", stored.await(10, TimeUnit.SECONDS))
+        assertTrue(
+            "events never stored: the test manifest lacks the flag, or telemetry failed (see logcat BidonTelemetry)",
+            stored.await(10, TimeUnit.SECONDS),
+        )
         assertEquals(emptyList<String>(), violations.filter { it.isRaisedByTelemetry() }.map { it.describe() })
     }
 

@@ -32,15 +32,30 @@ internal object RendererTelemetry {
     /**
      * Starts telemetry if the manifest asks for it, and [Telemetry.Disabled] otherwise. Does no disk work on the
      * calling thread: the store's directory is resolved on the telemetry thread, because resolving it creates it.
+     *
+     * Never throws. Reading the manifest goes through the package manager, which can fail with a runtime exception
+     * when the system service dies, and starting a thread fails when the process has run out of them. Either way the
+     * renderer carries on without telemetry.
      */
-    fun start(context: Context): Telemetry {
-        if (!isEnabled(context)) return Telemetry.Disabled
+    fun start(context: Context): Telemetry =
+        try {
+            if (isEnabled(context)) startThread(context) else Telemetry.Disabled
+        } catch (failure: Throwable) {
+            reportFailure(failure)
+            Telemetry.Disabled
+        }
+
+    private fun startThread(context: Context): Telemetry {
         val telemetry = BackgroundTelemetry.start(
             openStore = { DiskEventStore.open(TelemetryDirectory.forCurrentProcess(context)) },
-            onFailure = { Log.w(TAG, "Telemetry failed and is off until the app restarts", it) },
+            onFailure = ::reportFailure,
         )
         context.registerComponentCallbacks(SyncInBackground(telemetry))
         return telemetry
+    }
+
+    private fun reportFailure(failure: Throwable) {
+        Log.w(TAG, "Telemetry failed and is off until the app restarts", failure)
     }
 
     private fun isEnabled(context: Context): Boolean =

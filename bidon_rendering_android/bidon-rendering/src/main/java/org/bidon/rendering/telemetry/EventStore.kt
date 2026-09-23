@@ -35,8 +35,9 @@ internal class DiskEventStore private constructor(
         try {
             queue.sync()
         } catch (_: IOException) {
-            // The records are still with the kernel, which is what survives the process being killed. The next sync
-            // tries again.
+            // Not retried. After a failed fsync the kernel may count the pages it could not write as clean, so a second
+            // sync would report success without writing them. Records written before the failure can therefore still
+            // be lost later, and the queue holds no other copy of them to write again.
         }
     }
 

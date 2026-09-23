@@ -22,6 +22,12 @@ object BidonRenderer {
     internal var telemetry: Telemetry = Telemetry.Disabled
         private set
 
+    /**
+     * Idempotent, and safe to call from several threads at once: the adapter calls it from the mediation SDK's
+     * initialisation, and a host app may call it too. Only the first call takes effect, so telemetry is started once
+     * and one process never has two writers on its queue.
+     */
+    @Synchronized
     fun init(
         context: Context,
         config: RendererConfig? = null
