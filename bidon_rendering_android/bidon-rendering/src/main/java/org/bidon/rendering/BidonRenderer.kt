@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.app.Activity
 import org.bidon.rendering.mraid.MraidRenderer
+import org.bidon.rendering.telemetry.Telemetry
 import org.bidon.rendering.vast.VastRenderer
 
 object BidonRenderer {
@@ -15,6 +16,11 @@ object BidonRenderer {
     private var isInitialized = false
     private lateinit var appContext: Context
     private var config: RendererConfig? = null
+
+    /** Where the renderer reports telemetry events. Safe to call from any thread, the ad path included. */
+    @Volatile
+    internal var telemetry: Telemetry = Telemetry.Disabled
+        private set
 
     fun init(
         context: Context,
@@ -26,6 +32,7 @@ object BidonRenderer {
         this.config = config
 
         applyConfig(config)
+        telemetry = RendererTelemetry.start(appContext)
 
         isInitialized = true
     }
