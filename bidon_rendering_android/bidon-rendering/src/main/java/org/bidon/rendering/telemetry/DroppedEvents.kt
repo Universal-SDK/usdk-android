@@ -11,6 +11,9 @@ internal enum class DropReason(val wireName: String) {
     /** The queue was full and the record was among the oldest. */
     EVICTED("evicted"),
 
+    /** The record was handed over faster than the telemetry thread could store it, and never reached disk. */
+    OVERFLOW("overflow"),
+
     /** The record outlived its TTL before it was sent. */
     EXPIRED("expired"),
 
