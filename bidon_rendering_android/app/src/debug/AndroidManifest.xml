@@ -1,0 +1,15 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        The debug build is where the renderer's telemetry is exercised: it switches telemetry on and
+        watches the main thread with StrictMode.
+    -->
+    <application android:name="org.bidon.app.DebugApplication">
+
+        <meta-data
+            android:name="org.bidon.rendering.telemetry"
+            android:value="true" />
+
+    </application>
+
+</manifest>
