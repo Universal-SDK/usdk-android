@@ -10,6 +10,12 @@
         <activity
             android:name="org.bidon.rendering.ui.BlankActivity"
             android:exported="false" />
+
+        <!-- Owns a telemetry queue in a process of its own, so tests can kill it and read back what survived. -->
+        <service
+            android:name="org.bidon.rendering.telemetry.VictimService"
+            android:exported="false"
+            android:process=":victim" />
     </application>
 
 </manifest>
