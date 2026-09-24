@@ -28,6 +28,18 @@ class DroppedEventsTest {
     }
 
     @Test
+    fun `every reason survives being reopened under its own count`() {
+        DroppedEvents.open(file).apply {
+            DropReason.entries.forEachIndexed { index, reason -> add(reason, index + 1L) }
+        }
+
+        assertEquals(
+            DropReason.entries.mapIndexed { index, reason -> reason to index + 1L }.toMap(),
+            DroppedEvents.open(file).snapshot(),
+        )
+    }
+
+    @Test
     fun `subtracting a reported snapshot keeps what was counted after it was taken`() {
         val counts = DroppedEvents.open(file)
         counts.add(DropReason.EVICTED, 4)

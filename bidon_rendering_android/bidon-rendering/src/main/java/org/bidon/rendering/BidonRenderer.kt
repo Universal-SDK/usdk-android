@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.app.Activity
 import org.bidon.rendering.mraid.MraidRenderer
+import org.bidon.rendering.telemetry.Telemetry
 import org.bidon.rendering.vast.VastRenderer
 
 object BidonRenderer {
@@ -16,6 +17,17 @@ object BidonRenderer {
     private lateinit var appContext: Context
     private var config: RendererConfig? = null
 
+    /** Where the renderer reports telemetry events. Safe to call from any thread, the ad path included. */
+    @Volatile
+    internal var telemetry: Telemetry = Telemetry.Disabled
+        private set
+
+    /**
+     * Idempotent, and safe to call from several threads at once: the adapter calls it from the mediation SDK's
+     * initialisation, and a host app may call it too. Only the first call takes effect, so telemetry is started once
+     * and one process never has two writers on its queue.
+     */
+    @Synchronized
     fun init(
         context: Context,
         config: RendererConfig? = null
@@ -26,6 +38,7 @@ object BidonRenderer {
         this.config = config
 
         applyConfig(config)
+        telemetry = RendererTelemetry.start(appContext)
 
         isInitialized = true
     }
