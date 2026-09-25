@@ -15,6 +15,8 @@ import org.bidon.rendering.ui.CloseButton
 import org.bidon.rendering.ui.closeAvailableAtMs
 import org.bidon.rendering.ui.insetFromSafeArea
 import org.bidon.rendering.ui.putCloseAvailableAtMs
+import org.bidon.rendering.ui.putRewardReported
+import org.bidon.rendering.ui.rewardReported
 
 /**
  * Hosts a fullscreen MRAID creative.
@@ -39,6 +41,9 @@ class MraidAdActivity : AppCompatActivity() {
 
     /** When the close button becomes usable, kept so a recreated activity carries on counting. */
     private var closeAvailableAtMs = 0L
+
+    /** Kept so a recreated activity does not report the reward a second time. */
+    private var rewardReported = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,14 +98,22 @@ class MraidAdActivity : AppCompatActivity() {
         // rather than starting over.
         closeAvailableAtMs = savedInstanceState?.closeAvailableAtMs()
             ?: (SystemClock.elapsedRealtime() + ad.closeButton.delayMs)
+        rewardReported = savedInstanceState?.rewardReported() ?: false
         closeButton.becomeAvailableAt(closeAvailableAtMs) {
             holdBack.isEnabled = false
+            // A display or playable ad has no completion to earn the reward by. It is earned when the user could
+            // close the ad, so the DSP's close delay is also the reward delay. Only a rewarded placement acts on it.
+            if (!rewardReported) {
+                rewardReported = true
+                presentation?.onRewarded()
+            }
         }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putCloseAvailableAtMs(closeAvailableAtMs)
+        outState.putRewardReported(rewardReported)
     }
 
     override fun onResume() {

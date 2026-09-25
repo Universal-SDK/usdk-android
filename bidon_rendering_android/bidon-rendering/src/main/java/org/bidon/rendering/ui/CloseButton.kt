@@ -220,6 +220,13 @@ internal fun Bundle.closeAvailableAtMs(): Long? =
 internal fun Bundle.putCloseAvailableAtMs(availableAtMs: Long) =
     putLong(STATE_CLOSE_AVAILABLE_AT, availableAtMs)
 
+private const val STATE_REWARD_REPORTED = "org.bidon.rendering.reward_reported"
+
+/** Whether the activity this state was saved from had already reported the reward. */
+internal fun Bundle.rewardReported(): Boolean = getBoolean(STATE_REWARD_REPORTED)
+
+internal fun Bundle.putRewardReported(reported: Boolean) = putBoolean(STATE_REWARD_REPORTED, reported)
+
 /** The countdown arithmetic, kept apart from the view so it can be tested on the JVM. */
 internal object Countdown {
 

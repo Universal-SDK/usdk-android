@@ -124,8 +124,9 @@ interface AdRenderer {
         fun onClose()
 
         /**
-         * The user earned the reward. Only meaningful for a rewarded placement; the renderer
-         * decides when it is earned from the creative type.
+         * The user earned the reward, at most once per show: a video when it completes, a display
+         * or playable ad when its close button becomes available. The renderer does not know the
+         * placement and reports it for every fullscreen ad; only a rewarded placement acts on it.
          */
         fun onReward()
 
