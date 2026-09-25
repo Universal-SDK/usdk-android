@@ -42,6 +42,9 @@ class MraidAdActivity : AppCompatActivity() {
     /** When the close button becomes usable, kept so a recreated activity carries on counting. */
     private var closeAvailableAtMs = 0L
 
+    /** The close button is available, so the user has earned the reward. */
+    private var rewardEarned = false
+
     /** Kept so a recreated activity does not report the reward a second time. */
     private var rewardReported = false
 
@@ -103,11 +106,20 @@ class MraidAdActivity : AppCompatActivity() {
             holdBack.isEnabled = false
             // A display or playable ad has no completion to earn the reward by. It is earned when the user could
             // close the ad, so the DSP's close delay is also the reward delay. Only a rewarded placement acts on it.
-            if (!rewardReported) {
-                rewardReported = true
-                presentation?.onRewarded()
-            }
+            rewardEarned = true
+            reportRewardIfEarned()
         }
+    }
+
+    /**
+     * Reports the reward once it is earned, but never before the impression, which with no close delay would
+     * otherwise reach the publisher first, and never for an ad already closing: its countdown keeps running until
+     * the activity is destroyed.
+     */
+    private fun reportRewardIfEarned() {
+        if (!rewardEarned || rewardReported || !impressionReported || isFinishing) return
+        rewardReported = true
+        presentation?.onRewarded()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -122,6 +134,7 @@ class MraidAdActivity : AppCompatActivity() {
             impressionReported = true
             presentation?.onImpression()
         }
+        reportRewardIfEarned()
     }
 
     override fun onDestroy() {

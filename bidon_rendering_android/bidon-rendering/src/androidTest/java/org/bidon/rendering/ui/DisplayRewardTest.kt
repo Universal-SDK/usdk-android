@@ -20,6 +20,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -40,11 +41,17 @@ class DisplayRewardTest {
         val rewarded = CountDownLatch(1)
         val rewards = AtomicInteger()
 
+        /** Impressions and rewards in the order they arrived. */
+        val order: MutableList<String> = Collections.synchronizedList(mutableListOf())
+
         override fun onLoaded() = loaded.countDown()
-        override fun onImpression() = Unit
+        override fun onImpression() {
+            order += "impression"
+        }
         override fun onClick() = Unit
         override fun onClose() = closed.countDown()
         override fun onReward() {
+            order += "reward"
             rewards.incrementAndGet()
             rewarded.countDown()
         }
@@ -70,6 +77,19 @@ class DisplayRewardTest {
 
     @Test
     fun mraidDoesNotRewardAnAdClosedEarly() = doesNotRewardAnAdClosedEarly(Kind.MRAID)
+
+    @Test
+    fun htmlDoesNotRewardAnAdClosedJustBeforeTheCloseButton() = doesNotRewardAnAdClosedJustBeforeTheCloseButton(Kind.HTML)
+
+    @Test
+    fun mraidDoesNotRewardAnAdClosedJustBeforeTheCloseButton() =
+        doesNotRewardAnAdClosedJustBeforeTheCloseButton(Kind.MRAID)
+
+    @Test
+    fun htmlRewardsAfterTheImpressionWhenThereIsNoDelay() = rewardsAfterTheImpressionWhenThereIsNoDelay(Kind.HTML)
+
+    @Test
+    fun mraidRewardsAfterTheImpressionWhenThereIsNoDelay() = rewardsAfterTheImpressionWhenThereIsNoDelay(Kind.MRAID)
 
     private fun rewardsWhenTheCloseButtonBecomesAvailable(kind: Kind) {
         val events = Events()
@@ -97,13 +117,19 @@ class DisplayRewardTest {
         showAd(kind, closeDelaySeconds = 3, events) { shownAt ->
             val screen = waitFor("the ad screen") { resumedAdScreen() }
             SystemClock.sleep(1_000)
+            val recreatedAt = SystemClock.elapsedRealtime()
             onMain { screen.recreate() }
             waitFor("the recreated screen") { resumedAdScreen()?.takeIf { it !== screen } }
 
             assertTrue("no reward", events.rewarded.await(5, TimeUnit.SECONDS))
-            val rewardedAfterMs = SystemClock.elapsedRealtime() - shownAt
-            // The countdown carries on across recreation rather than starting over, and does not end early.
-            assertTrue("rewarded after $rewardedAfterMs ms", rewardedAfterMs in 3_000 until 4_000)
+            val rewardedAt = SystemClock.elapsedRealtime()
+            assertTrue("rewarded before the 3 s delay", rewardedAt - shownAt >= 3_000)
+            // The countdown carries on across recreation. Started over, it would end 3 s after the recreation; carried
+            // on, it ends at most 2 s after it, since the screen had been up for at least 1 s.
+            assertTrue(
+                "rewarded ${rewardedAt - recreatedAt} ms after the recreation",
+                rewardedAt - recreatedAt < 2_500,
+            )
             SystemClock.sleep(1_000)
             assertEquals(1, events.rewards.get())
         }
@@ -118,6 +144,29 @@ class DisplayRewardTest {
             assertTrue("the ad did not close", events.closed.await(5, TimeUnit.SECONDS))
             SystemClock.sleep(3_500)
             assertEquals(0, events.rewards.get())
+        }
+    }
+
+    private fun doesNotRewardAnAdClosedJustBeforeTheCloseButton(kind: Kind) {
+        val events = Events()
+        showAd(kind, closeDelaySeconds = 2, events) {
+            // Seen resumed no earlier than it was created, so this lands at most 400 ms before the button is available.
+            val screen = waitFor("the ad screen") { resumedAdScreen() }
+            val seenAt = SystemClock.elapsedRealtime()
+            SystemClock.sleep(2_000 - 400)
+            onMain { screen.finish() }
+            assertTrue("the ad did not close", events.closed.await(5, TimeUnit.SECONDS))
+            SystemClock.sleep(1_000)
+            assertTrue("closed after the button was available", SystemClock.elapsedRealtime() - seenAt > 2_000)
+            assertEquals(0, events.rewards.get())
+        }
+    }
+
+    private fun rewardsAfterTheImpressionWhenThereIsNoDelay(kind: Kind) {
+        val events = Events()
+        showAd(kind, closeDelaySeconds = 0, events) {
+            assertTrue("no reward", events.rewarded.await(5, TimeUnit.SECONDS))
+            assertEquals(listOf("impression", "reward"), events.order.toList())
         }
     }
 
