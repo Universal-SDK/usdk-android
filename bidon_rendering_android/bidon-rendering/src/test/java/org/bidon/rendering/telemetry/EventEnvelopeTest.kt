@@ -4,7 +4,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertThrows
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Locale
@@ -12,7 +12,7 @@ import java.util.UUID
 
 class EventEnvelopeTest {
 
-    private val session = SessionId("550e8400-e29b-41d4-a716-446655440000")
+    private val session = SessionId.of("550e8400-e29b-41d4-a716-446655440000")!!
 
     private var now = 1_790_326_698_635L
     private val clock = Clock { now }
@@ -28,7 +28,7 @@ class EventEnvelopeTest {
             auctionId = "b622d42a-cab5-498f-9582-39e7f9da09e9",
             adType = AdType.BANNER,
             adFormat = "MREC",
-            samplingRate = SamplingRate(0.25),
+            samplingRate = SamplingRate.of(0.25)!!,
         )
 
         val json = envelope.json()
@@ -110,7 +110,7 @@ class EventEnvelopeTest {
         try {
             // Eastern Arabic digits: the locale that once turned a VAST macro into "٥٠" (f259398).
             Locale.setDefault(Locale.forLanguageTag("ar-EG-u-nu-arab"))
-            val text = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate(0.25))
+            val text = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.of(0.25)!!)
                 .encode().toString(Charsets.UTF_8)
 
             assertTrue(text, text.contains("\"event_ts\":1790326698635"))
@@ -122,7 +122,7 @@ class EventEnvelopeTest {
 
     @Test
     fun `text is encoded as UTF-8`() {
-        val envelope = EventEnvelope.capture("ad_filled", SessionId("сесія-𓀀"), clock, auctionId = "аукціон")
+        val envelope = EventEnvelope.capture("ad_filled", SessionId.of("сесія-𓀀")!!, clock, auctionId = "аукціон")
 
         val json = envelope.json()
 
@@ -131,18 +131,15 @@ class EventEnvelopeTest {
     }
 
     @Test
-    fun `a sampling rate is a fraction above zero and at most one`() {
+    fun `a sampling rate is a fraction above zero and at most one, and anything else is no rate at all`() {
         listOf(0.0, -0.1, 1.000_000_1, 2.0, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)
-            .forEach { rate ->
-                assertThrows("$rate", IllegalArgumentException::class.java) { SamplingRate(rate) }
-            }
-        listOf(Double.MIN_VALUE, 0.001, 0.5, 1.0).forEach { rate -> assertEquals(rate, SamplingRate(rate).fraction, 0.0) }
+            .forEach { rate -> assertNull("$rate", SamplingRate.of(rate)) }
+        listOf(Double.MIN_VALUE, 0.001, 0.5, 1.0).forEach { rate -> assertEquals(rate, SamplingRate.of(rate)?.fraction) }
     }
 
     @Test
-    fun `a session id cannot be blank`() {
-        listOf("", " ", "\t\n").forEach { blank ->
-            assertThrows(IllegalArgumentException::class.java) { SessionId(blank) }
-        }
+    fun `a blank session id is no session id at all`() {
+        listOf("", " ", "\t\n").forEach { blank -> assertNull(SessionId.of(blank)) }
+        assertEquals("s", SessionId.of("s")?.value)
     }
 }

@@ -49,12 +49,12 @@ class EventEnvelopePropertyTest {
             ) { name, session, ts, auctionId, adType, adFormat, rate ->
                 val envelope = EventEnvelope.capture(
                     eventName = name,
-                    sessionId = SessionId(session),
+                    sessionId = SessionId.of(session)!!,
                     clock = { ts },
                     auctionId = auctionId,
                     adType = adType,
                     adFormat = adFormat,
-                    samplingRate = SamplingRate(rate),
+                    samplingRate = SamplingRate.of(rate)!!,
                 )
 
                 val json = JSONObject(envelope.encode().toString(Charsets.UTF_8))

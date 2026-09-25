@@ -22,12 +22,12 @@ class EventEnvelopeOnDeviceTest {
             Locale.setDefault(Locale.forLanguageTag("ar-EG-u-nu-arab"))
             val envelope = EventEnvelope.capture(
                 eventName = awkward,
-                sessionId = SessionId(awkward),
+                sessionId = SessionId.of(awkward)!!,
                 clock = { 1_790_326_698_635L },
                 auctionId = awkward,
                 adType = AdType.INTERSTITIAL,
                 adFormat = awkward,
-                samplingRate = SamplingRate(0.1),
+                samplingRate = SamplingRate.of(0.1)!!,
             )
 
             val json = JSONObject(envelope.encode().toString(Charsets.UTF_8))

@@ -9,8 +9,8 @@ import java.util.UUID
  * These are the fields the client may set in the ingest contract. The server stamps the rest (`schema_version`,
  * `app_id`, `country`, `trace_id`) and ignores them if a client sends them, so they are not here.
  *
- * An envelope is only made by [capture], which takes the identifier and the timestamp itself. The caller supplies
- * values that are already valid by construction, so capturing never throws on the ad path.
+ * An envelope is only made by [capture], which takes the identifier and the timestamp itself. Every other value arrives
+ * as a type that cannot hold an invalid value, so capturing never throws on the ad path.
  */
 internal class EventEnvelope private constructor(
     /** A UUID v4 minted on the device. The server deduplicates on it, so a retry must resend the same bytes. */
@@ -71,10 +71,11 @@ internal class EventEnvelope private constructor(
  * would look like a session id and join to nothing the server holds.
  */
 @JvmInline
-internal value class SessionId(val value: String) {
+internal value class SessionId private constructor(val value: String) {
 
-    init {
-        require(value.isNotBlank()) { "A session id must not be blank" }
+    companion object {
+        /** The host's session id, or `null` when it has none yet, in which case there is no event to send. */
+        fun of(value: String): SessionId? = if (value.isBlank()) null else SessionId(value)
     }
 }
 
@@ -91,14 +92,17 @@ internal enum class AdType(val wireName: String) {
  * Zero is not a rate an event can carry. An event sampled at zero was never kept, so it is never sent.
  */
 @JvmInline
-internal value class SamplingRate(val fraction: Double) {
-
-    init {
-        require(fraction > 0.0 && fraction <= 1.0) { "A sampling rate is a fraction in (0, 1], was $fraction" }
-    }
+internal value class SamplingRate private constructor(val fraction: Double) {
 
     companion object {
         /** Every event kept. */
         val ALL = SamplingRate(1.0)
+
+        /**
+         * The rate for [fraction], or `null` when it is not in (0, 1]. Zero, which config may send to switch an event
+         * off, lands here too: either way there is no event to send.
+         */
+        fun of(fraction: Double): SamplingRate? =
+            if (fraction > 0.0 && fraction <= 1.0) SamplingRate(fraction) else null
     }
 }
