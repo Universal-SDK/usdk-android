@@ -47,6 +47,11 @@ internal interface PresentedAd {
     fun onImpression()
     fun onClicked()
     fun onClosed()
+
+    /**
+     * Reports the reward at most once for this show. A recreated activity may call it again, and must not pay twice:
+     * its saved state can predate a reward earned while the app was in the background.
+     */
     fun onRewarded()
     fun onFailed(error: Throwable)
 }

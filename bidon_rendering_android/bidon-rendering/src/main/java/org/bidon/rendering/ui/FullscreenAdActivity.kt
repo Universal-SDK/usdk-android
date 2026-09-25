@@ -37,9 +37,6 @@ class FullscreenAdActivity : AppCompatActivity() {
     /** The close button is available, so the user has earned the reward. */
     private var rewardEarned = false
 
-    /** Kept so a recreated activity does not report the reward a second time. */
-    private var rewardReported = false
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -88,7 +85,6 @@ class FullscreenAdActivity : AppCompatActivity() {
         // rather than starting over.
         closeAvailableAtMs = savedInstanceState?.closeAvailableAtMs()
             ?: (SystemClock.elapsedRealtime() + ad.closeButton.delayMs)
-        rewardReported = savedInstanceState?.rewardReported() ?: false
         closeButton.becomeAvailableAt(closeAvailableAtMs) {
             holdBack.isEnabled = false
             // A display or playable ad has no completion to earn the reward by. It is earned when the user could
@@ -101,18 +97,16 @@ class FullscreenAdActivity : AppCompatActivity() {
     /**
      * Reports the reward once it is earned, but never before the impression, which with no close delay would
      * otherwise reach the publisher first, and never for an ad already closing: its countdown keeps running until
-     * the activity is destroyed.
+     * the activity is destroyed. Called again by a recreated activity; [PresentedAd.onRewarded] pays only once.
      */
     private fun reportRewardIfEarned() {
-        if (!rewardEarned || rewardReported || !impressionReported || isFinishing) return
-        rewardReported = true
+        if (!rewardEarned || !impressionReported || isFinishing) return
         presentation?.onRewarded()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putCloseAvailableAtMs(closeAvailableAtMs)
-        outState.putRewardReported(rewardReported)
     }
 
     override fun onResume() {

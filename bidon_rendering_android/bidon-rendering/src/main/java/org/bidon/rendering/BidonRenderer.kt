@@ -124,9 +124,10 @@ interface AdRenderer {
         fun onClose()
 
         /**
-         * The user earned the reward, at most once per show: a video when it completes, a display
-         * or playable ad when its close button becomes available. The renderer does not know the
-         * placement and reports it for every fullscreen ad; only a rewarded placement acts on it.
+         * Reported for every fullscreen ad, whatever the placement: the renderer does not know it.
+         * Pay the user only when the placement is rewarded; anything else ignores this. Reported at
+         * most once per show: a video when it completes, a display or playable ad when its close
+         * button becomes available.
          */
         fun onReward()
 

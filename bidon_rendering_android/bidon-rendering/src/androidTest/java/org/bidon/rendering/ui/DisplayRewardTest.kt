@@ -1,6 +1,10 @@
 package org.bidon.rendering.ui
 
+import android.accessibilityservice.AccessibilityService
 import android.app.Activity
+import android.app.ActivityManager
+import android.os.Bundle
+import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
@@ -86,6 +90,14 @@ class DisplayRewardTest {
         doesNotRewardAnAdClosedJustBeforeTheCloseButton(Kind.MRAID)
 
     @Test
+    fun htmlRewardsOnceWhenRecreatedAfterEarningInTheBackground() =
+        rewardsOnceWhenRecreatedAfterEarningInTheBackground(Kind.HTML)
+
+    @Test
+    fun mraidRewardsOnceWhenRecreatedAfterEarningInTheBackground() =
+        rewardsOnceWhenRecreatedAfterEarningInTheBackground(Kind.MRAID)
+
+    @Test
     fun htmlRewardsAfterTheImpressionWhenThereIsNoDelay() = rewardsAfterTheImpressionWhenThereIsNoDelay(Kind.HTML)
 
     @Test
@@ -95,7 +107,7 @@ class DisplayRewardTest {
         val events = Events()
         showAd(kind, closeDelaySeconds = 2, events) { shownAt ->
             val screen = waitFor("the ad screen") { resumedAdScreen() }
-            SystemClock.sleep(1_000)
+            sleepUntil(screen.closeDeadline() - 300)
             assertEquals("rewarded before the close button was available", 0, events.rewards.get())
             assertFalse(onMain { screen.closeButton().isEnabled })
 
@@ -147,18 +159,51 @@ class DisplayRewardTest {
         }
     }
 
+    /**
+     * The countdown keeps running after finish() until the screen is destroyed. The main thread is held from just
+     * before the deadline to just after it, and finish() is called inside that hold: the countdown then fires on a
+     * screen that is already finishing, before it can be destroyed, which takes further trips through the main thread.
+     */
     private fun doesNotRewardAnAdClosedJustBeforeTheCloseButton(kind: Kind) {
         val events = Events()
         showAd(kind, closeDelaySeconds = 2, events) {
-            // Seen resumed no earlier than it was created, so this lands at most 400 ms before the button is available.
             val screen = waitFor("the ad screen") { resumedAdScreen() }
-            val seenAt = SystemClock.elapsedRealtime()
-            SystemClock.sleep(2_000 - 400)
-            onMain { screen.finish() }
+            val deadline = screen.closeDeadline()
+            sleepUntil(deadline - 200)
+            onMain {
+                screen.finish()
+                sleepUntil(deadline + 100)
+            }
             assertTrue("the ad did not close", events.closed.await(5, TimeUnit.SECONDS))
-            SystemClock.sleep(1_000)
-            assertTrue("closed after the button was available", SystemClock.elapsedRealtime() - seenAt > 2_000)
+            SystemClock.sleep(500)
             assertEquals(0, events.rewards.get())
+        }
+    }
+
+    /**
+     * The saved state of a stopped activity is written when it stops, before a reward earned in the background. A
+     * configuration change while it is stopped recreates it from that older state when the user returns.
+     */
+    private fun rewardsOnceWhenRecreatedAfterEarningInTheBackground(kind: Kind) {
+        val events = Events()
+        val nightMode = shell("cmd uimode night").trim()
+        try {
+            showAd(kind, closeDelaySeconds = 3, events) {
+                val screen = waitFor("the ad screen") { resumedAdScreen() }
+                instrumentation.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                waitFor("the ad screen to stop") { stoppedAdScreen()?.takeIf { it === screen } }
+
+                assertTrue("no reward in the background", events.rewarded.await(5, TimeUnit.SECONDS))
+                shell(if (nightMode.endsWith("yes")) "cmd uimode night no" else "cmd uimode night yes")
+
+                val activityManager = instrumentation.targetContext.getSystemService(ActivityManager::class.java)
+                onMain { activityManager.moveTaskToFront(screen.taskId, 0) }
+                waitFor("the recreated screen") { resumedAdScreen()?.takeIf { it !== screen } }
+                SystemClock.sleep(1_000)
+                assertEquals(1, events.rewards.get())
+            }
+        } finally {
+            shell("cmd uimode night ${nightMode.substringAfterLast(' ')}")
         }
     }
 
@@ -218,6 +263,24 @@ class DisplayRewardTest {
     private fun resumedAdScreen(): Activity? = onMain {
         ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).firstOrNull(::isAdScreen)
     }
+
+    /** When [this] screen's close button becomes available, as an [SystemClock.elapsedRealtime] time. */
+    private fun Activity.closeDeadline(): Long = onMain {
+        Bundle().also { instrumentation.callActivityOnSaveInstanceState(this, it) }.closeAvailableAtMs()!!
+    }
+
+    private fun sleepUntil(elapsedRealtimeMs: Long) {
+        val remaining = elapsedRealtimeMs - SystemClock.elapsedRealtime()
+        if (remaining > 0) SystemClock.sleep(remaining)
+    }
+
+    private fun stoppedAdScreen(): Activity? = onMain {
+        ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.STOPPED).firstOrNull(::isAdScreen)
+    }
+
+    private fun shell(command: String): String =
+        ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command))
+            .use { it.readBytes().toString(Charsets.UTF_8) }
 
     private fun Activity.closeButton(): CloseButton = window.decorView.find(CloseButton::class.java)!!
 
