@@ -21,6 +21,7 @@ internal class EventEnvelope private constructor(
     /** Absent only on events that belong to no auction. */
     val auctionId: String?,
     val sessionId: SessionId,
+    /** Absent only on events that belong to no ad. */
     val adType: AdType?,
     /** The banner format, such as `BANNER` or `MREC`, when [adType] is [AdType.BANNER]. */
     val adFormat: String?,

@@ -20,8 +20,8 @@ import org.junit.Test
 
 /**
  * Whatever a host or a creative puts into a field, the bytes read back as exactly what was captured. The strings mix
- * control characters, quotes and backslashes (ASCII), text outside Latin (Cyrillic) and characters that need a
- * surrogate pair in UTF-16 (hieroglyphs).
+ * control characters, quotes and backslashes (ASCII), text outside Latin (Cyrillic), characters that need a
+ * surrogate pair in UTF-16 (hieroglyphs), and a few thousand characters at a time.
  */
 class EventEnvelopePropertyTest {
 
@@ -29,6 +29,7 @@ class EventEnvelopePropertyTest {
         Arb.string(0..40, Codepoint.ascii()),
         Arb.string(0..40, Codepoint.cyrillic()),
         Arb.string(0..40, Codepoint.egyptianHieroglyphs()),
+        Arb.string(1_000..4_000, Codepoint.ascii()),
     )
 
     private val sessionId = anyText.filter { it.isNotBlank() }
