@@ -34,6 +34,9 @@ class FullscreenAdActivity : AppCompatActivity() {
     /** When the close button becomes usable, kept so a recreated activity carries on counting. */
     private var closeAvailableAtMs = 0L
 
+    /** The close button is available, so the user has earned the reward. */
+    private var rewardEarned = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -84,7 +87,21 @@ class FullscreenAdActivity : AppCompatActivity() {
             ?: (SystemClock.elapsedRealtime() + ad.closeButton.delayMs)
         closeButton.becomeAvailableAt(closeAvailableAtMs) {
             holdBack.isEnabled = false
+            // A display or playable ad has no completion to earn the reward by. It is earned when the user could
+            // close the ad, so the DSP's close delay is also the reward delay. Only a rewarded placement acts on it.
+            rewardEarned = true
+            reportRewardIfEarned()
         }
+    }
+
+    /**
+     * Reports the reward once it is earned, but never before the impression, which with no close delay would
+     * otherwise reach the publisher first, and never for an ad already closing: its countdown keeps running until
+     * the activity is destroyed. Called again by a recreated activity; [PresentedAd.onRewarded] pays only once.
+     */
+    private fun reportRewardIfEarned() {
+        if (!rewardEarned || !impressionReported || isFinishing) return
+        presentation?.onRewarded()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -100,6 +117,7 @@ class FullscreenAdActivity : AppCompatActivity() {
             impressionReported = true
             presentation?.onImpression()
         }
+        reportRewardIfEarned()
     }
 
     override fun onDestroy() {

@@ -4,6 +4,9 @@
     <!-- Tests serve documents, videos and pixels from a local server. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Tests bring the ad back to the front after sending it to the background. -->
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
+
     <!-- Cleartext for the local test server on 127.0.0.1, whatever the test APK's target SDK. -->
     <application android:usesCleartextTraffic="true">
         <!-- Telemetry is off unless the host app switches it on; tests of it need it on. -->

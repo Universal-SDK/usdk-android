@@ -97,10 +97,15 @@ class MraidRenderer(
             override val closeButton: CloseButtonConfig get() = rendering.closeButton
             override val lockedOrientation: Int = orientation
             override var closeRequester: (() -> Unit)? = null
+            private var rewarded = false
             override fun onImpression() = run { listener?.onImpression(); Unit }
             override fun onClicked() = run { listener?.onClick(); Unit }
             override fun onClosed() = run { listener?.onClose(); Unit }
-            override fun onRewarded() = run { listener?.onReward(); Unit }
+            override fun onRewarded() {
+                if (rewarded) return
+                rewarded = true
+                listener?.onReward()
+            }
             override fun onFailed(error: Throwable) = run { listener?.onError(error); Unit }
         }
         presentation = presented
