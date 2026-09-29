@@ -84,7 +84,7 @@ internal class DiskEventStore private constructor(
             try {
                 close()
             } catch (_: IOException) {
-                // Nothing was written through it yet.
+                // Loses nothing: anything opening rewrote was synced before its rename.
             }
         }
     }

@@ -28,21 +28,25 @@ class DiskEventStoreTest {
         store.append("error".encodeToByteArray(), EventClass.ERROR)
 
         // Twice the whole budget, so the diagnostics file is evicted several times over.
-        repeat(1_024) { store.append(ByteArray(1_024), EventClass.DIAGNOSTIC) }
+        val largest = largestSize(DIAGNOSTICS_FILE, appends = 1_024) {
+            store.append(ByteArray(1_024), EventClass.DIAGNOSTIC)
+        }
 
         assertEquals(listOf("error"), restored(ERRORS_FILE))
         assertTrue(dropped().getValue(DropReason.EVICTED) > 0)
-        assertTrue(File(directory, DIAGNOSTICS_FILE).length() <= DiskEventStore.DIAGNOSTICS_BYTES)
+        assertFilledUpTo(448 * 1_024L, largest)
     }
 
     @Test
     fun `errors are evicted by newer errors, within their own share`() {
         val store = open()
 
-        repeat(200) { store.append("e$it".padEnd(1_024).encodeToByteArray(), EventClass.ERROR) }
+        val largest = largestSize(ERRORS_FILE, appends = 200) {
+            store.append("e$it".padEnd(1_024).encodeToByteArray(), EventClass.ERROR)
+        }
 
         val kept = restored(ERRORS_FILE)
-        assertTrue(File(directory, ERRORS_FILE).length() <= DiskEventStore.ERRORS_BYTES)
+        assertFilledUpTo(64 * 1_024L, largest)
         assertEquals("e199", kept.last().trim())
         assertTrue(kept.size < 200)
         assertEquals(0L, File(directory, DIAGNOSTICS_FILE).length() - HEADER_BYTES)
@@ -97,6 +101,22 @@ class DiskEventStoreTest {
         File(directory, name).copyTo(File(copy, name))
         val queue = EventQueue.open(File(copy, name), DroppedEvents.open(File(copy, "dropped")), clock = clock)
         return queue.peek(Int.MAX_VALUE, Int.MAX_VALUE).map { it.payload.decodeToString() }
+    }
+
+    /** Runs [append] that many times and returns the largest [name] grew to, measured after every append. */
+    private fun largestSize(name: String, appends: Int, append: (Int) -> Unit): Long {
+        var largest = 0L
+        repeat(appends) {
+            append(it)
+            largest = maxOf(largest, File(directory, name).length())
+        }
+        return largest
+    }
+
+    /** The file reached its cap, to within one 1 KiB record, and never went past it. */
+    private fun assertFilledUpTo(cap: Long, largest: Long) {
+        assertTrue("grew to $largest, past the cap of $cap", largest <= cap)
+        assertTrue("grew only to $largest, well short of the cap of $cap", largest > cap - 2 * 1_024)
     }
 
     private fun dropped(): Map<DropReason, Long> = DroppedEvents.open(File(directory, "dropped")).snapshot()
