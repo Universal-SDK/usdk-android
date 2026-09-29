@@ -1,7 +1,6 @@
 package org.bidon.rendering.telemetry
 
 import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -21,7 +20,6 @@ internal class BackgroundTelemetry private constructor(
     private val openStore: () -> EventStore,
     private val onFailure: (Throwable) -> Unit,
     capacity: Int,
-    private val ttlMillis: Long,
 ) : Telemetry {
 
     private val handoff = ArrayBlockingQueue<TelemetryEvent>(capacity)
@@ -50,7 +48,7 @@ internal class BackgroundTelemetry private constructor(
             val store = openStore()
             while (true) {
                 val event = handoff.take()
-                if (event !== WAKE_UP) store.append(event.encode(), ttlMillis)
+                if (event !== WAKE_UP) store.append(event.encode(), event.eventClass)
                 val syncing = syncRequested.getAndSet(false)
                 // Overflow means the thread is behind. Recording it after every event would add a durable write to
                 // each one exactly when there is no time for it, so it waits until the backlog is gone, or for a sync.
@@ -77,9 +75,6 @@ internal class BackgroundTelemetry private constructor(
         /** How many events can wait for the telemetry thread before new ones are dropped. */
         const val HANDOFF_CAPACITY = 256
 
-        /** Every event is kept for this long until event classes with their own TTL arrive. */
-        val DEFAULT_TTL_MILLIS = TimeUnit.MINUTES.toMillis(15)
-
         /** Wakes the thread for a sync. Never stored. */
         private val WAKE_UP = TelemetryEvent { ByteArray(0) }
 
@@ -97,9 +92,8 @@ internal class BackgroundTelemetry private constructor(
             openStore: () -> EventStore,
             onFailure: (Throwable) -> Unit,
             capacity: Int = HANDOFF_CAPACITY,
-            ttlMillis: Long = DEFAULT_TTL_MILLIS,
         ): BackgroundTelemetry {
-            val telemetry = BackgroundTelemetry(openStore, onFailure, capacity, ttlMillis)
+            val telemetry = BackgroundTelemetry(openStore, onFailure, capacity)
             Thread(telemetry::run, "bidon-telemetry").apply {
                 isDaemon = true
                 priority = THREAD_PRIORITY

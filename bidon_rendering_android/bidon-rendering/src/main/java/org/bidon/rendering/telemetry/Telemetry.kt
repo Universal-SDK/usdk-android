@@ -29,4 +29,7 @@ internal interface Telemetry {
 internal fun interface TelemetryEvent {
 
     fun encode(): ByteArray
+
+    /** Decides how long the event may wait on the device and what may evict it. */
+    val eventClass: EventClass get() = EventClass.DIAGNOSTIC
 }

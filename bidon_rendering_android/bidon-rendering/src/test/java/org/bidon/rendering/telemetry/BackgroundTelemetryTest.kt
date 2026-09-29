@@ -58,19 +58,30 @@ class BackgroundTelemetryTest {
             thread.set(Thread.currentThread())
             openStore()
         }
-        return BackgroundTelemetry.start(capturingOpen, onFailure, capacity, TTL)
+        return BackgroundTelemetry.start(capturingOpen, onFailure, capacity)
     }
 
     @Test
-    fun `events reach the store in the order they were emitted, with the TTL`() {
+    fun `events reach the store in the order they were emitted, as diagnostics unless they say otherwise`() {
         val telemetry = start()
 
         (1..50).forEach { telemetry.emit(event("e$it")) }
 
         awaitUntil { store.payloads.size == 50 }
         assertEquals((1..50).map { "e$it" }, store.payloads)
-        assertEquals(setOf(TTL), store.ttls.toSet())
+        assertEquals(setOf(EventClass.DIAGNOSTIC), store.classes.toSet())
         assertTrue(failures.isEmpty())
+    }
+
+    @Test
+    fun `an event reaches the store with the class it declares`() {
+        val telemetry = start()
+
+        telemetry.emit(event("diagnostic"))
+        telemetry.emit(errorEvent("error"))
+
+        awaitUntil { store.payloads.size == 2 }
+        assertEquals(listOf(EventClass.DIAGNOSTIC, EventClass.ERROR), store.classes)
     }
 
     @Test
@@ -277,6 +288,11 @@ class BackgroundTelemetryTest {
 
     private fun event(text: String) = TelemetryEvent { text.encodeToByteArray() }
 
+    private fun errorEvent(text: String) = object : TelemetryEvent {
+        override fun encode() = text.encodeToByteArray()
+        override val eventClass = EventClass.ERROR
+    }
+
     /**
      * Waits for [condition]. Unless the test expects telemetry to fail, a failure on the telemetry thread ends the
      * wait at once and is reported as it is, instead of as a condition that was never met.
@@ -294,7 +310,7 @@ class BackgroundTelemetryTest {
     private class RecordingStore : EventStore {
 
         val payloads: MutableList<String> = CopyOnWriteArrayList()
-        val ttls: MutableList<Long> = CopyOnWriteArrayList()
+        val classes: MutableList<EventClass> = CopyOnWriteArrayList()
         val syncs = AtomicInteger()
         val dropped: MutableMap<DropReason, Long> = ConcurrentHashMap()
         val countDroppedCalls = AtomicInteger()
@@ -321,13 +337,13 @@ class BackgroundTelemetryTest {
 
         fun awaitAppendStarted() = check(appendStarted.await(5, TimeUnit.SECONDS)) { "no append started" }
 
-        override fun append(payload: ByteArray, ttlMillis: Long) {
+        override fun append(payload: ByteArray, eventClass: EventClass) {
             appendStarted.countDown()
             onAppend()
             gate?.await()
             failure?.let { throw it }
             payloads += payload.decodeToString()
-            ttls += ttlMillis
+            classes += eventClass
         }
 
         override fun sync() {
@@ -338,9 +354,5 @@ class BackgroundTelemetryTest {
             countDroppedCalls.incrementAndGet()
             dropped.merge(reason, count, Long::plus)
         }
-    }
-
-    private companion object {
-        const val TTL = 60_000L
     }
 }
