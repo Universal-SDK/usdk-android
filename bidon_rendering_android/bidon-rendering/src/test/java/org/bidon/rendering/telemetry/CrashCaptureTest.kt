@@ -163,7 +163,7 @@ class CrashCaptureTest {
 
     /** What the slot holds, moved the way the next launch moves it. */
     private fun movedEvents(): List<JSONObject> {
-        val store = object : EventStore {
+        val store = object : WriteOnlyStore() {
             val events = mutableListOf<JSONObject>()
             override fun append(payload: ByteArray, eventClass: EventClass) {
                 assertEquals(EventClass.ERROR, eventClass)

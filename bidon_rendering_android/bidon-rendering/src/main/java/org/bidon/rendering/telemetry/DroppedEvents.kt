@@ -25,6 +25,9 @@ internal enum class DropReason(val wireName: String) {
 
     /** Writing the record failed. */
     IO_ERROR("io_error"),
+
+    /** The server refused the record, or the batch it was sent in, with an answer that retrying cannot change. */
+    REJECTED("rejected"),
 }
 
 /**

@@ -88,6 +88,9 @@ internal class EventQueue private constructor(
     /** The number of records held, including any that have expired since the file was last rewritten. */
     val size: Int get() = entries.size
 
+    /** The largest payload a record may carry under the current limits. */
+    val maxRecordBytes: Int get() = limits.maxRecordBytes
+
     /**
      * Stores [payload] until it is removed, evicted, or older than [ttlMillis].
      *

@@ -307,7 +307,7 @@ class BackgroundTelemetryTest {
     }
 
     /** Records what reaches it. Can be made to hold the thread inside [append], or to throw from it. */
-    private class RecordingStore : EventStore {
+    private class RecordingStore : WriteOnlyStore() {
 
         val payloads: MutableList<String> = CopyOnWriteArrayList()
         val classes: MutableList<EventClass> = CopyOnWriteArrayList()
