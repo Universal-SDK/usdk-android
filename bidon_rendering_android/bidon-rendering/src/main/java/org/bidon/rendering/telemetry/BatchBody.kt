@@ -1,6 +1,8 @@
 package org.bidon.rendering.telemetry
 
+import org.json.JSONException
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.io.ByteArrayOutputStream
 
 /**
@@ -38,6 +40,21 @@ internal class BatchBody(endpoint: TelemetryEndpoint, sessionId: SessionId) {
     }
 
     companion object {
+
+        /**
+         * Whether [payload] is exactly one JSON object, the only thing [encode] can place in the `events` array
+         * without making the whole body invalid. Checked before sending, not trusted from whoever stored it.
+         */
+        fun isOneObject(payload: ByteArray): Boolean =
+            try {
+                val tokener = JSONTokener(payload.decodeToString())
+                tokener.nextValue() is JSONObject && tokener.nextClean() == END
+            } catch (_: JSONException) {
+                false
+            }
+
+        /** What [JSONTokener.nextClean] returns once the input is used up. */
+        private const val END = 0.toChar()
 
         /** The most events one request may carry under the ingest contract. */
         const val MAX_EVENTS = 100

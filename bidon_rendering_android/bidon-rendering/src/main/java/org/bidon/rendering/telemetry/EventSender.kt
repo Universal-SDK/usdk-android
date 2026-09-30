@@ -40,13 +40,16 @@ internal interface EventSender {
  * The [EventSender] of D-028: batches from the store, through [client], with retries.
  *
  * A pass sends batches until the store is empty or a request fails. A failure ends the pass and schedules the next
- * attempt: after 5, 10, 20 and 40 seconds, or after the server's `Retry-After` when that is at most 30 seconds. After
- * the fifth failed attempt the next pass waits for the timer. A longer `Retry-After` ends the pass, and nothing is
- * sent before it has passed.
+ * attempt: after 5, 10, 20 and 40 seconds, or after the server's `Retry-After` when that is longer and at most 30
+ * seconds. After the fifth failed attempt the next pass waits for the timer. A longer `Retry-After` ends the pass, and
+ * nothing is sent before it has passed.
  *
  * Passes start when the store opens with events in it, [TIMER_MILLIS] after an event is stored, as soon as a full
- * batch is stored, and when the app goes to the background. While a retry is scheduled, stored events do not bring
- * it forward; the app going to the background does, once, since the process may be frozen before the retry is due.
+ * batch has been stored since the last pass, and when the app goes to the background. While a retry is scheduled,
+ * stored events do not bring it forward; the app going to the background does, once per series of retries, since the
+ * process may be frozen before the retry is due.
+ *
+ * A stored payload that is not one JSON object would make its whole batch invalid, so it is dropped before sending.
  *
  * Nothing is removed from the store until the server has answered for it. An event the server did not refuse stays
  * until it is sent or its TTL runs out; there is no limit on attempts across passes.
@@ -71,20 +74,31 @@ internal class BatchSender(
     /** Before this, on [clock], nothing is sent: a `Retry-After` longer than the sender waits for within a series. */
     private var notBefore = Long.MIN_VALUE
 
+    /** Whether the app going to the background has already brought the current series of retries forward. */
+    private var backgroundAttemptMade = false
+
+    /** Events stored since the last pass started: the ones a pass has not yet seen. */
+    private var storedSincePass = 0
+
     override fun afterStart() {
         if (store.size > 0) schedule(now())
     }
 
     override fun afterAppend() {
+        storedSincePass++
         if (waitingAfterFailure) return
         val now = now()
         when {
-            store.size >= BatchBody.MAX_EVENTS -> schedule(now)
+            storedSincePass >= BatchBody.MAX_EVENTS -> schedule(now)
             dueAt == null -> schedule(now + TIMER_MILLIS)
         }
     }
 
     override fun afterSync() {
+        if (waitingAfterFailure) {
+            if (backgroundAttemptMade) return
+            backgroundAttemptMade = true
+        }
         schedule(now())
     }
 
@@ -97,9 +111,13 @@ internal class BatchSender(
 
     private fun runPass() {
         dueAt = null
+        storedSincePass = 0
         while (true) {
-            val batch = store.peek(BatchBody.MAX_EVENTS, body.maxPayloadBytes)
-            if (batch.isEmpty()) break
+            val peeked = store.peek(BatchBody.MAX_EVENTS, body.maxPayloadBytes)
+            if (peeked.isEmpty()) break
+            val (batch, malformed) = peeked.partition { BatchBody.isOneObject(it.payload) }
+            if (malformed.isNotEmpty()) drop(malformed, DropReason.MALFORMED)
+            if (batch.isEmpty()) continue
             val retry = deliver(batch)
             if (retry != null) {
                 scheduleRetry(retry.retryAfterMillis)
@@ -107,8 +125,14 @@ internal class BatchSender(
             }
             failures = 0
         }
+        endSeries()
+    }
+
+    /** The current series of retries is over, whether because a request got through or because it gave up. */
+    private fun endSeries() {
         waitingAfterFailure = false
         failures = 0
+        backgroundAttemptMade = false
     }
 
     /**
@@ -123,10 +147,10 @@ internal class BatchSender(
                 store.remove(events)
                 null
             }
-            is PostResult.Rejected -> drop(events)
+            is PostResult.Rejected -> drop(events, DropReason.REJECTED)
             PostResult.TooLarge ->
                 if (events.size == 1) {
-                    drop(events)
+                    drop(events, DropReason.REJECTED)
                 } else {
                     val half = events.size / 2
                     deliver(events.subList(0, half)) ?: deliver(events.subList(half, events.size))
@@ -134,29 +158,30 @@ internal class BatchSender(
             is PostResult.Retry -> result
         }
 
-    private fun drop(events: List<StoredEvent>): PostResult.Retry? {
+    private fun drop(events: List<StoredEvent>, reason: DropReason): PostResult.Retry? {
         store.remove(events)
-        store.countDropped(DropReason.REJECTED, events.size.toLong())
+        store.countDropped(reason, events.size.toLong())
         return null
     }
 
     private fun scheduleRetry(retryAfterMillis: Long?) {
         val now = now()
         failures++
-        waitingAfterFailure = true
         when {
             retryAfterMillis != null && retryAfterMillis > MAX_RETRY_AFTER_MILLIS -> {
                 // Anything longer than a day outlives every event it could hold back.
                 notBefore = now + minOf(retryAfterMillis, EventClass.ERROR.ttlMillis)
-                failures = 0
+                endSeries()
                 schedule(now + TIMER_MILLIS)
             }
             failures >= MAX_ATTEMPTS -> {
-                failures = 0
+                endSeries()
                 schedule(now + TIMER_MILLIS)
             }
-            else -> schedule(now + (retryAfterMillis ?: backOffMillis(failures)))
+            // A Retry-After is the least the server asks for; a shorter one, even zero, does not cut the back-off.
+            else -> schedule(now + maxOf(retryAfterMillis ?: 0, backOffMillis(failures)))
         }
+        waitingAfterFailure = true
     }
 
     /** Doubles from [FIRST_BACK_OFF_MILLIS] with each failure; half of each wait is fixed and half is random. */

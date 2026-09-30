@@ -416,6 +416,92 @@ class BatchSenderTest {
         assertEquals(listOf(2, 3), remaining())
     }
 
+    // Found in review
+
+    @Test
+    fun `a Retry-After shorter than the back-off waits for the back-off`() {
+        storeEvents(0..0)
+        answerRetryAfter(503, "0")
+        val sender = sender(LowestRandom).apply { afterStart() }
+
+        sender.runIfDue()
+
+        assertEquals(2_500L, sender.millisUntilDue())
+    }
+
+    @Test
+    fun `the app going to the background forces one attempt per series of retries, not one per callback`() {
+        storeEvents(0..0)
+        answer(500, 500)
+        val sender = sender(HighestRandom).apply { afterStart() }
+        sender.runIfDue()
+
+        sender.afterSync()
+        sender.runIfDue()
+        assertEquals(2, requests().size)
+        assertEquals(10_000L, sender.millisUntilDue())
+
+        // Android reports the app's UI hidden, then further trim levels, each through the same sync.
+        sender.afterSync()
+        sender.runIfDue()
+
+        assertEquals(0, requests().size)
+        assertEquals(10_000L, sender.millisUntilDue())
+    }
+
+    @Test
+    fun `a batch that got through ends the series for the batches after it in the same pass`() {
+        storeEvents(0..149)
+        answer(500, 202, 500)
+        val sender = sender(HighestRandom).apply { afterStart() }
+        sender.runIfDue()
+
+        sender.runWhenDue()
+
+        assertEquals(listOf(100, 100, 50), requests().map { it.size })
+        assertEquals(5_000L, sender.millisUntilDue())
+    }
+
+    @Test
+    fun `stored payloads that are not one JSON object each are dropped and counted, and the others are sent`() {
+        storeEvents(0..0)
+        for (bad in listOf("", "not json", "[1]", """{"n":9}{"n":10}""", """{"n":11}]}""")) {
+            store.append(bad.encodeToByteArray(), EventClass.DIAGNOSTIC)
+        }
+        storeEvents(1..1)
+        answer(202)
+
+        sender().apply { afterStart() }.runIfDue()
+
+        assertEquals(listOf(listOf(0, 1)), requests())
+        assertEquals(emptyList<Int>(), remaining())
+        assertEquals(5L, dropped()[DropReason.MALFORMED])
+    }
+
+    @Test
+    fun `a full batch counts only events stored since the last pass`() {
+        // A store whose count includes records it cannot hand out, such as expired ones a full disk cannot rewrite.
+        val stuck = object : WriteOnlyStore() {
+            var peeks = 0
+            override val size: Int get() = 150
+            override fun peek(maxEvents: Int, maxPayloadBytes: Int): List<StoredEvent> = emptyList<StoredEvent>().also { peeks++ }
+            override fun append(payload: ByteArray, eventClass: EventClass) = Unit
+            override fun sync() = Unit
+            override fun countDropped(reason: DropReason, count: Long) = Unit
+        }
+        val sender = BatchSender(stuck, { error("nothing to send") }, BatchBody(endpoint, session), time, Random(seed = 7))
+        sender.afterStart()
+        sender.runIfDue()
+
+        repeat(3) {
+            sender.afterAppend()
+            sender.runIfDue()
+        }
+
+        assertEquals(1, stuck.peeks)
+        assertEquals(60_000L, sender.millisUntilDue())
+    }
+
     private fun answering(status: (List<Int>) -> Int) = object : Dispatcher() {
         override fun dispatch(request: RecordedRequest): MockResponse =
             MockResponse().setResponseCode(status(numbersIn(request.body.clone().readUtf8())))

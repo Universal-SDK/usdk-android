@@ -28,14 +28,17 @@ internal enum class DropReason(val wireName: String) {
 
     /** The server refused the record, or the batch it was sent in, with an answer that retrying cannot change. */
     REJECTED("rejected"),
+
+    /** The record was not one JSON object, so no batch could carry it without making the whole batch invalid. */
+    MALFORMED("malformed"),
 }
 
 /**
  * Counts of dropped telemetry records per [DropReason], persisted in their own small file.
  *
  * The counts deliberately live outside the queue they describe: a "records were dropped" record inside the queue
- * could itself be evicted, and writing it into a full queue would evict more. Here they are never evicted, and they
- * reach the server as soon as any batch gets through.
+ * could itself be evicted, and writing it into a full queue would evict more. Here they are never evicted. They are
+ * not sent yet: the ingest contract has no place for them (D-028).
  *
  * The sender reports a [snapshot] and, once the server has accepted it, [subtract]s exactly that snapshot. Drops
  * counted while the request was in flight stay counted.
