@@ -8,6 +8,8 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import java.util.concurrent.CopyOnWriteArraySet
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 
 class VideoPlayer(context: Context) {
 
@@ -25,8 +27,18 @@ class VideoPlayer(context: Context) {
         val playWhenReady: Boolean
     )
 
+    // Configure media audio attributes and let ExoPlayer handle audio focus automatically.
+    // This pauses the video on transient focus loss (e.g. an incoming call) and resumes playback when focus is restored.
     private val player: ExoPlayer =
-        ExoPlayer.Builder(context.applicationContext).build()
+        ExoPlayer.Builder(context.applicationContext)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                true
+            )
+            .build()
 
     private val listeners = CopyOnWriteArraySet<Listener>()
 
