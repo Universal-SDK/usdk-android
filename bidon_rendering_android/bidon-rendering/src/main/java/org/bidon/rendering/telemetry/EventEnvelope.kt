@@ -32,7 +32,10 @@ internal class EventEnvelope private constructor(
      * The envelope as one UTF-8 JSON object with snake_case keys. Absent fields are left out rather than written as
      * `null`: the contract types them as plain strings, which `null` is not.
      */
-    override fun encode(): ByteArray = JSONObject().apply {
+    override fun encode(): ByteArray = toJson().toString().toByteArray(Charsets.UTF_8)
+
+    /** The envelope's fields as a JSON object, for events that add fields of their own next to them. */
+    fun toJson(): JSONObject = JSONObject().apply {
         put("event_id", eventId)
         put("event_name", eventName)
         put("event_ts", eventTs)
@@ -41,7 +44,7 @@ internal class EventEnvelope private constructor(
         if (adType != null) put("ad_type", adType.wireName)
         if (adFormat != null) put("ad_format", adFormat)
         put("sampling_rate", samplingRate.fraction)
-    }.toString().toByteArray(Charsets.UTF_8)
+    }
 
     companion object {
 
