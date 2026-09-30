@@ -94,4 +94,23 @@ class RewardedControllerTest {
         controller.onComplete()
         assertEquals(1, recorder.earned)
     }
+
+    @Test
+    fun `temporary interruption does not prevent reward`() {
+        val (controller, recorder) = controller()
+
+        // Video reaches 50%.
+        controller.onProgress(0.5f)
+
+        // Temporary interruption, for example an incoming call.
+        // RewardedController state must remain unchanged.
+
+        // Video resumes and reaches the end.
+        controller.onProgress(1f)
+        controller.onComplete()
+
+        assertEquals(1, recorder.earned)
+        assertTrue(controller.isRewardEarned())
+        assertTrue(recorder.rejected.isEmpty())
+    }
 }
