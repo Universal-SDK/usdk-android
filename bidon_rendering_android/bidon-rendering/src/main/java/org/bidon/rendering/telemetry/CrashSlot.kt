@@ -24,9 +24,12 @@ internal class CrashSlot(private val directory: File) {
      *
      * One write into a temporary file, then a rename, so a reader never sees half a record. No fsync: process death
      * keeps what was written (D-019), and only a power loss in the next few seconds could lose it.
+     *
+     * Two threads can crash at the same moment, and both reach this before either lets the process die. They take
+     * turns, so the temporary file never holds a mix of the two, and the slot keeps whichever wrote last.
      */
     @Throws(IOException::class)
-    fun write(record: ByteArray) {
+    fun write(record: ByteArray) = synchronized(WRITE_LOCK) {
         directory.mkdirs()
         val temporary = File(directory, "crash.tmp")
         FileOutputStream(temporary).use { it.write(record) }
@@ -55,5 +58,10 @@ internal class CrashSlot(private val directory: File) {
         }
         if (record.isNotEmpty()) store.append(record, EventClass.ERROR)
         claimed.delete()
+    }
+
+    private companion object {
+        /** One for the process: every crash builds a slot of its own, and they all share one temporary file. */
+        val WRITE_LOCK = Any()
     }
 }

@@ -7,6 +7,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.util.concurrent.CyclicBarrier
+import kotlin.concurrent.thread
 
 class CrashSlotTest {
 
@@ -51,6 +53,22 @@ class CrashSlotTest {
         CrashSlot(directory).moveInto(store)
 
         assertEquals(listOf("second" to EventClass.ERROR), store.appended)
+    }
+
+    @Test
+    fun `two threads crashing at once leave one whole record, never a mix of both`() {
+        val slot = CrashSlot(directory)
+        val long = ByteArray(16_000) { 'a'.code.toByte() }
+        val short = ByteArray(8_000) { 'b'.code.toByte() }
+        repeat(200) { round ->
+            val start = CyclicBarrier(2)
+            val writers = listOf(long, short).map { record -> thread { start.await(); slot.write(record) } }
+            writers.forEach { it.join() }
+
+            val written = File(directory, "crash").readBytes()
+            val whole = written.contentEquals(long) || written.contentEquals(short)
+            assertTrue("round $round: ${written.size} bytes, not one of the two records", whole)
+        }
     }
 
     @Test
