@@ -179,7 +179,12 @@ class EndCardView(
                 context = context,
                 onClick = { listener?.onClick() },
                 onPageLoaded = {},
-                onPageLoadError = { listener?.onError(Exception(it)) }
+                onPageLoadError = { listener?.onError(Exception(it)) },
+                onWebViewGone = {
+                    // Already destroyed by the ClickHandler. The error ends the video ad's screen.
+                    webView = null
+                    listener?.onError(IllegalStateException("The end card's renderer process is gone"))
+                }
             )
 
             webChromeClient = WebChromeClient()

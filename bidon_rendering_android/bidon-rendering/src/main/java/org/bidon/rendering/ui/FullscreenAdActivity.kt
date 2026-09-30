@@ -74,6 +74,9 @@ class FullscreenAdActivity : AppCompatActivity() {
         root.addView(view)
         adView = view
 
+        // The renderer closes the ad this way when its WebView can no longer draw.
+        ad.closeRequester = { finish() }
+
         val closeButton = CloseButton(this, ad.closeButton).apply { onClick = { finish() } }
         root.addView(closeButton, closeButton.cornerLayoutParams())
 
@@ -128,6 +131,7 @@ class FullscreenAdActivity : AppCompatActivity() {
         (adView?.parent as? ViewGroup)?.removeView(adView)
         adView = null
 
+        presentation?.closeRequester = null
         if (isFinishing) {
             presentation?.onClosed()
             PresentedAds.unregister(presentationKey)

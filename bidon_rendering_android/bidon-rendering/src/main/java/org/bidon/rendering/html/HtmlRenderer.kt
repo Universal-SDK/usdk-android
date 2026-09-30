@@ -55,7 +55,8 @@ class HtmlRenderer(
                 },
                 onPageLoadError = { error ->
                     this@HtmlRenderer.listener?.onError(Exception(error))
-                }
+                },
+                onWebViewGone = ::onWebViewGone
             )
 
             webChromeClient = WebChromeClient()
@@ -89,7 +90,7 @@ class HtmlRenderer(
     }
 
     override fun showFullscreen(activity: Activity) {
-        val view = webView.takeUnless { isDestroyed } ?: run {
+        if (webView == null || isDestroyed) {
             listener?.onError(IllegalStateException("Ad not loaded"))
             return
         }
@@ -102,7 +103,8 @@ class HtmlRenderer(
         // attached to it. It used to build a second one and reload the markup, which meant
         // fullscreen clicks and load errors were never reported.
         presentationKey = PresentedAds.register(object : PresentedAd {
-            override val contentView: View get() = view
+            // Read when the activity starts, which is after the WebView may already be gone.
+            override val contentView: View? get() = webView
             override val closeButton: CloseButtonConfig get() = rendering.closeButton
             override val lockedOrientation: Int = orientation
             override var closeRequester: (() -> Unit)? = null
@@ -124,6 +126,22 @@ class HtmlRenderer(
         )
 
         // The impression is reported by the activity once the ad is actually on screen, not here.
+    }
+
+    /**
+     * The WebView's renderer process died, and [ClickHandler] has already destroyed the WebView. An ad that was never
+     * shown has failed to load. An ad on a fullscreen screen closes, as if the user had closed it, and the screen
+     * reports the close; a screen that is still starting finds no view and ends the ad itself. An ad already closed
+     * has nothing left to report.
+     */
+    private fun onWebViewGone() {
+        webView = null
+        isLoaded = false
+        if (presentationKey == null) {
+            listener?.onError(IllegalStateException("The WebView's renderer process is gone"))
+        } else {
+            PresentedAds.get(presentationKey)?.closeRequester?.invoke()
+        }
     }
 
     override fun destroy() {

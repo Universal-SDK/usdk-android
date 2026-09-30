@@ -27,7 +27,8 @@ class MraidWebView(context: Context) : HtmlWebView(context) {
         bridge: MraidJsBridge,
         onClick: () -> Unit,
         onPageLoaded: () -> Unit,
-        onPageLoadError: (String) -> Unit
+        onPageLoadError: (String) -> Unit,
+        onWebViewGone: () -> Unit
     ) {
         this.bridge = bridge
 
@@ -37,7 +38,8 @@ class MraidWebView(context: Context) : HtmlWebView(context) {
             context = context,
             onClick = onClick,
             onPageLoaded = onPageLoaded,
-            onPageLoadError = onPageLoadError
+            onPageLoadError = onPageLoadError,
+            onWebViewGone = onWebViewGone
         )
 
         webChromeClient = WebChromeClient()
