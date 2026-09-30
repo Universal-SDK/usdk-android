@@ -1,7 +1,9 @@
 package org.bidon.rendering.telemetry
 
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -11,6 +13,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.Timeout
+import java.io.OutputStream
+import java.net.HttpURLConnection
 import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
 
@@ -91,14 +95,47 @@ class HttpTelemetryClientTest {
         }
     }
 
+    /**
+     * Pins the outcome, not the `instanceFollowRedirects` line: a body sent in fixed-length streaming mode cannot be
+     * sent again, so the JDK does not follow a redirect of it either way. The line states the intent for whichever
+     * HTTP stack the device has.
+     */
     @Test
-    fun `a redirect is not followed`() {
-        server.enqueue(MockResponse().setResponseCode(307).setHeader("Location", server.url("/elsewhere")))
-        server.enqueue(MockResponse().setResponseCode(202))
+    fun `a redirect is refused and not followed, whatever its kind`() {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                if (request.path == "/v2/telemetry") {
+                    MockResponse().setResponseCode(redirect).setHeader("Location", server.url("/elsewhere"))
+                } else {
+                    MockResponse().setResponseCode(202)
+                }
+        }
 
-        client().post(BODY)
+        for (status in listOf(301, 302, 303, 307, 308)) {
+            redirect = status
+            val result = client().post(BODY)
+            assertTrue("HTTP $status gave $result", result is PostResult.Rejected)
+        }
 
-        assertEquals(1, server.requestCount)
+        assertEquals(5, server.requestCount)
+    }
+
+    @Volatile
+    private var redirect = 0
+
+    @Test
+    fun `a network the app may not use is retried, and does not escape`() {
+        // What Android throws when a firewall or a missing INTERNET permission denies the socket.
+        val denied = HttpTelemetryClient(endpoint("https://example.com/v2/telemetry"), openConnection = { url ->
+            object : HttpURLConnection(url) {
+                override fun connect() = throw SecurityException("Permission denied (missing INTERNET permission?)")
+                override fun getOutputStream(): OutputStream = connect().let { error("unreachable") }
+                override fun disconnect() = Unit
+                override fun usingProxy() = false
+            }
+        })
+
+        assertTrue(denied.post(BODY) is PostResult.Retry)
     }
 
     @Test

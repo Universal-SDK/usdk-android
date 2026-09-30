@@ -2,6 +2,8 @@ package org.bidon.rendering.telemetry
 
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLConnection
 import java.util.concurrent.TimeUnit
 
 /** Sends one request body to the ingest endpoint and says what the answer means for the events in it. */
@@ -33,20 +35,29 @@ internal sealed interface PostResult {
 /**
  * [TelemetryClient] over [HttpURLConnection], so the renderer adds no dependency to the host app.
  *
- * A request that cannot be completed, for whatever I/O reason, timeouts included, is [PostResult.Retry]. The server
- * deduplicates on each event's `event_id`, so a request that did arrive but whose answer was lost costs a duplicate
- * at most. Redirects are not followed: the endpoint is known, and a redirected POST is not the request that was sent.
+ * A request that cannot be completed is [PostResult.Retry]: any I/O failure, timeouts included, and a network the app
+ * may not use, which Android reports as a [SecurityException] (a firewall, or a host app without the INTERNET
+ * permission). The server deduplicates on each event's `event_id`, so a request that did arrive but whose answer was
+ * lost costs a duplicate at most. Redirects are not followed: the endpoint is known, and a redirected POST is not the
+ * request that was sent.
+ *
+ * The timeouts bound connecting and each read. They do not bound a DNS lookup or writing the body, which the platform
+ * gives no timeout, so a network that accepts a connection and then stalls can hold the telemetry thread longer.
+ * Events emitted meanwhile wait in the handoff, and are counted as overflow once it is full.
  */
 internal class HttpTelemetryClient(
     private val endpoint: TelemetryEndpoint,
     private val connectTimeoutMillis: Int = CONNECT_TIMEOUT_MILLIS,
     private val readTimeoutMillis: Int = READ_TIMEOUT_MILLIS,
+    private val openConnection: (URL) -> URLConnection = URL::openConnection,
 ) : TelemetryClient {
 
     override fun post(body: ByteArray): PostResult {
         val connection = try {
-            endpoint.url.openConnection() as HttpURLConnection
+            openConnection(endpoint.url) as HttpURLConnection
         } catch (_: IOException) {
+            return PostResult.Retry(retryAfterMillis = null)
+        } catch (_: SecurityException) {
             return PostResult.Retry(retryAfterMillis = null)
         }
         return try {
@@ -63,6 +74,8 @@ internal class HttpTelemetryClient(
             resultOf(connection.responseCode, connection.getHeaderField("Retry-After"))
         } catch (_: IOException) {
             PostResult.Retry(retryAfterMillis = null)
+        } catch (_: SecurityException) {
+            PostResult.Retry(retryAfterMillis = null)
         } finally {
             connection.disconnect()
         }
@@ -70,7 +83,7 @@ internal class HttpTelemetryClient(
 
     companion object {
 
-        /** Short enough that a send started as the app goes to the background can finish before it is frozen. */
+        /** Short, so that a send started as the app goes to the background has a chance to finish before it is frozen. */
         const val CONNECT_TIMEOUT_MILLIS = 5_000
         const val READ_TIMEOUT_MILLIS = 10_000
 
