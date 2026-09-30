@@ -51,16 +51,17 @@ class FullscreenAdActivity : AppCompatActivity() {
             return
         }
         presentation = ad
+        impressionReported = savedInstanceState?.impressionReported() ?: false
 
         // Locked so the ad cannot rotate while it is up, restarting the creative and moving the
         // close button. Inherited from the publisher, resolved when the ad was shown.
         requestedOrientation = ad.lockedOrientation
 
         val view = ad.contentView ?: run {
-            // Its WebView is gone, for instance because its renderer process died. On a first start the ad was never on
-            // screen, so it fails and is not also reported as closed. A screen restored after the system destroyed it
-            // in the background had the ad on screen, so it closes, like an ad whose renderer dies while it shows.
-            if (savedInstanceState == null) {
+            // Its WebView is gone, for instance because its renderer process died. An ad that was never on screen
+            // fails, and is not also reported as closed. One that was, on a screen restored after the system destroyed
+            // it in the background, closes, like an ad whose renderer dies while it shows.
+            if (!impressionReported) {
                 ad.onFailed(IllegalStateException("Ad has no view to display"))
                 presentation = null
             }
@@ -116,6 +117,7 @@ class FullscreenAdActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putCloseAvailableAtMs(closeAvailableAtMs)
+        outState.putImpressionReported(impressionReported)
     }
 
     override fun onResume() {

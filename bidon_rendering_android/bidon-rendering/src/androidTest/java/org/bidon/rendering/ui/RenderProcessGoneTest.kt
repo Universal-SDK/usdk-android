@@ -157,6 +157,15 @@ class RenderProcessGoneTest {
     fun anMraidScreenRestoredWithoutItsViewClosesTheShownAd() =
         aScreenRestoredWithoutItsViewClosesTheShownAd(MraidAdActivity::class.java)
 
+    /** A theme or language change recreates the screen. The ad was already counted as shown, and is not again. */
+    @Test
+    fun anHtmlScreenRecreatedWithItsViewReportsTheImpressionOnce() =
+        aScreenRecreatedWithItsViewReportsTheImpressionOnce(FullscreenAdActivity::class.java)
+
+    @Test
+    fun anMraidScreenRecreatedWithItsViewReportsTheImpressionOnce() =
+        aScreenRecreatedWithItsViewReportsTheImpressionOnce(MraidAdActivity::class.java)
+
     /** A command the creative sent just before its WebView went away reaches neither the WebView nor the publisher. */
     @Test
     fun anMraidCloseQueuedBeforeTheControllerIsDestroyedIsDropped() = mraidCloseAroundDestroy(closeFirst = true)
@@ -316,6 +325,37 @@ class RenderProcessGoneTest {
             waitFor("the screen to go") { Unit.takeIf { adScreens().isEmpty() } }
             assertEquals("failed an ad that was already shown", 0, failures.get())
             assertEquals(1, closes.get())
+            assertNull(PresentedAds.get(key))
+        }
+        PresentedAds.unregister(key)
+    }
+
+    private fun aScreenRecreatedWithItsViewReportsTheImpressionOnce(screen: Class<out Activity>) {
+        val impressions = AtomicInteger()
+        val view = onMain { View(context) }
+        val key = PresentedAds.register(object : PresentedAd {
+            override val contentView: View get() = view
+            override val closeButton = AdRenderingConfig().closeButton
+            override val lockedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            override var closeRequester: (() -> Unit)? = null
+            override fun onImpression() {
+                impressions.incrementAndGet()
+            }
+            override fun onClicked() = Unit
+            override fun onClosed() = Unit
+            override fun onRewarded() = Unit
+            override fun onFailed(error: Throwable) = Unit
+        })
+        val intent = Intent(context, screen).putExtra(PresentedAds.EXTRA_KEY, key)
+        ActivityScenario.launch<Activity>(intent).use { scenario ->
+            val first = waitFor("the ad screen") { resumedAdScreen() }
+            assertEquals(1, impressions.get())
+
+            onMain { first.recreate() }
+
+            waitFor("the recreated screen") { resumedAdScreen()?.takeIf { it !== first } }
+            assertEquals("counted as shown again", 1, impressions.get())
+            scenario.onActivity { it.finish() }
         }
         PresentedAds.unregister(key)
     }
@@ -392,6 +432,11 @@ class RenderProcessGoneTest {
     /** Ends the process that renders [renderer]'s WebView, the way a crash or the low-memory killer would. */
     private fun killRenderer(renderer: AdRenderer, how: String) =
         onMain { (renderer.getView() as WebView).loadUrl(how) }
+
+    private fun resumedAdScreen(): Activity? = onMain {
+        ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+            .firstOrNull { it is FullscreenAdActivity || it is MraidAdActivity }
+    }
 
     private fun adScreens(): List<Activity> = onMain {
         Stage.values().filter { it != Stage.DESTROYED }

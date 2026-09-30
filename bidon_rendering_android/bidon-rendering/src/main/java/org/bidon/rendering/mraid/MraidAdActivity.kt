@@ -13,8 +13,10 @@ import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.ui.CloseButton
 import org.bidon.rendering.ui.closeAvailableAtMs
+import org.bidon.rendering.ui.impressionReported
 import org.bidon.rendering.ui.insetFromSafeArea
 import org.bidon.rendering.ui.putCloseAvailableAtMs
+import org.bidon.rendering.ui.putImpressionReported
 
 /**
  * Hosts a fullscreen MRAID creative.
@@ -56,14 +58,15 @@ class MraidAdActivity : AppCompatActivity() {
             return
         }
         presentation = ad
+        impressionReported = savedInstanceState?.impressionReported() ?: false
 
         requestedOrientation = ad.lockedOrientation
 
         val view = ad.contentView ?: run {
-            // Its WebView is gone, for instance because its renderer process died. On a first start the ad was never on
-            // screen, so it fails and is not also reported as closed. A screen restored after the system destroyed it
-            // in the background had the ad on screen, so it closes, like an ad whose renderer dies while it shows.
-            if (savedInstanceState == null) {
+            // Its WebView is gone, for instance because its renderer process died. An ad that was never on screen
+            // fails, and is not also reported as closed. One that was, on a screen restored after the system destroyed
+            // it in the background, closes, like an ad whose renderer dies while it shows.
+            if (!impressionReported) {
                 ad.onFailed(IllegalStateException("MRAID ad has no view to display"))
                 presentation = null
             }
@@ -124,6 +127,7 @@ class MraidAdActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putCloseAvailableAtMs(closeAvailableAtMs)
+        outState.putImpressionReported(impressionReported)
     }
 
     override fun onResume() {
