@@ -6,12 +6,16 @@ package org.bidon.rendering.telemetry
  * The platform's `org.json` is lenient: it reads comments, unquoted names, single quotes and more, and it reads text
  * decoded with replacement characters rather than the bytes that are sent. A server with a strict parser refuses all
  * of that, together with everything else in the same request. So a payload goes into a batch only if it passes here.
+ *
+ * Repeated names within an object are not looked for: every payload is written by `org.json`'s `JSONObject`, which
+ * cannot hold a name twice.
  */
 internal object StrictJson {
 
     /**
-     * The most levels of objects and arrays, the outermost object included: deeper than any event is built, and
-     * shallow enough that checking never exhausts the thread's stack.
+     * The most levels of nesting, counting the outermost object as the first and every value inside a container as one
+     * level deeper, strings and numbers included: deeper than any event is built, and shallow enough that checking
+     * never exhausts the thread's stack.
      */
     private const val MAX_DEPTH = 32
 
