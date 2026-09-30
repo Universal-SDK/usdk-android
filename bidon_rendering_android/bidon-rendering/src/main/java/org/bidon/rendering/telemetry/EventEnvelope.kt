@@ -68,15 +68,19 @@ internal class EventEnvelope private constructor(
 }
 
 /**
- * The session an event belongs to, as supplied by the host. The telemetry package never mints one: an id of its own
- * would look like a session id and join to nothing the server holds.
+ * The session an event belongs to. The renderer mints one per process with [random] (D-025): the mediation SDK's own
+ * session is not visible to it. Renderer events join the server's on `auction_id`, so the session only has to group the
+ * events of one process and fill the contract's required field.
  */
 @JvmInline
 internal value class SessionId private constructor(val value: String) {
 
     companion object {
-        /** The host's session id, or `null` when it has none yet, in which case there is no event to send. */
+        /** [value] as a session id, or `null` when it is blank, in which case there is no event to send. */
         fun of(value: String): SessionId? = if (value.isBlank()) null else SessionId(value)
+
+        /** A new session id, a random UUID. */
+        fun random(): SessionId = SessionId(UUID.randomUUID().toString())
     }
 }
 
