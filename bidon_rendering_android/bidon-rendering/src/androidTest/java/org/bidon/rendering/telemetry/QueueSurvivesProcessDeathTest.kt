@@ -1,13 +1,6 @@
 package org.bidon.rendering.telemetry
 
-import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
-import android.content.ServiceConnection
-import android.os.Handler
-import android.os.HandlerThread
-import android.os.IBinder
-import android.os.Message
 import android.os.Messenger
 import android.os.ParcelFileDescriptor
 import android.os.Process
@@ -22,9 +15,6 @@ import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
 /**
@@ -118,50 +108,10 @@ class QueueSurvivesProcessDeathTest {
         }
     }
 
-    private fun awaitDeath(pid: Int) {
-        val deadline = System.currentTimeMillis() + 10_000
-        while (File("/proc/$pid").exists()) {
-            if (System.currentTimeMillis() > deadline) fail("the victim ($pid) is still alive")
-            Thread.sleep(20)
-        }
-    }
-
     private fun shell(command: String) {
         ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command))
             .use { it.readBytes() }
     }
 
-    /** Binds to the victim, starting its process if needed, and unbinds once [block] is done. */
-    private fun <T> withVictim(block: Messenger.() -> T): T {
-        val connected = CountDownLatch(1)
-        var service: Messenger? = null
-        val connection = object : ServiceConnection {
-            override fun onServiceConnected(name: ComponentName, binder: IBinder) {
-                service = Messenger(binder)
-                connected.countDown()
-            }
-
-            override fun onServiceDisconnected(name: ComponentName) = Unit
-        }
-        val intent = Intent(context, VictimService::class.java)
-        assertTrue(context.bindService(intent, connection, Context.BIND_AUTO_CREATE))
-        try {
-            assertTrue("the victim did not start", connected.await(10, TimeUnit.SECONDS))
-            return service!!.block()
-        } finally {
-            context.unbindService(connection)
-        }
-    }
-
-    private fun Messenger.request(what: Int, arg1: Int = 0): Message {
-        val replies = LinkedBlockingQueue<Message>()
-        val thread = HandlerThread("victim-replies").apply { start() }
-        try {
-            val replyTo = Messenger(Handler(thread.looper) { replies.add(Message.obtain(it)); true })
-            send(Message.obtain(null, what, arg1, 0).apply { this.replyTo = replyTo })
-            return replies.poll(30, TimeUnit.SECONDS) ?: throw AssertionError("no reply to command $what")
-        } finally {
-            thread.quitSafely()
-        }
-    }
+    private fun <T> withVictim(block: Messenger.() -> T): T = withService<VictimService, T>(context, block)
 }
