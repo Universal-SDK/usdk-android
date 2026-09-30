@@ -95,11 +95,16 @@ internal class BatchSender(
     }
 
     override fun afterSync() {
-        if (waitingAfterFailure) {
-            if (backgroundAttemptMade) return
-            backgroundAttemptMade = true
+        val now = now()
+        if (!waitingAfterFailure) {
+            schedule(now)
+            return
         }
-        schedule(now())
+        // Counted only when it brings a send forward: a wait nothing may cut short does not use it up.
+        val due = dueAt ?: return
+        if (backgroundAttemptMade || maxOf(now, notBefore) >= due) return
+        backgroundAttemptMade = true
+        schedule(now)
     }
 
     override fun runIfDue() {
@@ -115,7 +120,8 @@ internal class BatchSender(
         while (true) {
             val peeked = store.peek(BatchBody.MAX_EVENTS, body.maxPayloadBytes)
             if (peeked.isEmpty()) break
-            val (batch, malformed) = peeked.partition { BatchBody.isOneObject(it.payload) }
+            // One payload that is not a JSON object would make the whole body invalid, so it goes on its own.
+            val (batch, malformed) = peeked.partition { StrictJson.isOneObject(it.payload) }
             if (malformed.isNotEmpty()) drop(malformed, DropReason.MALFORMED)
             if (batch.isEmpty()) continue
             val retry = deliver(batch)
@@ -123,7 +129,7 @@ internal class BatchSender(
                 scheduleRetry(retry.retryAfterMillis)
                 return
             }
-            failures = 0
+            endSeries()
         }
         endSeries()
     }

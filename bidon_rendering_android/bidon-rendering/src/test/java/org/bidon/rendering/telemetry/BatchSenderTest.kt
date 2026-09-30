@@ -479,6 +479,52 @@ class BatchSenderTest {
     }
 
     @Test
+    fun `a forced background attempt that gets a batch through leaves the next series its own attempt`() {
+        storeEvents(0..149)
+        answer(500, 202, 500, 202)
+        val sender = sender(HighestRandom).apply { afterStart() }
+        sender.runIfDue()
+
+        // The first batch goes through, the second fails: a new series begins.
+        sender.afterSync()
+        sender.runIfDue()
+        assertEquals(5_000L, sender.millisUntilDue())
+
+        sender.afterSync()
+
+        assertEquals(0L, sender.millisUntilDue())
+    }
+
+    @Test
+    fun `a background callback while nothing may be sent does not use up the series' attempt`() {
+        storeEvents(0..0)
+        answerRetryAfter(503, "120")
+        answer(500)
+        val sender = sender(HighestRandom).apply { afterStart() }
+        sender.runIfDue()
+
+        sender.afterSync()
+        sender.runWhenDue()
+        assertEquals(5_000L, sender.millisUntilDue())
+
+        sender.afterSync()
+
+        assertEquals(0L, sender.millisUntilDue())
+    }
+
+    @Test
+    fun `a batch that is all malformed does not end the pass before the events behind it`() {
+        repeat(BatchBody.MAX_EVENTS) { store.append("not json".encodeToByteArray(), EventClass.DIAGNOSTIC) }
+        storeEvents(0..0)
+        answer(202)
+
+        sender().apply { afterStart() }.runIfDue()
+
+        assertEquals(listOf(listOf(0)), requests())
+        assertEquals(BatchBody.MAX_EVENTS.toLong(), dropped()[DropReason.MALFORMED])
+    }
+
+    @Test
     fun `a full batch counts only events stored since the last pass`() {
         // A store whose count includes records it cannot hand out, such as expired ones a full disk cannot rewrite.
         val stuck = object : WriteOnlyStore() {
