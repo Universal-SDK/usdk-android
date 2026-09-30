@@ -3,7 +3,6 @@ package org.bidon.rendering.telemetry
 import android.content.Context
 import android.os.Bundle
 import android.os.Messenger
-import android.os.Process
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
@@ -61,14 +60,13 @@ class CrashCaptureOnDeviceTest {
     }
 
     /**
-     * Crashes the victim with [how], waits for its process to die, and reads what the next process finds. The next
-     * process is killed afterwards, so every test starts with a fresh one.
+     * Crashes the victim with [how], waits for its process to die, and reads what the next process finds. The victim
+     * crashes, and the next one exits, once unbound, so every test starts with a fresh process.
      */
     private fun crashAndRestart(how: Int): Pair<Bundle, Bundle> {
         val crashed = withVictim { request(how) }
         awaitDeath(crashed.arg1)
         val next = withVictim { request(CrashVictimService.READ) }
-        Process.killProcess(next.arg1)
         awaitDeath(next.arg1)
         assertNotEquals("the victim was not restarted", crashed.arg1, next.arg1)
         return crashed.data to next.data

@@ -51,13 +51,20 @@ class FullscreenAdActivity : AppCompatActivity() {
             return
         }
         presentation = ad
+        impressionReported = savedInstanceState?.impressionReported() ?: false
 
         // Locked so the ad cannot rotate while it is up, restarting the creative and moving the
         // close button. Inherited from the publisher, resolved when the ad was shown.
         requestedOrientation = ad.lockedOrientation
 
         val view = ad.contentView ?: run {
-            ad.onFailed(IllegalStateException("Ad has no view to display"))
+            // Its WebView is gone, for instance because its renderer process died. An ad that was never on screen
+            // fails, and is not also reported as closed. One that was, on a screen restored after the system destroyed
+            // it in the background, closes, like an ad whose renderer dies while it shows.
+            if (!impressionReported) {
+                ad.onFailed(IllegalStateException("Ad has no view to display"))
+                presentation = null
+            }
             finish()
             return
         }
@@ -73,6 +80,9 @@ class FullscreenAdActivity : AppCompatActivity() {
         )
         root.addView(view)
         adView = view
+
+        // The renderer closes the ad this way when its WebView can no longer draw.
+        ad.closeRequester = { finish() }
 
         val closeButton = CloseButton(this, ad.closeButton).apply { onClick = { finish() } }
         root.addView(closeButton, closeButton.cornerLayoutParams())
@@ -97,7 +107,9 @@ class FullscreenAdActivity : AppCompatActivity() {
     /**
      * Reports the reward once it is earned, but never before the impression, which with no close delay would
      * otherwise reach the publisher first, and never for an ad already closing: its countdown keeps running until
-     * the activity is destroyed. Called again by a recreated activity; [PresentedAd.onRewarded] pays only once.
+     * the activity is destroyed. Called again by a recreated activity; [PresentedAd.onRewarded] pays only once. A
+     * recreated activity whose close button is already available can report it from onCreate, after the impression
+     * the activity before it reported.
      */
     private fun reportRewardIfEarned() {
         if (!rewardEarned || !impressionReported || isFinishing) return
@@ -107,6 +119,7 @@ class FullscreenAdActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putCloseAvailableAtMs(closeAvailableAtMs)
+        outState.putImpressionReported(impressionReported)
     }
 
     override fun onResume() {
@@ -128,6 +141,7 @@ class FullscreenAdActivity : AppCompatActivity() {
         (adView?.parent as? ViewGroup)?.removeView(adView)
         adView = null
 
+        presentation?.closeRequester = null
         if (isFinishing) {
             presentation?.onClosed()
             PresentedAds.unregister(presentationKey)

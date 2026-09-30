@@ -25,6 +25,10 @@ import kotlin.system.exitProcess
  * Every crash command starts from an empty telemetry directory, installs [HostCrashReporter] the way a host app
  * installs its crash reporter, before the SDK, then initialises the renderer and crashes. [READ] starts the renderer
  * in the next process and reports what reached its error queue.
+ *
+ * The process ends only once the test has unbound and the service is destroyed: the crash, or after [READ] a plain
+ * exit. A bound service whose process dies is scheduled for a restart, with a delay that grows with each death, and
+ * a new bind waits for that restart, so ending the process while still bound made the next test wait at random.
  */
 class CrashVictimService : Service() {
 
@@ -33,6 +37,10 @@ class CrashVictimService : Service() {
 
     private val directory by lazy { TelemetryDirectory.forCurrentProcess(this) }
     private val hostReport by lazy { File(filesDir, "host_crash_report") }
+
+    /** The command this process ends with once the service is destroyed. */
+    @Volatile
+    private var ending: Int? = null
 
     override fun onBind(intent: Intent): IBinder = messenger.binder
 
@@ -45,13 +53,20 @@ class CrashVictimService : Service() {
                 HostCrashReporter.install(hostReport)
                 BidonRenderer.init(this)
                 reply.data = Bundle().apply { putString(SESSION, RendererTelemetry.sessionId.value) }
-                message.replyTo.send(reply)
-                crash(message.what)
-                return
             }
             READ -> reply.data = read()
         }
+        ending = message.what
         message.replyTo.send(reply)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        when (val how = ending) {
+            null -> Unit
+            READ -> Process.killProcess(Process.myPid())
+            else -> crash(how)
+        }
     }
 
     private fun crash(how: Int) {

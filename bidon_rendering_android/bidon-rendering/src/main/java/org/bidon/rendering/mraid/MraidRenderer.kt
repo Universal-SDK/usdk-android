@@ -62,7 +62,8 @@ class MraidRenderer(
             },
             onPageLoadError = { error ->
                 listener.onError(Exception(error))
-            }
+            },
+            onWebViewGone = ::onWebViewGone
         )
 
         wv.loadMraidContent(adm, mraidJs)
@@ -81,7 +82,7 @@ class MraidRenderer(
     }
 
     override fun showFullscreen(activity: Activity) {
-        val view = webView.takeUnless { isDestroyed } ?: run {
+        if (webView == null || isDestroyed) {
             listener?.onError(IllegalStateException("MRAID not loaded"))
             return
         }
@@ -93,7 +94,8 @@ class MraidRenderer(
         val orientation = AdWindow.orientationInheritedFrom(activity)
 
         val presented = object : PresentedAd {
-            override val contentView: View get() = view
+            // Read when the activity starts, which is after the WebView may already be gone.
+            override val contentView: View? get() = webView
             override val closeButton: CloseButtonConfig get() = rendering.closeButton
             override val lockedOrientation: Int = orientation
             override var closeRequester: (() -> Unit)? = null
@@ -118,6 +120,25 @@ class MraidRenderer(
     }
 
     override fun getView(): View? = webView
+
+    /**
+     * The WebView's renderer process died, and [ClickHandler] has already destroyed the WebView. An ad that was never
+     * shown fullscreen, inline or not yet placed, has failed. An ad on a fullscreen screen closes, as if the user had
+     * closed it, and the screen reports the close; a screen that is still starting finds no view and ends the ad
+     * itself.
+     */
+    private fun onWebViewGone() {
+        // Takes down an expanded ad's overlay, which the WebView was drawn in.
+        controller?.destroy()
+        controller = null
+        webView = null
+        val shown = presentation
+        if (shown == null) {
+            listener?.onError(IllegalStateException("The WebView's renderer process is gone"))
+        } else {
+            shown.closeRequester?.invoke()
+        }
+    }
 
     override fun destroy() {
         isDestroyed = true

@@ -4,11 +4,15 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.util.Log
+import android.view.ViewGroup
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.annotation.RequiresApi
 
 /**
  * Turns a tap on a creative into a click report and a click-through.
@@ -22,7 +26,8 @@ class ClickHandler(
     private val context: Context,
     private val onClick: () -> Unit,
     private val onPageLoaded: (() -> Unit)? = null,
-    private val onPageLoadError: ((String) -> Unit)? = null
+    private val onPageLoadError: ((String) -> Unit)? = null,
+    private val onWebViewGone: (() -> Unit)? = null
 ) : WebViewClient() {
 
     private companion object {
@@ -124,5 +129,27 @@ class ClickHandler(
         Log.e(TAG, "Load error: $message")
 
         onPageLoadError?.invoke(message)
+    }
+
+    /**
+     * The process that renders this WebView crashed, or the system killed it to reclaim memory. On most devices every
+     * WebView in the app shares that process, so each one hears about it, the host app's own included.
+     *
+     * Returning false, which is what a client that does not override this does, makes Android kill the whole app. So
+     * this always returns true, and in exchange keeps the promise that comes with it: the WebView is never used again.
+     * It is taken off the screen and destroyed here, before [onWebViewGone] tells its owner to end the ad. A WebView
+     * of the host app's whose client returns false still ends the app; this only keeps our ads from being the reason.
+     */
+    @RequiresApi(Build.VERSION_CODES.O)
+    override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
+        val cause = if (detail?.didCrash() == true) "crashed" else "was killed by the system"
+        Log.w(TAG, "WebView renderer $cause; ending the ad")
+
+        view?.let {
+            (it.parent as? ViewGroup)?.removeView(it)
+            it.destroy()
+        }
+        onWebViewGone?.invoke()
+        return true
     }
 }

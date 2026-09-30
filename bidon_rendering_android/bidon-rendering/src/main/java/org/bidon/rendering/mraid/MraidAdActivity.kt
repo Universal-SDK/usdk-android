@@ -13,8 +13,10 @@ import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.ui.CloseButton
 import org.bidon.rendering.ui.closeAvailableAtMs
+import org.bidon.rendering.ui.impressionReported
 import org.bidon.rendering.ui.insetFromSafeArea
 import org.bidon.rendering.ui.putCloseAvailableAtMs
+import org.bidon.rendering.ui.putImpressionReported
 
 /**
  * Hosts a fullscreen MRAID creative.
@@ -56,11 +58,18 @@ class MraidAdActivity : AppCompatActivity() {
             return
         }
         presentation = ad
+        impressionReported = savedInstanceState?.impressionReported() ?: false
 
         requestedOrientation = ad.lockedOrientation
 
         val view = ad.contentView ?: run {
-            ad.onFailed(IllegalStateException("MRAID ad has no view to display"))
+            // Its WebView is gone, for instance because its renderer process died. An ad that was never on screen
+            // fails, and is not also reported as closed. One that was, on a screen restored after the system destroyed
+            // it in the background, closes, like an ad whose renderer dies while it shows.
+            if (!impressionReported) {
+                ad.onFailed(IllegalStateException("MRAID ad has no view to display"))
+                presentation = null
+            }
             finish()
             return
         }
@@ -108,7 +117,9 @@ class MraidAdActivity : AppCompatActivity() {
     /**
      * Reports the reward once it is earned, but never before the impression, which with no close delay would
      * otherwise reach the publisher first, and never for an ad already closing: its countdown keeps running until
-     * the activity is destroyed. Called again by a recreated activity; [PresentedAd.onRewarded] pays only once.
+     * the activity is destroyed. Called again by a recreated activity; [PresentedAd.onRewarded] pays only once. A
+     * recreated activity whose close button is already available can report it from onCreate, after the impression
+     * the activity before it reported.
      */
     private fun reportRewardIfEarned() {
         if (!rewardEarned || !impressionReported || isFinishing) return
@@ -118,6 +129,7 @@ class MraidAdActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putCloseAvailableAtMs(closeAvailableAtMs)
+        outState.putImpressionReported(impressionReported)
     }
 
     override fun onResume() {
