@@ -145,38 +145,25 @@ class RenderProcessGoneTest {
     fun anMraidScreenThatFindsNoViewFailsTheAdOnceAndDoesNotCloseIt() =
         aScreenThatFindsNoViewFailsTheAdOnceAndDoesNotCloseIt(MraidAdActivity::class.java)
 
+    /**
+     * A screen the system destroyed in the background and restores after the ad's WebView went away. The ad was on
+     * screen before, so it closes, as an ad whose renderer dies while it is shown does, rather than failing.
+     */
+    @Test
+    fun anHtmlScreenRestoredWithoutItsViewClosesTheShownAd() =
+        aScreenRestoredWithoutItsViewClosesTheShownAd(FullscreenAdActivity::class.java)
+
+    @Test
+    fun anMraidScreenRestoredWithoutItsViewClosesTheShownAd() =
+        aScreenRestoredWithoutItsViewClosesTheShownAd(MraidAdActivity::class.java)
+
     /** A command the creative sent just before its WebView went away reaches neither the WebView nor the publisher. */
     @Test
-    fun anMraidCloseStillQueuedWhenTheControllerIsDestroyedIsDropped() {
-        val closes = AtomicInteger()
-        // No client on these WebViews: they must be destroyed before any later test lets a renderer die, or Android
-        // ends this process for them, exactly as it would for a host app's WebView.
-        val webViews = onMain { listOf(MraidWebView(context), MraidWebView(context)) }
-        try {
-            val (destroyedOne, liveOne) = webViews.map {
-                onMain { MraidController(context, it, MraidPlacementType.INLINE, { closes.incrementAndGet() }, {}) }
-            }
-            onMain {
-                destroyedOne.onReady()
-                liveOne.onReady()
-            }
-            instrumentation.waitForIdleSync()
+    fun anMraidCloseQueuedBeforeTheControllerIsDestroyedIsDropped() = mraidCloseAroundDestroy(closeFirst = true)
 
-            onMain {
-                destroyedOne.close()
-                destroyedOne.destroy()
-            }
-            instrumentation.waitForIdleSync()
-            assertEquals(0, closes.get())
-
-            // The same command without the destroy does report the close, so the test can see one.
-            onMain { liveOne.close() }
-            instrumentation.waitForIdleSync()
-            assertEquals(1, closes.get())
-        } finally {
-            onMain { webViews.forEach(WebView::destroy) }
-        }
-    }
+    /** The same for a command that reaches the controller after it was destroyed. */
+    @Test
+    fun anMraidCloseAfterTheControllerIsDestroyedIsDropped() = mraidCloseAroundDestroy(closeFirst = false)
 
     /** The shape every WebView of ours has: a [ClickHandler] as its client. */
     @Test
@@ -294,6 +281,79 @@ class RenderProcessGoneTest {
             assertEquals("closed an ad that was never shown", 0, closes.get())
         }
         PresentedAds.unregister(key)
+    }
+
+    private fun aScreenRestoredWithoutItsViewClosesTheShownAd(screen: Class<out Activity>) {
+        val impressions = AtomicInteger()
+        val failures = AtomicInteger()
+        val closes = AtomicInteger()
+        var view: View? = onMain { View(context) }
+        val key = PresentedAds.register(object : PresentedAd {
+            override val contentView: View? get() = view
+            override val closeButton = AdRenderingConfig().closeButton
+            override val lockedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            override var closeRequester: (() -> Unit)? = null
+            override fun onImpression() {
+                impressions.incrementAndGet()
+            }
+            override fun onClicked() = Unit
+            override fun onClosed() {
+                closes.incrementAndGet()
+            }
+            override fun onRewarded() = Unit
+            override fun onFailed(error: Throwable) {
+                failures.incrementAndGet()
+            }
+        })
+        val intent = Intent(context, screen).putExtra(PresentedAds.EXTRA_KEY, key)
+        ActivityScenario.launch<Activity>(intent).use { scenario ->
+            assertEquals(1, impressions.get())
+
+            view = null
+            // Not the scenario's recreate(), which waits for a screen that here finishes instead of resuming.
+            scenario.onActivity { it.recreate() }
+
+            waitFor("the screen to go") { Unit.takeIf { adScreens().isEmpty() } }
+            assertEquals("failed an ad that was already shown", 0, failures.get())
+            assertEquals(1, closes.get())
+        }
+        PresentedAds.unregister(key)
+    }
+
+    private fun mraidCloseAroundDestroy(closeFirst: Boolean) {
+        val closes = AtomicInteger()
+        // No client on these WebViews: they must be destroyed before any later test lets a renderer die, or Android
+        // ends this process for them, exactly as it would for a host app's WebView.
+        val webViews = onMain { listOf(MraidWebView(context), MraidWebView(context)) }
+        try {
+            val (destroyedOne, liveOne) = webViews.map {
+                onMain { MraidController(context, it, MraidPlacementType.INLINE, { closes.incrementAndGet() }, {}) }
+            }
+            onMain {
+                destroyedOne.onReady()
+                liveOne.onReady()
+            }
+            instrumentation.waitForIdleSync()
+
+            onMain {
+                if (closeFirst) {
+                    destroyedOne.close()
+                    destroyedOne.destroy()
+                } else {
+                    destroyedOne.destroy()
+                    destroyedOne.close()
+                }
+            }
+            instrumentation.waitForIdleSync()
+            assertEquals(0, closes.get())
+
+            // The same command without the destroy does report the close, so the test can see one.
+            onMain { liveOne.close() }
+            instrumentation.waitForIdleSync()
+            assertEquals(1, closes.get())
+        } finally {
+            onMain { webViews.forEach(WebView::destroy) }
+        }
     }
 
     private fun fullscreenAdGoneOnScreenCloses(kind: Kind, how: String) {

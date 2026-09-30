@@ -29,8 +29,7 @@ class MraidController(
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /** Set on the main thread by [destroy]; read by bridge calls, which arrive on another thread. */
-    @Volatile
+    /** Set by [destroy]. Set and read on the main thread only: the bridge moves every command there first. */
     private var destroyed = false
 
     /**
@@ -253,7 +252,6 @@ class MraidController(
 
     fun destroy() {
         destroyed = true
-        mainHandler.removeCallbacksAndMessages(null)
         expandOverlay?.let { overlay ->
             overlay.removeView(webView)
             val root = findActivity()?.window?.decorView?.rootView as? ViewGroup
