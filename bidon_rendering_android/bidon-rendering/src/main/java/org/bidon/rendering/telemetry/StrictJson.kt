@@ -9,7 +9,10 @@ package org.bidon.rendering.telemetry
  */
 internal object StrictJson {
 
-    /** Deeper than any event is built, and shallow enough that checking never exhausts the thread's stack. */
+    /**
+     * The most levels of objects and arrays, the outermost object included: deeper than any event is built, and
+     * shallow enough that checking never exhausts the thread's stack.
+     */
     private const val MAX_DEPTH = 32
 
     /** Whether [bytes] are exactly one JSON object, with nothing around it but JSON whitespace, in valid UTF-8. */
@@ -18,7 +21,7 @@ internal object StrictJson {
         return try {
             reader.skipWhitespace()
             if (reader.peek() != '{'.code) return false
-            reader.value(depth = 0)
+            reader.value(depth = 1)
             reader.skipWhitespace()
             reader.atEnd()
         } catch (_: Malformed) {
@@ -58,6 +61,7 @@ internal object StrictJson {
             }
         }
 
+        /** A value at nesting level [depth], where the outermost object is level 1. */
         fun value(depth: Int) {
             if (depth > MAX_DEPTH) throw Malformed
             skipWhitespace()
@@ -128,9 +132,25 @@ internal object StrictJson {
         private fun escape() {
             when (next()) {
                 '"'.code, '\\'.code, '/'.code, 'b'.code, 'f'.code, 'n'.code, 'r'.code, 't'.code -> Unit
-                'u'.code -> repeat(4) { if (!isHexDigit(next())) throw Malformed }
+                'u'.code -> {
+                    val unit = hexUnit()
+                    // UTF-16 in an escape must be whole: a high surrogate followed by an escaped low one, never alone.
+                    if (unit in 0xDC00..0xDFFF) throw Malformed
+                    if (unit in 0xD800..0xDBFF) {
+                        expect('\\')
+                        expect('u')
+                        if (hexUnit() !in 0xDC00..0xDFFF) throw Malformed
+                    }
+                }
                 else -> throw Malformed
             }
+        }
+
+        /** Four hex digits, as a UTF-16 code unit. */
+        private fun hexUnit(): Int {
+            var unit = 0
+            repeat(4) { unit = unit * 16 + hexValue(next()) }
+            return unit
         }
 
         /**
@@ -139,21 +159,28 @@ internal object StrictJson {
          */
         private fun multiByte(lead: Int) {
             when (lead) {
-                in 0xC2..0xDF -> continuation(0x80..0xBF)
-                0xE0 -> continuation(0xA0..0xBF, more = 1)
-                in 0xE1..0xEC, 0xEE, 0xEF -> continuation(0x80..0xBF, more = 1)
-                0xED -> continuation(0x80..0x9F, more = 1)
-                0xF0 -> continuation(0x90..0xBF, more = 2)
-                in 0xF1..0xF3 -> continuation(0x80..0xBF, more = 2)
-                0xF4 -> continuation(0x80..0x8F, more = 2)
+                in 0xC2..0xDF -> continuation(0x80, 0xBF, more = 0)
+                0xE0 -> continuation(0xA0, 0xBF, more = 1)
+                in 0xE1..0xEC, 0xEE, 0xEF -> continuation(0x80, 0xBF, more = 1)
+                0xED -> continuation(0x80, 0x9F, more = 1)
+                0xF0 -> continuation(0x90, 0xBF, more = 2)
+                in 0xF1..0xF3 -> continuation(0x80, 0xBF, more = 2)
+                0xF4 -> continuation(0x80, 0x8F, more = 2)
                 else -> throw Malformed
             }
         }
 
-        /** One continuation byte in [first], then [more] in the ordinary range. */
-        private fun continuation(first: IntRange, more: Int = 0) {
-            if (next() !in first) throw Malformed
-            repeat(more) { if (next() !in 0x80..0xBF) throw Malformed }
+        /**
+         * One continuation byte between [low] and [high], then [more] in the ordinary range. Bounds rather than a
+         * range, so that checking non-ASCII text allocates nothing.
+         */
+        private fun continuation(low: Int, high: Int, more: Int) {
+            val first = next()
+            if (first < low || first > high) throw Malformed
+            repeat(more) {
+                val byte = next()
+                if (byte < 0x80 || byte > 0xBF) throw Malformed
+            }
         }
 
         private fun number() {
@@ -184,7 +211,11 @@ internal object StrictJson {
             for (char in word) expect(char)
         }
 
-        private fun isHexDigit(byte: Int): Boolean =
-            byte in '0'.code..'9'.code || byte in 'a'.code..'f'.code || byte in 'A'.code..'F'.code
+        private fun hexValue(byte: Int): Int = when (byte) {
+            in '0'.code..'9'.code -> byte - '0'.code
+            in 'a'.code..'f'.code -> byte - 'a'.code + 10
+            in 'A'.code..'F'.code -> byte - 'A'.code + 10
+            else -> throw Malformed
+        }
     }
 }

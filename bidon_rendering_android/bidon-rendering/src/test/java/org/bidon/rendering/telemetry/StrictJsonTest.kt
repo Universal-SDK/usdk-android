@@ -5,6 +5,7 @@ import io.kotest.property.arbitrary.bind
 import io.kotest.property.arbitrary.boolean
 import io.kotest.property.arbitrary.choice
 import io.kotest.property.arbitrary.double
+import io.kotest.property.arbitrary.element
 import io.kotest.property.arbitrary.filter
 import io.kotest.property.arbitrary.int
 import io.kotest.property.arbitrary.list
@@ -51,6 +52,8 @@ class StrictJsonTest {
             """{"n":1,}""", """{"n":[1,]}""", """{,}""", """{"n":NaN}""", """{"n":Infinity}""", """{"n":0x1F}""",
             """{"n":01}""", """{"n":+1}""", """{"n":.5}""", """{"n":1.}""", """{"n":1e}""", """{"n":True}""",
             """{"n":"a	b"}""", """{"n":"\x41"}""", """{"n":"\u12"}""", """{"n":1}{"m":2}""", """{"n":1}]}""",
+            // Whitespace to some parsers, not to JSON: vertical tab, form feed, no-break space.
+            "\u000B{}", "{}\u000C", "{\"n\"\u000B:1}", "\u00A0{}",
         )) {
             assertFalse(json, accepts(json))
         }
@@ -84,9 +87,29 @@ class StrictJsonTest {
     }
 
     @Test
-    fun `nesting deeper than any event needs is refused without exhausting the stack`() {
-        assertTrue(accepts("{\"a\":" + "[".repeat(30) + "]".repeat(30) + "}"))
-        assertFalse(accepts("{\"a\":" + "[".repeat(100_000) + "]".repeat(100_000) + "}"))
+    fun `nesting is allowed 32 levels deep, the object itself included, and no deeper`() {
+        fun nested(levels: Int) = "{\"a\":" + "[".repeat(levels - 1) + "]".repeat(levels - 1) + "}"
+
+        assertTrue(accepts(nested(32)))
+        assertFalse(accepts(nested(33)))
+        assertFalse("without exhausting the stack", accepts(nested(100_000)))
+    }
+
+    @Test
+    fun `escaped surrogates are accepted only as a pair`() {
+        assertTrue(accepts("""{"s":"\uD83D\uDE00"}"""))
+        assertTrue(accepts("""{"s":"\ud83d\ude00 and \u00e9"}"""))
+        for (json in listOf(
+            """{"s":"\uD800"}""",
+            """{"s":"\uD800x"}""",
+            """{"s":"\uD800\n"}""",
+            """{"s":"\uD800\uD800"}""",
+            """{"s":"\uD800\u0041"}""",
+            """{"s":"\uDC00"}""",
+            """{"s":"\uDE00\uD83D"}""",
+        )) {
+            assertFalse(json, accepts(json))
+        }
     }
 
     @Test
@@ -113,17 +136,30 @@ class StrictJsonTest {
         "{\"s\":\"".encodeToByteArray() + ByteArray(bytes.size) { bytes[it].toByte() } + "\"}".encodeToByteArray()
 
     private companion object {
+        /** Characters that must be escaped, that take several UTF-8 bytes, or both. */
+        val text: Arb<String> = Arb.list(
+            Arb.element(listOf("a", "Z", "0", " ", "\"", "\\", "/", "\n", "\t", "\u0001", "\u001F", "\u007F", "é", "ї", "✓", "\u2028", "😀")),
+            0..12,
+        ).map { it.joinToString("") }
+
         val scalars: Arb<Any> = Arb.choice(
-            Arb.string(0..12),
+            text,
             Arb.long(),
             Arb.double().filter { it.isFinite() },
             Arb.boolean(),
             Arb.int(0..0).map { JSONObject.NULL },
         )
 
-        val arrays: Arb<Any> = Arb.list(scalars, 0..4).map { JSONArray(it) }
+        val flatArrays: Arb<Any> = Arb.list(scalars, 0..4).map { JSONArray(it) }
 
-        val jsonObjects: Arb<String> = Arb.bind(Arb.list(Arb.string(0..8), 0..6), Arb.list(Arb.choice(scalars, arrays), 6..6)) { keys, values ->
+        val flatObjects: Arb<Any> = Arb.bind(Arb.list(text, 0..3), Arb.list(scalars, 3..3)) { keys, values ->
+            JSONObject().apply { keys.forEachIndexed { index, key -> put(key, values[index]) } }
+        }
+
+        /** Arrays of scalars, arrays and objects: nesting three levels deep at most. */
+        val arrays: Arb<Any> = Arb.list(Arb.choice(scalars, flatArrays, flatObjects), 0..4).map { JSONArray(it) }
+
+        val jsonObjects: Arb<String> = Arb.bind(Arb.list(text, 0..6), Arb.list(Arb.choice(scalars, arrays, flatObjects), 6..6)) { keys, values ->
             JSONObject().apply { keys.forEachIndexed { index, key -> put(key, values[index]) } }.toString()
         }
     }
