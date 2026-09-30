@@ -11,6 +11,7 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 /**
  * Crash capture follows the telemetry switch in the host app's manifest: an app that has not switched telemetry on
@@ -41,7 +42,7 @@ class CrashCaptureSwitchTest {
     fun withTelemetryOnTheHostsHandlerIsWrapped() {
         Thread.setDefaultUncaughtExceptionHandler(hostReporter)
 
-        RendererTelemetry.start(context)
+        RendererTelemetry.start(WithOwnStorage(context))
 
         assertTrue(Thread.getDefaultUncaughtExceptionHandler() is CrashCapture)
     }
@@ -52,5 +53,13 @@ class CrashCaptureSwitchTest {
      */
     private class WithoutTelemetryFlag(base: Context) : ContextWrapper(base) {
         override fun getPackageName(): String = "android"
+    }
+
+    /**
+     * The test app with telemetry on, keeping its files apart from the app's own: the telemetry this starts must not
+     * write to the queue another test's telemetry in this process already writes to.
+     */
+    private class WithOwnStorage(base: Context) : ContextWrapper(base) {
+        override fun getNoBackupFilesDir(): File = File(baseContext.cacheDir, "crash-capture-switch").apply { mkdirs() }
     }
 }
