@@ -30,6 +30,7 @@ class CrashReportTest {
     @Test
     fun `the mediation SDK shares our prefix but is not ours`() {
         assertFalse(report.isOwn(crash(frame("org.bidon.sdk.BidonSdk", "loadAd"), frame("org.bidonx.Other", "run"))))
+        assertFalse(report.isOwn(crash(frame("com.publisher.org.bidon.rendering.Copy", "run"))))
     }
 
     @Test
@@ -111,17 +112,18 @@ class CrashReportTest {
     }
 
     @Test
-    fun `an exception that never passed through our code keeps only the frame it was thrown at`() {
+    fun `an exception that never passed through our code keeps its class and none of its frames`() {
         val crash = crash(own("vast.VastParser", "parse")).apply {
             initCause(
-                crash(frame("org.xmlpull.Parser", "next"), frame("org.xmlpull.Parser", "require"), host("A", "a")),
+                crash(frame("org.xmlpull.Parser", "next"), host("PaymentValidator", "verify"), host("A", "a")),
             )
         }
 
         val cause = decode(report.encode(crash, onMainThread = false)!!).getJSONArray("exceptions").getJSONObject(1)
 
-        assertEquals(listOf("org.xmlpull.Parser.next(Test.kt:1)"), cause.getJSONArray("frames").strings())
-        assertEquals(2, cause.getInt("omitted_frames"))
+        assertEquals("java.lang.IllegalStateException", cause.getString("class"))
+        assertEquals(emptyList<String>(), cause.getJSONArray("frames").strings())
+        assertEquals(3, cause.getInt("omitted_frames"))
     }
 
     @Test

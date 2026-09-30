@@ -12,7 +12,7 @@ import java.util.IdentityHashMap
  * The event says which exceptions were involved and where they passed through our code. It never carries an
  * exception's message: messages hold URLs, identifiers and the host app's data, none of which we may collect. Frames
  * outside our code are left out too, except the one on either side of each run of ours, which shows who called us and
- * what we called.
+ * what we called. An exception in the chain that never passed through our code keeps its class and no frames.
  *
  * @param ownPackages class name prefixes that mark a frame as ours, such as `org.bidon.rendering.`
  */
@@ -57,13 +57,12 @@ internal class CrashReport(
     }
 
     /**
-     * Our frames and their immediate neighbours, top of the stack first. An exception that never passed through our
-     * code keeps only its top frame, the place it was thrown.
+     * Our frames and their immediate neighbours, top of the stack first. None for an exception that never passed
+     * through our code: its frames are someone else's code only, and its class is all the event needs from it.
      */
     private fun keptFrames(trace: Array<StackTraceElement>): List<StackTraceElement> {
         val own = trace.map(::isOwn)
-        val kept = trace.indices.filter { own[it] || own.getOrNull(it - 1) == true || own.getOrNull(it + 1) == true }
-        return if (kept.isEmpty()) trace.take(1) else kept.map { trace[it] }
+        return trace.filterIndexed { i, _ -> own[i] || own.getOrNull(i - 1) == true || own.getOrNull(i + 1) == true }
     }
 
     private fun isOwn(frame: StackTraceElement): Boolean = ownPackages.any { frame.className.startsWith(it) }
