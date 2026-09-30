@@ -24,6 +24,12 @@
             android:name="org.bidon.rendering.telemetry.VictimService"
             android:exported="false"
             android:process=":victim" />
+
+        <!-- Crashes on command in a process of its own, so tests can read what the next process finds. -->
+        <service
+            android:name="org.bidon.rendering.telemetry.CrashVictimService"
+            android:exported="false"
+            android:process=":crash_victim" />
     </application>
 
 </manifest>

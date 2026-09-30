@@ -142,4 +142,15 @@ class EventEnvelopeTest {
         listOf("", " ", "\t\n").forEach { blank -> assertNull(SessionId.of(blank)) }
         assertEquals("s", SessionId.of("s")?.value)
     }
+
+    @Test
+    fun `a minted session id is a random UUID, different every time`() {
+        val minted = (1..100).map { SessionId.random().value }
+
+        minted.forEach {
+            assertEquals(it, UUID.fromString(it).toString())
+            assertEquals(4, UUID.fromString(it).version())
+        }
+        assertEquals(minted.size, minted.toSet().size)
+    }
 }

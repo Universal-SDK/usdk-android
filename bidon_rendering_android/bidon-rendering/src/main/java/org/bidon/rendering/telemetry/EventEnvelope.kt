@@ -32,7 +32,10 @@ internal class EventEnvelope private constructor(
      * The envelope as one UTF-8 JSON object with snake_case keys. Absent fields are left out rather than written as
      * `null`: the contract types them as plain strings, which `null` is not.
      */
-    override fun encode(): ByteArray = JSONObject().apply {
+    override fun encode(): ByteArray = toJson().toString().toByteArray(Charsets.UTF_8)
+
+    /** The envelope's fields as a JSON object, for events that add fields of their own next to them. */
+    fun toJson(): JSONObject = JSONObject().apply {
         put("event_id", eventId)
         put("event_name", eventName)
         put("event_ts", eventTs)
@@ -41,7 +44,7 @@ internal class EventEnvelope private constructor(
         if (adType != null) put("ad_type", adType.wireName)
         if (adFormat != null) put("ad_format", adFormat)
         put("sampling_rate", samplingRate.fraction)
-    }.toString().toByteArray(Charsets.UTF_8)
+    }
 
     companion object {
 
@@ -68,15 +71,19 @@ internal class EventEnvelope private constructor(
 }
 
 /**
- * The session an event belongs to, as supplied by the host. The telemetry package never mints one: an id of its own
- * would look like a session id and join to nothing the server holds.
+ * The session an event belongs to. The renderer mints one per process with [random] (D-025): the mediation SDK's own
+ * session is not visible to it. Renderer events join the server's on `auction_id`, so the session only has to group the
+ * events of one process and fill the contract's required field.
  */
 @JvmInline
 internal value class SessionId private constructor(val value: String) {
 
     companion object {
-        /** The host's session id, or `null` when it has none yet, in which case there is no event to send. */
+        /** [value] as a session id, or `null` when it is blank, in which case there is no event to send. */
         fun of(value: String): SessionId? = if (value.isBlank()) null else SessionId(value)
+
+        /** A new session id, a random UUID. */
+        fun random(): SessionId = SessionId(UUID.randomUUID().toString())
     }
 }
 
