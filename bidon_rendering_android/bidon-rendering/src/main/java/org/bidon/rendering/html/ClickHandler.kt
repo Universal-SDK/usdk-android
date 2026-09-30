@@ -137,7 +137,8 @@ class ClickHandler(
      *
      * Returning false, which is what a client that does not override this does, makes Android kill the whole app. So
      * this always returns true, and in exchange keeps the promise that comes with it: the WebView is never used again.
-     * It is taken off the screen and destroyed here, before [onWebViewGone] tells its owner to end the ad.
+     * It is taken off the screen and destroyed here, before [onWebViewGone] tells its owner to end the ad. A WebView
+     * of the host app's whose client returns false still ends the app; this only keeps our ads from being the reason.
      */
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {

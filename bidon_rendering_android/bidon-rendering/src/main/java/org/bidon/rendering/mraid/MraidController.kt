@@ -29,6 +29,19 @@ class MraidController(
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /** Set on the main thread by [destroy]; read by bridge calls, which arrive on another thread. */
+    @Volatile
+    private var destroyed = false
+
+    /**
+     * Runs [block] on the main thread unless the controller has been destroyed by then. Commands from the creative
+     * can still be on their way when its WebView is destroyed, the renderer process dying included, and must not
+     * reach the destroyed WebView or report anything for an ad that has ended.
+     */
+    private fun post(block: () -> Unit) {
+        mainHandler.post { if (!destroyed) block() }
+    }
+
     private val stateMachine = MraidStateMachine(placement) { newState ->
         webView.fireStateChange(newState)
     }
@@ -48,7 +61,7 @@ class MraidController(
 
     /** Call after WebView is attached and mraid.js is injected */
     fun onReady() {
-        mainHandler.post {
+        post {
             stateMachine.transitionTo(MraidState.DEFAULT)
             webView.fireReadyEvent()
             webView.fireViewableChange(isViewable = true)
@@ -56,7 +69,7 @@ class MraidController(
     }
 
     fun onViewabilityChanged(isViewable: Boolean) {
-        mainHandler.post {
+        post {
             webView.fireViewableChange(isViewable)
         }
     }
@@ -66,7 +79,7 @@ class MraidController(
     // ──────────────────────────────────────────
 
     fun open(url: String) {
-        mainHandler.post {
+        post {
             onClick()
             try {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
@@ -81,7 +94,7 @@ class MraidController(
     fun expand(url: String?) {
         if (currentState != MraidState.DEFAULT) return
 
-        mainHandler.post {
+        post {
             val activity = findActivity() ?: return@post
 
             originalContainer = webView.parent as? ViewGroup
@@ -116,7 +129,7 @@ class MraidController(
     }
 
     fun close() {
-        mainHandler.post {
+        post {
             when (currentState) {
                 MraidState.EXPANDED -> collapseFromExpanded()
                 MraidState.RESIZED -> collapseFromResized()
@@ -132,7 +145,7 @@ class MraidController(
     fun resize(width: Int, height: Int, offsetX: Int, offsetY: Int) {
         if (currentState != MraidState.DEFAULT && currentState != MraidState.RESIZED) return
 
-        mainHandler.post {
+        post {
             val density = context.resources.displayMetrics.density
 
             val widthPx = (width * density).toInt()
@@ -159,7 +172,7 @@ class MraidController(
     }
 
     fun playVideo(url: String) {
-        mainHandler.post {
+        post {
             try {
                 val intent = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(Uri.parse(url), "video/*")
@@ -173,7 +186,7 @@ class MraidController(
     }
 
     fun storePicture(url: String) {
-        mainHandler.post {
+        post {
             try {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -184,7 +197,7 @@ class MraidController(
     }
 
     fun createCalendarEvent(description: String, start: String) {
-        mainHandler.post {
+        post {
             try {
                 val intent = Intent(Intent.ACTION_INSERT).apply {
                     data = CalendarContract.Events.CONTENT_URI
@@ -239,6 +252,8 @@ class MraidController(
     }
 
     fun destroy() {
+        destroyed = true
+        mainHandler.removeCallbacksAndMessages(null)
         expandOverlay?.let { overlay ->
             overlay.removeView(webView)
             val root = findActivity()?.window?.decorView?.rootView as? ViewGroup

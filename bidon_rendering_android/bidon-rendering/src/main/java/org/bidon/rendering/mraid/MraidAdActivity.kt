@@ -60,7 +60,10 @@ class MraidAdActivity : AppCompatActivity() {
         requestedOrientation = ad.lockedOrientation
 
         val view = ad.contentView ?: run {
+            // Its WebView is gone, for instance because the renderer process died while this screen was starting.
+            // The ad was never on screen, so it fails and is not also reported as closed.
             ad.onFailed(IllegalStateException("MRAID ad has no view to display"))
+            presentation = null
             finish()
             return
         }
