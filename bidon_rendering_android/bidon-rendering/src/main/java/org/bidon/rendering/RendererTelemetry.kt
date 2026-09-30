@@ -6,10 +6,17 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
+import android.os.Looper
 import android.util.Log
 import org.bidon.rendering.telemetry.BackgroundTelemetry
+import org.bidon.rendering.telemetry.Clock
+import org.bidon.rendering.telemetry.CrashCapture
+import org.bidon.rendering.telemetry.CrashReport
+import org.bidon.rendering.telemetry.CrashSlot
 import org.bidon.rendering.telemetry.DiskEventStore
+import org.bidon.rendering.telemetry.SessionId
 import org.bidon.rendering.telemetry.Telemetry
+import java.io.File
 
 /**
  * Connects the renderer's telemetry to Android: whether it runs, where it keeps its files, and when it syncs.
@@ -21,13 +28,23 @@ import org.bidon.rendering.telemetry.Telemetry
  * ```
  *
  * Nothing sends the events anywhere yet, so an enabled library would only fill publishers' storage. A remote switch
- * replaces the flag once events are sent.
+ * replaces the flag once events are sent. Crash capture follows the same switch: with telemetry off, no handler is
+ * installed.
  */
 internal object RendererTelemetry {
 
     private const val ENABLED_FLAG = "org.bidon.rendering.telemetry"
 
     private const val TAG = "BidonTelemetry"
+
+    /**
+     * A frame in one of these packages makes a crash ours: the renderer, and the adapter that ships with it. Not
+     * `org.bidon.` as a whole, which would claim the mediation SDK's crashes too.
+     */
+    private val OWN_PACKAGES = listOf("org.bidon.rendering.", "org.bidon.bidon.")
+
+    /** This process's telemetry session, minted once (D-025). */
+    val sessionId: SessionId = SessionId.random()
 
     /**
      * Starts telemetry if the manifest asks for it, and [Telemetry.Disabled] otherwise. Does no disk work on the
@@ -45,13 +62,28 @@ internal object RendererTelemetry {
             Telemetry.Disabled
         }
 
+    /**
+     * Starts the telemetry thread and the crash capture. Opening the store also moves in the crash the previous
+     * process left, if it left one.
+     */
     private fun startThread(context: Context): Telemetry {
+        val directory = { TelemetryDirectory.forCurrentProcess(context) }
         val telemetry = BackgroundTelemetry.start(
-            openStore = { DiskEventStore.open(TelemetryDirectory.forCurrentProcess(context)) },
+            openStore = {
+                val storeDirectory = directory()
+                DiskEventStore.open(storeDirectory).also { CrashSlot(storeDirectory).moveInto(it) }
+            },
             onFailure = ::reportFailure,
         )
         context.registerComponentCallbacks(SyncInBackground(telemetry))
+        installCrashCapture(directory)
         return telemetry
+    }
+
+    private fun installCrashCapture(directory: () -> File) {
+        val report = CrashReport(OWN_PACKAGES, sessionId, Clock.System)
+        val mainThread = Looper.getMainLooper().thread
+        CrashCapture.install { previous -> CrashCapture(previous, report, mainThread) { CrashSlot(directory()) } }
     }
 
     private fun reportFailure(failure: Throwable) {
