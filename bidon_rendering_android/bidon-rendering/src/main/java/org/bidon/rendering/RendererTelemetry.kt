@@ -43,8 +43,8 @@ internal object RendererTelemetry {
      */
     private val OWN_PACKAGES = listOf("org.bidon.rendering.", "org.bidon.bidon.")
 
-    /** This process's telemetry session, minted once (D-025). */
-    val sessionId: SessionId = SessionId.random()
+    /** This process's telemetry session, minted once (D-025), when telemetry first needs it. */
+    val sessionId: SessionId by lazy { SessionId.random() }
 
     /**
      * Starts telemetry if the manifest asks for it, and [Telemetry.Disabled] otherwise. Does no disk work on the
