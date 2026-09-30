@@ -2,7 +2,6 @@ package org.bidon.rendering.ui
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
-import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.graphics.Insets
@@ -137,13 +136,3 @@ private fun safeArea(insets: WindowInsetsCompat): Insets {
         maxOf(bars.bottom, cutout.bottom)
     )
 }
-
-private const val STATE_IMPRESSION_REPORTED = "org.bidon.rendering.impression_reported"
-
-/**
- * Whether the ad screen that saved this state had already reported the impression. A recreated screen carries it over,
- * so a theme or language change does not count the ad as shown a second time.
- */
-internal fun Bundle.impressionReported(): Boolean = getBoolean(STATE_IMPRESSION_REPORTED, false)
-
-internal fun Bundle.putImpressionReported(reported: Boolean) = putBoolean(STATE_IMPRESSION_REPORTED, reported)

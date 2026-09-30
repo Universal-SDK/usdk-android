@@ -107,7 +107,9 @@ class FullscreenAdActivity : AppCompatActivity() {
     /**
      * Reports the reward once it is earned, but never before the impression, which with no close delay would
      * otherwise reach the publisher first, and never for an ad already closing: its countdown keeps running until
-     * the activity is destroyed. Called again by a recreated activity; [PresentedAd.onRewarded] pays only once.
+     * the activity is destroyed. Called again by a recreated activity; [PresentedAd.onRewarded] pays only once. A
+     * recreated activity whose close button is already available can report it from onCreate, after the impression
+     * the activity before it reported.
      */
     private fun reportRewardIfEarned() {
         if (!rewardEarned || !impressionReported || isFinishing) return
