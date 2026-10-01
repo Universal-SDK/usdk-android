@@ -47,25 +47,20 @@ internal sealed interface PostResult {
  */
 internal class HttpTelemetryClient(
     private val endpoint: TelemetryEndpoint,
-    private val connectTimeoutMillis: Int = CONNECT_TIMEOUT_MILLIS,
     private val readTimeoutMillis: Int = READ_TIMEOUT_MILLIS,
+    /** Opens the connection. A parameter only so tests can stand in for a platform that refuses the socket. */
     private val openConnection: (URL) -> URLConnection = URL::openConnection,
 ) : TelemetryClient {
 
     override fun post(body: ByteArray): PostResult {
-        val connection = try {
-            openConnection(endpoint.url) as HttpURLConnection
-        } catch (_: IOException) {
-            return PostResult.Retry(retryAfterMillis = null)
-        } catch (_: SecurityException) {
-            return PostResult.Retry(retryAfterMillis = null)
-        }
+        var connection: HttpURLConnection? = null
         return try {
+            connection = openConnection(endpoint.url) as HttpURLConnection
             connection.requestMethod = "POST"
             connection.doOutput = true
             connection.useCaches = false
             connection.instanceFollowRedirects = false
-            connection.connectTimeout = connectTimeoutMillis
+            connection.connectTimeout = CONNECT_TIMEOUT_MILLIS
             connection.readTimeout = readTimeoutMillis
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("X-Bidon-Version", endpoint.sdkVersion)
@@ -77,7 +72,7 @@ internal class HttpTelemetryClient(
         } catch (_: SecurityException) {
             PostResult.Retry(retryAfterMillis = null)
         } finally {
-            connection.disconnect()
+            connection?.disconnect()
         }
     }
 

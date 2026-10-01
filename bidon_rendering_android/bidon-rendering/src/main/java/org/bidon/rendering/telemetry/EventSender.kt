@@ -65,17 +65,11 @@ internal class BatchSender(
     /** When [runIfDue] should next send, on [clock]. Null when nothing is scheduled. */
     private var dueAt: Long? = null
 
-    /** Whether [dueAt] was set by a failure, which new events do not bring forward. */
-    private var waitingAfterFailure = false
-
-    /** Failed attempts since the last one that got through, within the current series of retries. */
-    private var failures = 0
+    /** Set while [dueAt] was set by a failure, which new events do not bring forward; null otherwise. */
+    private var retrying: Retrying? = null
 
     /** Before this, on [clock], nothing is sent: a `Retry-After` longer than the sender waits for within a series. */
     private var notBefore = Long.MIN_VALUE
-
-    /** Whether the app going to the background has already brought the current series of retries forward. */
-    private var backgroundAttemptMade = false
 
     /** Events stored since the last pass started: the ones a pass has not yet seen. */
     private var storedSincePass = 0
@@ -86,7 +80,7 @@ internal class BatchSender(
 
     override fun afterAppend() {
         storedSincePass++
-        if (waitingAfterFailure) return
+        if (retrying != null) return
         val now = now()
         when {
             storedSincePass >= BatchBody.MAX_EVENTS -> schedule(now)
@@ -96,14 +90,15 @@ internal class BatchSender(
 
     override fun afterSync() {
         val now = now()
-        if (!waitingAfterFailure) {
+        val current = retrying
+        if (current == null) {
             schedule(now)
             return
         }
         // Counted only when it brings a send forward: a wait nothing may cut short does not use it up.
         val due = dueAt ?: return
-        if (backgroundAttemptMade || maxOf(now, notBefore) >= due) return
-        backgroundAttemptMade = true
+        if (current.backgroundAttemptMade || maxOf(now, notBefore) >= due) return
+        retrying = current.copy(backgroundAttemptMade = true)
         schedule(now)
     }
 
@@ -129,16 +124,9 @@ internal class BatchSender(
                 scheduleRetry(retry.retryAfterMillis)
                 return
             }
-            endSeries()
+            retrying = null
         }
-        endSeries()
-    }
-
-    /** The current series of retries is over, whether because a request got through or because it gave up. */
-    private fun endSeries() {
-        waitingAfterFailure = false
-        failures = 0
-        backgroundAttemptMade = false
+        retrying = null
     }
 
     /**
@@ -153,10 +141,14 @@ internal class BatchSender(
                 store.remove(events)
                 null
             }
-            is PostResult.Rejected -> drop(events, DropReason.REJECTED)
+            is PostResult.Rejected -> {
+                drop(events, DropReason.REJECTED)
+                null
+            }
             PostResult.TooLarge ->
                 if (events.size == 1) {
                     drop(events, DropReason.REJECTED)
+                    null
                 } else {
                     val half = events.size / 2
                     deliver(events.subList(0, half)) ?: deliver(events.subList(half, events.size))
@@ -164,30 +156,44 @@ internal class BatchSender(
             is PostResult.Retry -> result
         }
 
-    private fun drop(events: List<StoredEvent>, reason: DropReason): PostResult.Retry? {
+    private fun drop(events: List<StoredEvent>, reason: DropReason) {
         store.remove(events)
         store.countDropped(reason, events.size.toLong())
-        return null
     }
 
     private fun scheduleRetry(retryAfterMillis: Long?) {
         val now = now()
-        failures++
+        val failures = (retrying?.failures ?: 0) + 1
         when {
             retryAfterMillis != null && retryAfterMillis > MAX_RETRY_AFTER_MILLIS -> {
                 // Anything longer than a day outlives every event it could hold back.
                 notBefore = now + minOf(retryAfterMillis, EventClass.ERROR.ttlMillis)
-                endSeries()
+                retrying = Retrying.GAVE_UP
                 schedule(now + TIMER_MILLIS)
             }
             failures >= MAX_ATTEMPTS -> {
-                endSeries()
+                retrying = Retrying.GAVE_UP
                 schedule(now + TIMER_MILLIS)
             }
-            // A Retry-After is the least the server asks for; a shorter one, even zero, does not cut the back-off.
-            else -> schedule(now + maxOf(retryAfterMillis ?: 0, backOffMillis(failures)))
+            else -> {
+                retrying = Retrying(failures, backgroundAttemptMade = retrying?.backgroundAttemptMade ?: false)
+                // A Retry-After is the least the server asks for; a shorter one, even zero, does not cut the back-off.
+                schedule(now + maxOf(retryAfterMillis ?: 0, backOffMillis(failures)))
+            }
         }
-        waitingAfterFailure = true
+    }
+
+    /**
+     * A failure has scheduled the next send.
+     *
+     * @property failures failed attempts in this series. Zero once the sender has given up on the series and waits for
+     * the timer, where the next failure starts a new series.
+     * @property backgroundAttemptMade whether the app going to the background has already brought this series forward.
+     */
+    private data class Retrying(val failures: Int, val backgroundAttemptMade: Boolean) {
+        companion object {
+            val GAVE_UP = Retrying(failures = 0, backgroundAttemptMade = false)
+        }
     }
 
     /** Doubles from [FIRST_BACK_OFF_MILLIS] with each failure; half of each wait is fixed and half is random. */

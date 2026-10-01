@@ -2,7 +2,7 @@ plugins {
     id("com.android.library")
     alias(libs.plugins.kotlin.android)
     // Pins the public API in api/bidon-rendering.api: a change to it fails apiCheck until the file is regenerated.
-    id("org.jetbrains.kotlinx.binary-compatibility-validator") version "0.16.3"
+    alias(libs.plugins.binary.compatibility.validator)
 }
 
 android {
@@ -26,6 +26,9 @@ android {
     }
     kotlinOptions {
         jvmTarget = "11"
+        // Interface methods with a body become JVM default methods, so a callback added to AdRenderer.Listener later,
+        // with a body, does not break a host compiled against an earlier version.
+        freeCompilerArgs += "-Xjvm-default=all"
     }
 }
 

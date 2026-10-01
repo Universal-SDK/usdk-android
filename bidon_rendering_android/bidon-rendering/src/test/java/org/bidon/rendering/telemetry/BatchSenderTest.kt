@@ -525,6 +525,26 @@ class BatchSenderTest {
     }
 
     @Test
+    fun `after giving up, the app going to the background still tries once before the timer`() {
+        storeEvents(0..0)
+        repeat(6) { answer(500) }
+        val sender = sender(HighestRandom).apply { afterStart() }
+        sender.runIfDue()
+        repeat(4) { sender.runWhenDue() }
+        assertEquals(60_000L, sender.millisUntilDue())
+
+        sender.afterSync()
+        assertEquals(0L, sender.millisUntilDue())
+        sender.runIfDue()
+        assertEquals(6, requests().size)
+        assertEquals(5_000L, sender.millisUntilDue())
+
+        sender.afterSync()
+
+        assertEquals(5_000L, sender.millisUntilDue())
+    }
+
+    @Test
     fun `a full batch counts only events stored since the last pass`() {
         // A store whose count includes records it cannot hand out, such as expired ones a full disk cannot rewrite.
         val stuck = object : WriteOnlyStore() {

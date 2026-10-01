@@ -7,7 +7,6 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.bidon.rendering.telemetry.SessionId
 import org.bidon.rendering.telemetry.awaitDeath
 import org.json.JSONObject
 import org.junit.After
@@ -17,8 +16,9 @@ import org.junit.runner.RunWith
 import java.io.File
 
 /**
- * Stored events leave the device when the app goes to the background, through the real path: Android's
- * `TRIM_MEMORY_UI_HIDDEN` in a host process, the sync, and a request over `HttpURLConnection`. The send timer is a
+ * Stored events leave the device when the app goes to the background, through the real path: telemetry started by
+ * `RendererTelemetry` with an endpoint, Android's `TRIM_MEMORY_UI_HIDDEN` in a host process, the sync, and a request
+ * over `HttpURLConnection`. The send timer is a
  * minute, so a batch that arrives within seconds was sent because the app left the foreground.
  */
 @RunWith(AndroidJUnit4::class)
@@ -42,15 +42,14 @@ class TelemetrySentInBackgroundTest {
 
     @Test
     fun storedEventsReachTheServerWithinSecondsOfTheAppGoingToTheBackground() {
-        val session = SessionId.random()
         context.startActivity(
             Intent(context, TelemetryHostActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra(TelemetryHostActivity.EXTRA_URL, server.url(PATH))
-                .putExtra(TelemetryHostActivity.EXTRA_DIRECTORY, directory.path)
-                .putExtra(TelemetryHostActivity.EXTRA_SESSION, session.value),
+                .putExtra(TelemetryHostActivity.EXTRA_DIRECTORY, directory.path),
         )
-        hostPid = awaitFile(TelemetryHostActivity.READY_FILE, "the host never stored its events").toInt()
+        val (pid, session) = awaitFile(TelemetryHostActivity.READY_FILE, "the host never stored its events").lines()
+        hostPid = pid.toInt()
         // Let the host's screen finish appearing, so leaving it is a real transition to the background.
         Thread.sleep(1_000)
         assertEquals("sent before the app left the foreground", 0, server.requestCount(PATH))
@@ -63,13 +62,12 @@ class TelemetrySentInBackgroundTest {
         val json = JSONObject(body)
         assertEquals("app_key", json.getJSONObject("app").getString("key"))
         assertEquals(context.packageName, json.getJSONObject("app").getString("bundle"))
-        assertEquals(session.value, json.getJSONObject("session").getString("id"))
+        assertEquals(session, json.getJSONObject("session").getString("id"))
         val events = json.getJSONArray("events")
         assertEquals(
             listOf("event_0", "event_1", "event_2", "ready"),
             List(events.length()) { events.getJSONObject(it).getString("event_name") },
         )
-        assertEquals(false, File(directory, TelemetryHostActivity.FAILED_FILE).exists())
     }
 
     private fun awaitFile(name: String, failure: String): String {
@@ -79,7 +77,7 @@ class TelemetrySentInBackgroundTest {
             if (file.exists()) file.readText().takeIf { it.isNotEmpty() }?.let { return it }
             Thread.sleep(20)
         }
-        throw AssertionError(failure + failedReason())
+        throw AssertionError(failure)
     }
 
     /** The first batch, within the few seconds Android may leave a cached app before freezing it. */
@@ -89,12 +87,8 @@ class TelemetrySentInBackgroundTest {
             server.bodiesPostedTo(PATH).firstOrNull()?.let { return it }
             Thread.sleep(20)
         }
-        throw AssertionError("no batch within 5 s of the app going to the background" + failedReason())
+        throw AssertionError("no batch within 5 s of the app going to the background; see logcat BidonTelemetry")
     }
-
-    private fun failedReason(): String =
-        File(directory, TelemetryHostActivity.FAILED_FILE).takeIf { it.exists() }?.let { "; telemetry failed: ${it.readText()}" }
-            .orEmpty()
 
     private companion object {
         const val PATH = "/v2/telemetry"

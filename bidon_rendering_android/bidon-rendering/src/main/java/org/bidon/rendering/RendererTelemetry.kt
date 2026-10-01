@@ -128,7 +128,7 @@ internal object RendererTelemetry {
      * without another callback. Later trim levels sync again, because a process with no UI never receives `TRIM_MEMORY_UI_HIDDEN` but
      * does receive them. A sync with nothing new to write costs little.
      */
-    internal class SyncInBackground(private val telemetry: Telemetry) : ComponentCallbacks2 {
+    private class SyncInBackground(private val telemetry: Telemetry) : ComponentCallbacks2 {
 
         override fun onTrimMemory(level: Int) {
             if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) telemetry.sync()
