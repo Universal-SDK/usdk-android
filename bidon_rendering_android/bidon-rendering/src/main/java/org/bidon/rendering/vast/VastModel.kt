@@ -1,6 +1,6 @@
 package org.bidon.rendering.vast
 
-data class VastAd(
+internal data class VastAd(
 
     val impressions: List<String> = emptyList(),
 
@@ -19,7 +19,7 @@ data class VastAd(
     val error: VastError? = null
 )
 
-data class MediaFile(
+internal data class MediaFile(
 
     val url: String,
 
@@ -38,21 +38,21 @@ data class MediaFile(
     val maintainAspectRatio: Boolean = true
 )
 
-data class TrackingEvent(
+internal data class TrackingEvent(
 
     val event: String,
 
     val url: String
 )
 
-data class VideoClicks(
+internal data class VideoClicks(
 
     val clickThroughUrl: String? = null,
 
     val clickTrackingUrls: List<String> = emptyList()
 )
 
-data class VastCompanion(
+internal data class VastCompanion(
 
     val width: Int,
 
@@ -67,7 +67,7 @@ data class VastCompanion(
     val trackingEvents: List<TrackingEvent> = emptyList()
 )
 
-sealed class CompanionResource {
+internal sealed class CompanionResource {
 
     data class StaticImage(
         val url: String,
@@ -83,7 +83,7 @@ sealed class CompanionResource {
     ) : CompanionResource()
 }
 
-data class VastError(
+internal data class VastError(
 
     val code: Int,
 

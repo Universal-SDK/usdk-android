@@ -4,7 +4,7 @@ import android.content.Context
 import android.util.DisplayMetrics
 import kotlin.math.abs
 
-object MediaFileSelector {
+internal object MediaFileSelector {
 
     private val preferredMimeTypes = listOf(
         "video/mp4",

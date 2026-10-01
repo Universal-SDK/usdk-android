@@ -22,7 +22,7 @@ import androidx.annotation.RequiresApi
  * to load the destination itself, because then the ad silently becomes a web page with a close
  * button over it.
  */
-class ClickHandler(
+internal class ClickHandler(
     private val context: Context,
     private val onClick: () -> Unit,
     private val onPageLoaded: (() -> Unit)? = null,

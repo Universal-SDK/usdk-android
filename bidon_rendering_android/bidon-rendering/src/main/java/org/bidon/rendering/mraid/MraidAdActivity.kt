@@ -25,7 +25,7 @@ import org.bidon.rendering.ui.putImpressionReported
  * second one with its own controller and bridge. That is what keeps the creative's MRAID state,
  * its click handling and its close command connected to the renderer that owns it.
  */
-class MraidAdActivity : AppCompatActivity() {
+internal class MraidAdActivity : AppCompatActivity() {
 
     private var presentationKey: String? = null
     private var presentation: PresentedAd? = null

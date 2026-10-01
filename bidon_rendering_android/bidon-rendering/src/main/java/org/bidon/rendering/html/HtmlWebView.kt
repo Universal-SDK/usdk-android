@@ -14,7 +14,7 @@ import android.webkit.WebView
  * made explicitly rather than inherited. Platform defaults are not a stable baseline: several of
  * these changed at API 30, which would otherwise leave our behaviour depending on the device.
  */
-open class HtmlWebView(context: Context) : WebView(context) {
+internal open class HtmlWebView(context: Context) : WebView(context) {
 
     init {
         setupWebView()

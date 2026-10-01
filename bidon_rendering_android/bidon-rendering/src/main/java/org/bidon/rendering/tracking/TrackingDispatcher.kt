@@ -10,7 +10,7 @@ import java.util.concurrent.Executors
  * Fires tracking pixels that belong to the creative, such as VAST progress events, from the
  * device. Auction callbacks (nurl, burl, lurl) never go through here: the server fires those.
  */
-object TrackingDispatcher {
+internal object TrackingDispatcher {
 
     private const val TAG = "BidonTracking"
     private const val TIMEOUT_MS = 5000

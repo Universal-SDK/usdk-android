@@ -17,7 +17,7 @@ import org.bidon.rendering.PresentedAds
  * reports what happens back through [PresentedAd], which is what lets close and click reach the
  * publisher.
  */
-class FullscreenAdActivity : AppCompatActivity() {
+internal class FullscreenAdActivity : AppCompatActivity() {
 
     private var presentationKey: String? = null
     private var presentation: PresentedAd? = null

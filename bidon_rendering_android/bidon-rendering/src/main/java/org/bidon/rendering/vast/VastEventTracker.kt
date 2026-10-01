@@ -8,7 +8,7 @@ import java.util.UUID
  * Sends the buyer's trackers for one showing of a video ad: its impression, progress, skip, click
  * and companion view events, with the VAST macros filled in.
  */
-class VastEventTracker internal constructor(
+internal class VastEventTracker(
     private val send: (String) -> Unit
 ) {
 

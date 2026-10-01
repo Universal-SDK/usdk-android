@@ -11,7 +11,7 @@ import java.util.concurrent.CopyOnWriteArraySet
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 
-class VideoPlayer(context: Context) {
+internal class VideoPlayer(context: Context) {
 
     interface Listener {
         fun onReady()

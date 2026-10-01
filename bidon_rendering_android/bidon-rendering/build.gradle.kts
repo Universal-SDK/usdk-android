@@ -1,6 +1,8 @@
 plugins {
     id("com.android.library")
     alias(libs.plugins.kotlin.android)
+    // Pins the public API in api/bidon-rendering.api: a change to it fails apiCheck until the file is regenerated.
+    id("org.jetbrains.kotlinx.binary-compatibility-validator") version "0.16.3"
 }
 
 android {
