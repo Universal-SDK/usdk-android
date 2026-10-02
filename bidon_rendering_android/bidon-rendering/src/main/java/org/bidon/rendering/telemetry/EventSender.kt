@@ -124,6 +124,7 @@ internal class BatchSender(
                 scheduleRetry(retry.retryAfterMillis)
                 return
             }
+            // A request that got through ends the series, so a later batch that fails starts a new one.
             retrying = null
         }
         retrying = null
@@ -189,6 +190,7 @@ internal class BatchSender(
      * @property failures failed attempts in this series. Zero once the sender has given up on the series and waits for
      * the timer, where the next failure starts a new series.
      * @property backgroundAttemptMade whether the app going to the background has already brought this series forward.
+     * An attempt made while given up counts for the series the next failure starts.
      */
     private data class Retrying(val failures: Int, val backgroundAttemptMade: Boolean) {
         companion object {

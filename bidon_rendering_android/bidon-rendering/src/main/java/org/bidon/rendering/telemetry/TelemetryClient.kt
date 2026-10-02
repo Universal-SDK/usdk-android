@@ -47,6 +47,7 @@ internal sealed interface PostResult {
  */
 internal class HttpTelemetryClient(
     private val endpoint: TelemetryEndpoint,
+    /** A parameter only so tests can wait less for a server that never answers. */
     private val readTimeoutMillis: Int = READ_TIMEOUT_MILLIS,
     /** Opens the connection. A parameter only so tests can stand in for a platform that refuses the socket. */
     private val openConnection: (URL) -> URLConnection = URL::openConnection,

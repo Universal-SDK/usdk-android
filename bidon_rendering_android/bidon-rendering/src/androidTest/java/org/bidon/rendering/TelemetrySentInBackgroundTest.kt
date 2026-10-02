@@ -18,8 +18,8 @@ import java.io.File
 /**
  * Stored events leave the device when the app goes to the background, through the real path: telemetry started by
  * `RendererTelemetry` with an endpoint, Android's `TRIM_MEMORY_UI_HIDDEN` in a host process, the sync, and a request
- * over `HttpURLConnection`. The send timer is a
- * minute, so a batch that arrives within seconds was sent because the app left the foreground.
+ * over `HttpURLConnection`. The send timer is a minute, so a batch that arrives within seconds was sent because the
+ * app left the foreground.
  */
 @RunWith(AndroidJUnit4::class)
 class TelemetrySentInBackgroundTest {
