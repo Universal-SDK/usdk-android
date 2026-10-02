@@ -21,7 +21,7 @@ import org.bidon.rendering.ui.clickOnlyOnTap
 import org.bidon.rendering.ui.dp
 import org.bidon.rendering.ui.insetFromSafeArea
 
-class EndCardView(
+internal class EndCardView(
     context: Context
 ) : FrameLayout(context) {
 

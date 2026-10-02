@@ -9,7 +9,7 @@ import android.webkit.JavascriptInterface
  * mraid.js calls these from the WebView thread;
  * we dispatch to main thread before touching any UI via MraidController.
  */
-class MraidJsBridge(
+internal class MraidJsBridge(
     private val controller: MraidController
 ) {
 

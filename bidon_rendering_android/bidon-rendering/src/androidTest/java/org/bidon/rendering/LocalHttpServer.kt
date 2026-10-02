@@ -28,6 +28,7 @@ class LocalHttpServer : Closeable {
     private val socket = ServerSocket(0, 0, InetAddress.getByName(HOST))
     private val bodies = ConcurrentHashMap<String, Body>()
     private val requests = Collections.synchronizedList(mutableListOf<String>())
+    private val posted = Collections.synchronizedList(mutableListOf<Pair<String, String>>())
     private val stalled = ConcurrentHashMap.newKeySet<String>()
     private val closed = CountDownLatch(1)
 
@@ -63,6 +64,11 @@ class LocalHttpServer : Closeable {
 
     fun requestCount(path: String): Int = requestsTo(path).size
 
+    /** The body of every request with a body for [path], in the order they arrived. */
+    fun bodiesPostedTo(path: String): List<String> = synchronized(posted) {
+        posted.filter { it.first.substringBefore("?") == path }.map { it.second }
+    }
+
     override fun close() {
         closed.countDown()
         socket.close()
@@ -74,7 +80,25 @@ class LocalHttpServer : Closeable {
                 val reader = it.getInputStream().bufferedReader()
                 // "GET /pixel?x=1 HTTP/1.1" is recorded as "/pixel?x=1".
                 val pathAndQuery = reader.readLine()?.split(" ")?.getOrNull(1) ?: return
-                while (reader.readLine().orEmpty().isNotEmpty()) Unit
+                var contentLength = 0
+                while (true) {
+                    val header = reader.readLine().orEmpty()
+                    if (header.isEmpty()) break
+                    if (header.startsWith("Content-Length:", ignoreCase = true)) {
+                        contentLength = header.substringAfter(':').trim().toInt()
+                    }
+                }
+                // Read as characters: the tests post ASCII only, where characters and bytes are the same count.
+                if (contentLength > 0) {
+                    val body = CharArray(contentLength)
+                    var read = 0
+                    while (read < contentLength) {
+                        val count = reader.read(body, read, contentLength - read)
+                        if (count < 0) break
+                        read += count
+                    }
+                    posted += pathAndQuery to String(body, 0, read)
+                }
                 requests += pathAndQuery
 
                 if (pathAndQuery.substringBefore("?") in stalled) {

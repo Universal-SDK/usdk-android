@@ -20,7 +20,7 @@ import org.bidon.rendering.vast.VastRenderer
 import org.bidon.rendering.vast.player.VideoPlayer
 
 @OptIn(UnstableApi::class)
-class VideoAdActivity : AppCompatActivity() {
+internal class VideoAdActivity : AppCompatActivity() {
 
     companion object {
         private const val EXTRA_MEDIA_URL = "extra_media_url"

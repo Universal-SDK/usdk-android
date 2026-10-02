@@ -8,7 +8,7 @@ import java.io.StringReader
 import java.net.HttpURLConnection
 import java.net.URL
 
-class VastParser {
+internal class VastParser {
 
     companion object {
         private const val MAX_WRAPPER_DEPTH = 5
@@ -451,6 +451,6 @@ class VastParser {
     }
 }
 
-class VastParsingException(
+internal class VastParsingException(
     val vastError: VastError
 ) : Exception(vastError.description)

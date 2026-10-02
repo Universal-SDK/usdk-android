@@ -11,7 +11,10 @@ internal interface Telemetry {
     /** Hands [event] over to be stored. When telemetry cannot keep up, the event is dropped and counted. */
     fun emit(event: TelemetryEvent)
 
-    /** Asks for everything stored so far to be forced to the storage device, when the app goes to the background. */
+    /**
+     * Asks for everything stored so far to be forced to the storage device, and then sent, when the app goes to the
+     * background.
+     */
     fun sync()
 
     /** Telemetry that is switched off. */

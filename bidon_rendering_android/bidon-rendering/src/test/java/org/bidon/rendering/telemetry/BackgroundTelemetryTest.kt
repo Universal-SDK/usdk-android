@@ -52,13 +52,14 @@ class BackgroundTelemetryTest {
     private fun start(
         capacity: Int = BackgroundTelemetry.HANDOFF_CAPACITY,
         onFailure: (Throwable) -> Unit = { failures += it },
+        openSender: (EventStore) -> EventSender = { EventSender.None },
         openStore: () -> EventStore = { store },
     ): Telemetry {
         val capturingOpen = {
             thread.set(Thread.currentThread())
             openStore()
         }
-        return BackgroundTelemetry.start(capturingOpen, onFailure, capacity)
+        return BackgroundTelemetry.start(capturingOpen, onFailure, capacity, openSender)
     }
 
     @Test
@@ -286,6 +287,62 @@ class BackgroundTelemetryTest {
 
     private fun awaitThreadGone() = awaitUntil { thread.get()?.isAlive == false }
 
+    @Test
+    fun `the sender is given the store and hears about the start, each stored event and each sync, in order`() {
+        val sender = RecordingSender(store)
+        val given = AtomicReference<EventStore>()
+        val telemetry = start(
+            openSender = { opened ->
+                given.set(opened)
+                sender
+            },
+        )
+
+        telemetry.emit(event("a"))
+        telemetry.emit(event("b"))
+        awaitUntil { store.payloads.size == 2 }
+        telemetry.sync()
+        awaitUntil { sender.calls.any { it.startsWith("sync") } }
+
+        assertSame(store, given.get())
+        // Each count is what the store held when the sender heard: after the append, after the sync.
+        assertEquals(listOf("start", "append 1", "append 2", "sync 1"), sender.calls)
+    }
+
+    @Test
+    fun `the sender runs on the telemetry thread when it is due, with no event to wake the thread`() {
+        val sender = RecordingSender(store).apply { dueIn = 10 }
+
+        start(openSender = { sender })
+
+        awaitUntil { sender.calls.count { it == "run" } >= 5 }
+        assertEquals(setOf(thread.get()), sender.threads.toSet())
+    }
+
+    @Test
+    fun `events are stored at once while the sender waits for its next run`() {
+        val sender = RecordingSender(store).apply { dueIn = 60_000 }
+        val telemetry = start(openSender = { sender })
+
+        telemetry.emit(event("a"))
+
+        awaitUntil { store.payloads == listOf("a") }
+    }
+
+    @Test
+    fun `a sender that throws switches telemetry off and is reported once`() {
+        failureExpected = true
+        val sender = RecordingSender(store).apply { failure = IllegalStateException("sender") }
+
+        val telemetry = start(openSender = { sender })
+        awaitUntil { failures.isNotEmpty() }
+        telemetry.emit(event("a"))
+
+        assertStaysOff(telemetry)
+        assertEquals(1, failures.size)
+        assertTrue(failures.single() is IllegalStateException)
+    }
+
     private fun event(text: String) = TelemetryEvent { text.encodeToByteArray() }
 
     private fun errorEvent(text: String) = object : TelemetryEvent {
@@ -307,7 +364,40 @@ class BackgroundTelemetryTest {
     }
 
     /** Records what reaches it. Can be made to hold the thread inside [append], or to throw from it. */
-    private class RecordingStore : EventStore {
+    /** Records what the telemetry thread tells it, and runs as often as [dueIn] asks. */
+    private class RecordingSender(private val store: RecordingStore) : EventSender {
+
+        val calls: MutableList<String> = CopyOnWriteArrayList()
+        val threads: MutableList<Thread> = CopyOnWriteArrayList()
+
+        @Volatile
+        var dueIn: Long? = null
+
+        @Volatile
+        var failure: Throwable? = null
+
+        override fun afterStart() {
+            calls += "start"
+        }
+
+        override fun afterAppend() {
+            calls += "append ${store.payloads.size}"
+        }
+
+        override fun afterSync() {
+            calls += "sync ${store.syncs.get()}"
+        }
+
+        override fun runIfDue() {
+            threads += Thread.currentThread()
+            failure?.let { throw it }
+            if (dueIn != null) calls += "run"
+        }
+
+        override fun millisUntilDue(): Long? = dueIn
+    }
+
+    private class RecordingStore : WriteOnlyStore() {
 
         val payloads: MutableList<String> = CopyOnWriteArrayList()
         val classes: MutableList<EventClass> = CopyOnWriteArrayList()

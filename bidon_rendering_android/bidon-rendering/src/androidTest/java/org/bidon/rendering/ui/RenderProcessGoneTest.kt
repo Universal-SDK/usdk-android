@@ -127,7 +127,7 @@ class RenderProcessGoneTest {
 
             onMain { webView.loadUrl(CRASH) }
 
-            assertTrue("no error", failed.await(10, TimeUnit.SECONDS))
+            assertTrue("no error", failed.await(RENDERER_GONE_SECONDS, TimeUnit.SECONDS))
             assertNull(onMain { endCard.find(WebView::class.java) })
             onMain { endCard.destroy() }
         }
@@ -200,7 +200,7 @@ class RenderProcessGoneTest {
 
             onMain { webView.loadUrl(CRASH) }
 
-            assertTrue("not reported", gone.await(10, TimeUnit.SECONDS))
+            assertTrue("not reported", gone.await(RENDERER_GONE_SECONDS, TimeUnit.SECONDS))
             assertEquals(0, onMain { container.childCount })
         }
     }
@@ -211,7 +211,7 @@ class RenderProcessGoneTest {
 
         killRenderer(renderer, how)
 
-        assertTrue("no error", events.failed.await(10, TimeUnit.SECONDS))
+        assertTrue("no error", events.failed.await(RENDERER_GONE_SECONDS, TimeUnit.SECONDS))
         assertNull(onMain { renderer.getView() })
 
         // Showing it now fails the usual way for an ad that is not loaded, and starts no screen.
@@ -237,7 +237,7 @@ class RenderProcessGoneTest {
 
             killRenderer(renderer, how)
 
-            assertTrue("no error", events.failed.await(10, TimeUnit.SECONDS))
+            assertTrue("no error", events.failed.await(RENDERER_GONE_SECONDS, TimeUnit.SECONDS))
             assertEquals(0, onMain { container.childCount })
         }
         onMain { renderer.destroy() }
@@ -256,7 +256,9 @@ class RenderProcessGoneTest {
             // The renderer keeps the WebView after the screen closes, so it can still die.
             killRenderer(renderer, CRASH)
 
-            waitFor("the renderer to let the WebView go") { Unit.takeIf { onMain { renderer.getView() } == null } }
+            waitFor("the renderer to let the WebView go", RENDERER_GONE_SECONDS * 1000) {
+                Unit.takeIf { onMain { renderer.getView() } == null }
+            }
             assertEquals(1, events.closes.get())
             assertEquals(0, events.errors.get())
         }
@@ -406,7 +408,7 @@ class RenderProcessGoneTest {
 
             killRenderer(renderer, how)
 
-            assertTrue("not closed", events.closed.await(10, TimeUnit.SECONDS))
+            assertTrue("not closed", events.closed.await(RENDERER_GONE_SECONDS, TimeUnit.SECONDS))
             waitFor("the ad screen to go") { Unit.takeIf { adScreens().isEmpty() } }
             SystemClock.sleep(500)
             assertEquals("closed more than once", 1, events.closes.get())
@@ -471,6 +473,13 @@ class RenderProcessGoneTest {
     }
 
     private companion object {
+        /**
+         * How long to wait for what follows the renderer's death. A crashing renderer first writes its crash dump; on
+         * a loaded machine Android took 11.8 s to report it dead (2026-10-01), so a 10 s wait failed tests whose
+         * behaviour was right.
+         */
+        const val RENDERER_GONE_SECONDS = 30L
+
         /** The renderer crashes: `didCrash()` is true. */
         const val CRASH = "chrome://crash"
 

@@ -11,7 +11,7 @@ import org.bidon.rendering.html.HtmlWebView
  *  - Attaches MraidJsBridge
  *  - Exposes JS-firing helpers for the controller
  */
-class MraidWebView(context: Context) : HtmlWebView(context) {
+internal class MraidWebView(context: Context) : HtmlWebView(context) {
 
     private var bridge: MraidJsBridge? = null
 

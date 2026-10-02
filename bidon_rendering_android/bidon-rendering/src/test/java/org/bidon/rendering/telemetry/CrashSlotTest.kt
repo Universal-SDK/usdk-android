@@ -119,7 +119,7 @@ class CrashSlotTest {
         assertTrue(diagnostics.peek(Int.MAX_VALUE, Int.MAX_VALUE).isEmpty())
     }
 
-    private class RecordingStore : EventStore {
+    private class RecordingStore : WriteOnlyStore() {
 
         val appended = mutableListOf<Pair<String, EventClass>>()
 

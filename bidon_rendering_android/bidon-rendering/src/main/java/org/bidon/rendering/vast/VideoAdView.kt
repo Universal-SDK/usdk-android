@@ -19,7 +19,7 @@ import org.bidon.rendering.vast.SkipOffset
 import org.bidon.rendering.vast.player.VideoPlayer
 
 @UnstableApi
-class VideoAdView(context: Context) : FrameLayout(context) {
+internal class VideoAdView(context: Context) : FrameLayout(context) {
 
     interface Listener {
         fun onClick()

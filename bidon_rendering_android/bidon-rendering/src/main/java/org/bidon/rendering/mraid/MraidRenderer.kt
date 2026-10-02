@@ -13,7 +13,7 @@ import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.mraid.ui.MraidAdActivity
 
-class MraidRenderer(
+internal class MraidRenderer(
     private val context: Context,
     private val rendering: AdRenderingConfig
 ) : AdRenderer {

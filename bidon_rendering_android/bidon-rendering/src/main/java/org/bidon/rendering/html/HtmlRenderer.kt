@@ -14,7 +14,7 @@ import org.bidon.rendering.ui.FullscreenAdActivity
 import android.app.Activity
 import android.content.Intent
 
-class HtmlRenderer(
+internal class HtmlRenderer(
     context: Context,
     private val rendering: AdRenderingConfig
 ) : AdRenderer {

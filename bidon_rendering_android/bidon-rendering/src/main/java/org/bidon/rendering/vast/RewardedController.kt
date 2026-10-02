@@ -1,6 +1,6 @@
 package org.bidon.rendering.vast
 
-class RewardedController {
+internal class RewardedController {
 
     interface Listener {
         fun onRewardEarned()

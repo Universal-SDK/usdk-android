@@ -1,6 +1,8 @@
 plugins {
     id("com.android.library")
     alias(libs.plugins.kotlin.android)
+    // Pins the public API in api/bidon-rendering.api: a change to it fails apiCheck until the file is regenerated.
+    alias(libs.plugins.binary.compatibility.validator)
 }
 
 android {
@@ -24,6 +26,9 @@ android {
     }
     kotlinOptions {
         jvmTarget = "11"
+        // Interface methods with a body become JVM default methods, so a callback added to AdRenderer.Listener later,
+        // with a body, does not break a host compiled against an earlier version.
+        freeCompilerArgs += "-Xjvm-default=all"
     }
 }
 
@@ -37,6 +42,7 @@ dependencies {
     // org.json in the Android jar is a stub on the JVM; tests need a real implementation.
     testImplementation("org.json:json:20240303")
     testImplementation("io.kotest:kotest-property:5.9.1")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation("androidx.test:runner:1.6.2")

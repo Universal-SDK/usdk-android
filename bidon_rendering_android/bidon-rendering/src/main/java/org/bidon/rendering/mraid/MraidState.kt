@@ -10,14 +10,14 @@ package org.bidon.rendering.mraid
  *   resized  → default | hidden
  *   hidden   → default
  */
-enum class MraidState {
+internal enum class MraidState {
     LOADING, DEFAULT, EXPANDED, RESIZED, HIDDEN;
 
     /** Returns the string value sent to mraid.js via fireStateChangeEvent */
     fun toJs(): String = name.lowercase()
 }
 
-enum class MraidPlacementType {
+internal enum class MraidPlacementType {
     INLINE, INTERSTITIAL;
 
     fun toJs(): String = when (this) {
@@ -26,7 +26,7 @@ enum class MraidPlacementType {
     }
 }
 
-class MraidStateMachine(
+internal class MraidStateMachine(
     placement: MraidPlacementType,
     private val onStateChanged: (MraidState) -> Unit
 ) {

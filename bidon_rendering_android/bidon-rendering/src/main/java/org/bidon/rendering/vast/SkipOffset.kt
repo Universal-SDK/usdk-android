@@ -4,7 +4,7 @@ package org.bidon.rendering.vast
  * How far into a linear video Skip becomes available, as the VAST `skipoffset` attribute sets it:
  * a fixed time, or a share of the video's duration.
  */
-sealed interface SkipOffset {
+internal sealed interface SkipOffset {
 
     /**
      * When Skip becomes available in a video lasting [durationMs], in milliseconds from its start.

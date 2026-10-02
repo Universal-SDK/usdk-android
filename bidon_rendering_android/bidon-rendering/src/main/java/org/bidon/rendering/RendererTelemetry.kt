@@ -9,13 +9,18 @@ import android.os.Build
 import android.os.Looper
 import android.util.Log
 import org.bidon.rendering.telemetry.BackgroundTelemetry
+import org.bidon.rendering.telemetry.BatchBody
+import org.bidon.rendering.telemetry.BatchSender
 import org.bidon.rendering.telemetry.Clock
 import org.bidon.rendering.telemetry.CrashCapture
 import org.bidon.rendering.telemetry.CrashReport
 import org.bidon.rendering.telemetry.CrashSlot
 import org.bidon.rendering.telemetry.DiskEventStore
+import org.bidon.rendering.telemetry.EventSender
+import org.bidon.rendering.telemetry.HttpTelemetryClient
 import org.bidon.rendering.telemetry.SessionId
 import org.bidon.rendering.telemetry.Telemetry
+import org.bidon.rendering.telemetry.TelemetryEndpoint
 import java.io.File
 
 /**
@@ -27,7 +32,8 @@ import java.io.File
  * <meta-data android:name="org.bidon.rendering.telemetry" android:value="true" />
  * ```
  *
- * Nothing sends the events anywhere yet, so an enabled library would only fill publishers' storage. A remote switch
+ * Events are sent only when there is a [TelemetryEndpoint]. Production has none until the server gives the adapter the
+ * app key the ingest endpoint requires (D-025), so an enabled library only stores events for now. A remote switch
  * replaces the flag once events are sent. Crash capture follows the same switch: with telemetry off, no handler is
  * installed.
  */
@@ -54,9 +60,9 @@ internal object RendererTelemetry {
      * when the system service dies, and starting a thread fails when the process has run out of them. Either way the
      * renderer carries on without telemetry.
      */
-    fun start(context: Context): Telemetry =
+    fun start(context: Context, endpoint: TelemetryEndpoint? = null): Telemetry =
         try {
-            if (isEnabled(context)) startThread(context) else Telemetry.Disabled
+            if (isEnabled(context)) startThread(context, endpoint) else Telemetry.Disabled
         } catch (failure: Throwable) {
             reportFailure(failure)
             Telemetry.Disabled
@@ -64,9 +70,9 @@ internal object RendererTelemetry {
 
     /**
      * Starts the telemetry thread and the crash capture. Opening the store also moves in the crash the previous
-     * process left, if it left one.
+     * process left, if it left one. Events are sent to [endpoint] when there is one.
      */
-    private fun startThread(context: Context): Telemetry {
+    private fun startThread(context: Context, endpoint: TelemetryEndpoint?): Telemetry {
         val directory = { TelemetryDirectory.forCurrentProcess(context) }
         val telemetry = BackgroundTelemetry.start(
             openStore = {
@@ -74,6 +80,13 @@ internal object RendererTelemetry {
                 DiskEventStore.open(storeDirectory).also { CrashSlot(storeDirectory).moveInto(it) }
             },
             onFailure = ::reportFailure,
+            openSender = { store ->
+                if (endpoint == null) {
+                    EventSender.None
+                } else {
+                    BatchSender(store, HttpTelemetryClient(endpoint), BatchBody(endpoint, sessionId))
+                }
+            },
         )
         context.registerComponentCallbacks(SyncInBackground(telemetry))
         installCrashCapture(directory)
@@ -111,8 +124,8 @@ internal object RendererTelemetry {
     }
 
     /**
-     * Syncs when the app leaves the foreground: from then on the process can be frozen or killed without another
-     * callback. Later trim levels sync again, because a process with no UI never receives `TRIM_MEMORY_UI_HIDDEN` but
+     * Syncs, and then sends, when the app leaves the foreground: from then on the process can be frozen or killed
+     * without another callback. Later trim levels sync again, because a process with no UI never receives `TRIM_MEMORY_UI_HIDDEN` but
      * does receive them. A sync with nothing new to write costs little.
      */
     private class SyncInBackground(private val telemetry: Telemetry) : ComponentCallbacks2 {

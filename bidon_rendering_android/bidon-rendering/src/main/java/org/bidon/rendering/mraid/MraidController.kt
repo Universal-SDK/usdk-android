@@ -19,7 +19,7 @@ import org.bidon.rendering.ui.FullscreenAdActivity
  * Receives commands from MraidJsBridge (always called on main thread via bridge).
  * Manages view transitions between inline and expanded/fullscreen state.
  */
-class MraidController(
+internal class MraidController(
     private val context: Context,
     private val webView: MraidWebView,
     private val placement: MraidPlacementType,

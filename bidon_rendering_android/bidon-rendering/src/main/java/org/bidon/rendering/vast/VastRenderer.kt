@@ -18,7 +18,7 @@ import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.vast.ui.VideoAdActivity
 import java.util.concurrent.ConcurrentHashMap
 
-class VastRenderer(
+internal class VastRenderer(
     private val context: Context,
     private val rendering: AdRenderingConfig
 ) : AdRenderer {
