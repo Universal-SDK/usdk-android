@@ -31,6 +31,9 @@ internal enum class DropReason(val wireName: String) {
 
     /** The record was not one JSON object, so no batch could carry it without making the whole batch invalid. */
     MALFORMED("malformed"),
+
+    /** More events of one name arrived within a minute than the rate limit lets through (D-031). */
+    RATE_LIMITED("rate_limited"),
 }
 
 /**

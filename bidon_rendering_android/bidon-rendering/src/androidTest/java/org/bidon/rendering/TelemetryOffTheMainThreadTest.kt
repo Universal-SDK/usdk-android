@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import org.bidon.rendering.telemetry.DroppedEvents
+import org.bidon.rendering.telemetry.EventClass
 import org.bidon.rendering.telemetry.TelemetryEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -38,14 +39,18 @@ class TelemetryOffTheMainThreadTest {
         val violations = violationsOnMainThread {
             val telemetry = RendererTelemetry.start(context)
             // Fewer than the handoff holds, so none is dropped while the queue is still being restored.
-            repeat(100) { index -> telemetry.emit(TelemetryEvent { "event $index".encodeToByteArray() }) }
+            repeat(100) { index ->
+                telemetry.emit("event_$index", EventClass.DIAGNOSTIC) {
+                    TelemetryEvent { "event $index".encodeToByteArray() }
+                }
+            }
             // Encoded on the telemetry thread once everything before it has been written.
-            telemetry.emit(
+            telemetry.emit("stored", EventClass.DIAGNOSTIC) {
                 TelemetryEvent {
                     stored.countDown()
                     ByteArray(0)
-                },
-            )
+                }
+            }
             telemetry.sync()
         }
 

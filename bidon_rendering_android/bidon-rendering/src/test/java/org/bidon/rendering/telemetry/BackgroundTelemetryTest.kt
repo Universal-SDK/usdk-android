@@ -49,6 +49,9 @@ class BackgroundTelemetryTest {
      */
     private val thread = AtomicReference<Thread>()
 
+    /** Lets every event through: the default config, and a rate limit no test reaches. */
+    private val openGate = TelemetryGate(SessionId.of("test")!!, RateLimiter(MonotonicClock { 0L }, Int.MAX_VALUE))
+
     private fun start(
         capacity: Int = BackgroundTelemetry.HANDOFF_CAPACITY,
         onFailure: (Throwable) -> Unit = { failures += it },
@@ -59,8 +62,11 @@ class BackgroundTelemetryTest {
             thread.set(Thread.currentThread())
             openStore()
         }
-        return BackgroundTelemetry.start(capturingOpen, onFailure, capacity, openSender)
+        return BackgroundTelemetry.start(capturingOpen, onFailure, capacity, openSender, openGate)
     }
+
+    /** Hands [event] over through the gate, which [openGate] never refuses, so these tests see only the thread. */
+    private fun Telemetry.emit(event: TelemetryEvent) = emit("event", event.eventClass) { event }
 
     @Test
     fun `events reach the store in the order they were emitted, as diagnostics unless they say otherwise`() {

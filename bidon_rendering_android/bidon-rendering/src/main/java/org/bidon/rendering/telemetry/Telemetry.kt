@@ -8,8 +8,12 @@ package org.bidon.rendering.telemetry
  */
 internal interface Telemetry {
 
-    /** Hands [event] over to be stored. When telemetry cannot keep up, the event is dropped and counted. */
-    fun emit(event: TelemetryEvent)
+    /**
+     * Captures an event named [eventName] of [eventClass] if telemetry keeps it: [capture] runs on the caller's thread
+     * with the rate it was kept at, and is never called otherwise. The captured event's own class decides where it is
+     * stored, so callers pass the same class to both.
+     */
+    fun emit(eventName: String, eventClass: EventClass, capture: (SamplingRate) -> TelemetryEvent)
 
     /**
      * Asks for everything stored so far to be forced to the storage device, and then sent, when the app goes to the
@@ -19,7 +23,7 @@ internal interface Telemetry {
 
     /** Telemetry that is switched off. */
     object Disabled : Telemetry {
-        override fun emit(event: TelemetryEvent) = Unit
+        override fun emit(eventName: String, eventClass: EventClass, capture: (SamplingRate) -> TelemetryEvent) = Unit
         override fun sync() = Unit
     }
 }
