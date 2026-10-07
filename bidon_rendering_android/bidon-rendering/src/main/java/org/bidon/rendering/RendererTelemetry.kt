@@ -18,9 +18,12 @@ import org.bidon.rendering.telemetry.CrashSlot
 import org.bidon.rendering.telemetry.DiskEventStore
 import org.bidon.rendering.telemetry.EventSender
 import org.bidon.rendering.telemetry.HttpTelemetryClient
+import org.bidon.rendering.telemetry.MonotonicClock
+import org.bidon.rendering.telemetry.RateLimiter
 import org.bidon.rendering.telemetry.SessionId
 import org.bidon.rendering.telemetry.Telemetry
 import org.bidon.rendering.telemetry.TelemetryEndpoint
+import org.bidon.rendering.telemetry.TelemetryGate
 import java.io.File
 
 /**
@@ -87,6 +90,7 @@ internal object RendererTelemetry {
                     BatchSender(store, HttpTelemetryClient(endpoint), BatchBody(endpoint, sessionId))
                 }
             },
+            gate = TelemetryGate(sessionId, RateLimiter(MonotonicClock.System)),
         )
         context.registerComponentCallbacks(SyncInBackground(telemetry))
         installCrashCapture(directory)

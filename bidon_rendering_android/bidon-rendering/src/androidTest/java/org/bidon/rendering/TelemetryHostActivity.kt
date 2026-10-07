@@ -4,6 +4,7 @@ import android.app.Activity
 import android.os.Bundle
 import android.os.Process
 import org.bidon.rendering.telemetry.Clock
+import org.bidon.rendering.telemetry.EventClass
 import org.bidon.rendering.telemetry.EventEnvelope
 import org.bidon.rendering.telemetry.TelemetryEndpoint
 import org.bidon.rendering.telemetry.TelemetryEvent
@@ -26,15 +27,19 @@ class TelemetryHostActivity : Activity() {
         TelemetryDirectory.forCurrentProcess(this).deleteRecursively()
         val telemetry = RendererTelemetry.start(applicationContext, endpoint)
         val session = RendererTelemetry.sessionId
-        repeat(3) { index -> telemetry.emit(EventEnvelope.capture("event_$index", session, Clock.System)) }
+        repeat(3) { index ->
+            telemetry.emit("event_$index", EventClass.DIAGNOSTIC) { rate ->
+                EventEnvelope.capture("event_$index", session, Clock.System, samplingRate = rate)
+            }
+        }
         // Encoded on the telemetry thread once the three before it are stored, and stored as the fourth event.
-        val ready = EventEnvelope.capture("ready", session, Clock.System)
-        telemetry.emit(
+        telemetry.emit("ready", EventClass.DIAGNOSTIC) { rate ->
+            val ready = EventEnvelope.capture("ready", session, Clock.System, samplingRate = rate)
             TelemetryEvent {
                 File(directory, READY_FILE).writeText("${Process.myPid()}\n${session.value}")
                 ready.encode()
-            },
-        )
+            }
+        }
     }
 
     companion object {

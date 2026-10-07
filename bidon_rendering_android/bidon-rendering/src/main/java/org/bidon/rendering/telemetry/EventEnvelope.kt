@@ -56,7 +56,7 @@ internal class EventEnvelope private constructor(
             auctionId: String? = null,
             adType: AdType? = null,
             adFormat: String? = null,
-            samplingRate: SamplingRate = SamplingRate.ALL,
+            samplingRate: SamplingRate,
         ) = EventEnvelope(
             eventId = UUID.randomUUID().toString(),
             eventName = eventName,
@@ -108,7 +108,7 @@ internal value class SamplingRate private constructor(val fraction: Double) {
 
         /**
          * The rate for [fraction], or `null` when it is not in (0, 1]. Zero, which config may send to switch an event
-         * off, lands here too: either way there is no event to send.
+         * off, lands here too, as does any other value outside that range: either way there is no event to send.
          */
         fun of(fraction: Double): SamplingRate? =
             if (fraction > 0.0 && fraction <= 1.0) SamplingRate(fraction) else null

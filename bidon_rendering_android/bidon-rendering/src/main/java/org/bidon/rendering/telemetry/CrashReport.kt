@@ -31,7 +31,8 @@ internal class CrashReport(
      * `null` when it does not fit even without frames.
      */
     fun encode(throwable: Throwable, onMainThread: Boolean): ByteArray? {
-        val envelope = EventEnvelope.capture(EVENT_NAME, sessionId, clock)
+        // A crash bypasses the gate and is always kept (D-031).
+        val envelope = EventEnvelope.capture(EVENT_NAME, sessionId, clock, samplingRate = SamplingRate.ALL)
         val exceptions = chain(throwable)
         var maxFrames = MAX_FRAMES
         while (true) {

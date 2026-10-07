@@ -52,7 +52,7 @@ class EventEnvelopeTest {
 
     @Test
     fun `absent fields are left out rather than written as null`() {
-        val json = EventEnvelope.capture("session_started", session, clock).json()
+        val json = EventEnvelope.capture("session_started", session, clock, samplingRate = SamplingRate.ALL).json()
 
         assertEquals(setOf("event_id", "event_name", "event_ts", "session_id", "sampling_rate"), json.keySet())
     }
@@ -60,7 +60,9 @@ class EventEnvelopeTest {
     @Test
     fun `every ad type goes out in the contract's spelling`() {
         val spelled = AdType.entries.map { type ->
-            EventEnvelope.capture("ad_filled", session, clock, adType = type).json().getString("ad_type")
+            EventEnvelope.capture("ad_filled", session, clock, adType = type, samplingRate = SamplingRate.ALL)
+                .json()
+                .getString("ad_type")
         }
 
         assertEquals(listOf("banner", "interstitial", "rewarded"), spelled)
@@ -68,14 +70,14 @@ class EventEnvelopeTest {
 
     @Test
     fun `an event counts as kept at a rate of one unless told otherwise`() {
-        val json = EventEnvelope.capture("ad_filled", session, clock).json()
+        val json = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.ALL).json()
 
         assertEquals(1.0, json.getDouble("sampling_rate"), 0.0)
     }
 
     @Test
     fun `the timestamp is the moment of capture, not of encoding`() {
-        val envelope = EventEnvelope.capture("ad_filled", session, clock)
+        val envelope = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.ALL)
         now += 60_000
 
         assertEquals(1_790_326_698_635L, envelope.json().getLong("event_ts"))
@@ -83,7 +85,9 @@ class EventEnvelopeTest {
 
     @Test
     fun `the event id is a version 4 UUID, new for every event`() {
-        val ids = List(1_000) { EventEnvelope.capture("ad_filled", session, clock).eventId }
+        val ids = List(1_000) {
+            EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.ALL).eventId
+        }
 
         ids.forEach { assertEquals(4, UUID.fromString(it).version()) }
         assertEquals(ids.size, ids.toSet().size)
@@ -91,15 +95,22 @@ class EventEnvelopeTest {
 
     @Test
     fun `encoding the same event twice gives the same bytes, so a retry cannot mint a second event`() {
-        val envelope = EventEnvelope.capture("ad_filled", session, clock, auctionId = "a", adType = AdType.REWARDED)
+        val envelope = EventEnvelope.capture(
+            "ad_filled",
+            session,
+            clock,
+            auctionId = "a",
+            adType = AdType.REWARDED,
+            samplingRate = SamplingRate.ALL,
+        )
 
         assertArrayEquals(envelope.encode(), envelope.encode())
     }
 
     @Test
     fun `two events captured at the same instant are still two events`() {
-        val first = EventEnvelope.capture("ad_filled", session, clock)
-        val second = EventEnvelope.capture("ad_filled", session, clock)
+        val first = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.ALL)
+        val second = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.ALL)
 
         assertNotEquals(first.json().getString("event_id"), second.json().getString("event_id"))
     }
@@ -122,7 +133,13 @@ class EventEnvelopeTest {
 
     @Test
     fun `text is encoded as UTF-8`() {
-        val envelope = EventEnvelope.capture("ad_filled", SessionId.of("сесія-𓀀")!!, clock, auctionId = "аукціон")
+        val envelope = EventEnvelope.capture(
+            "ad_filled",
+            SessionId.of("сесія-𓀀")!!,
+            clock,
+            auctionId = "аукціон",
+            samplingRate = SamplingRate.ALL,
+        )
 
         val json = envelope.json()
 
