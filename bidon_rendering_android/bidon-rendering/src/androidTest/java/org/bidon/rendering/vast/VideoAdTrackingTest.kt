@@ -1,21 +1,27 @@
 package org.bidon.rendering.vast
 
 import android.app.Activity
+import android.os.Build
 import android.graphics.Bitmap
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebView
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.media3.ui.PlayerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.LocalHttpServer
+import org.bidon.rendering.telemetry.Creative
+import org.bidon.rendering.telemetry.EventClass
+import org.bidon.rendering.telemetry.QueuedEvents
 import org.bidon.rendering.ui.BlankActivity
 import org.bidon.rendering.vast.ui.EndCardView
 import org.bidon.rendering.vast.ui.VideoAdActivity
@@ -27,6 +33,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -45,6 +52,8 @@ class VideoAdTrackingTest {
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val server = LocalHttpServer()
+    private val directory = File(instrumentation.targetContext.cacheDir, "video-ad-${SystemClock.elapsedRealtimeNanos()}")
+    private val queued by lazy { QueuedEvents(directory) }
 
     private class Events : AdRenderer.Listener {
         val loaded = CountDownLatch(1)
@@ -52,6 +61,7 @@ class VideoAdTrackingTest {
         val impressionReported = CountDownLatch(1)
         val impressions = AtomicInteger()
         val clicks = AtomicInteger()
+        val failed = CountDownLatch(1)
 
         override fun onLoaded() = loaded.countDown()
         override fun onImpression() {
@@ -63,12 +73,13 @@ class VideoAdTrackingTest {
         }
         override fun onClose() = closed.countDown()
         override fun onReward() = Unit
-        override fun onError(error: Throwable) = Unit
+        override fun onError(error: Throwable) = failed.countDown()
     }
 
     @After
     fun stopServer() {
         server.close()
+        directory.deleteRecursively()
     }
 
     // The click-throughs lead nowhere on purpose: nothing claims the scheme, so no browser opens
@@ -98,7 +109,7 @@ class VideoAdTrackingTest {
 
     /** Loads [vast], shows it over a blank screen, runs [block], and tears everything down. */
     private fun showAd(vast: String, events: Events, block: () -> Unit) {
-        val renderer = VastRenderer(instrumentation.targetContext, AdRenderingConfig())
+        val renderer = VastRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Creative.VAST))
         instrumentation.runOnMainSync { renderer.load(vast, events) }
         assertTrue("the ad did not load", events.loaded.await(10, TimeUnit.SECONDS))
 
@@ -140,9 +151,76 @@ class VideoAdTrackingTest {
             SystemClock.sleep(1_000)
 
             assertEquals(1, events.impressions.get())
+            val rendered = queued.next()
+            queued.assertAdEvent(rendered, "creative_rendered", EventClass.DIAGNOSTIC, Creative.VAST)
+            assertTrue("no load time", rendered.json.getLong("load_ms") >= 0)
+            queued.assertNoMore()
             assertEquals(1, server.requestCount("/impression/dsp"))
             assertEquals(1, server.requestCount("/impression/verifier"))
             assertMacrosFilledIn("/impression/dsp")
+        }
+    }
+
+    /** A wrapper with nowhere to go fails the load, and the event carries the VAST error code and nothing of the ad. */
+    @Test
+    fun aVastDocumentThatCannotBeParsedReportsItsErrorCode() {
+        val events = Events()
+        val renderer = VastRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Creative.VAST))
+        try {
+            instrumentation.runOnMainSync {
+                renderer.load("<VAST version=\"4.2\"><Ad id=\"1\"><Wrapper><AdSystem>test</AdSystem></Wrapper></Ad></VAST>", events)
+            }
+            assertTrue("the load did not fail", events.failed.await(10, TimeUnit.SECONDS))
+
+            val failed = queued.next()
+            queued.assertAdEvent(failed, "creative_load_failed", EventClass.ERROR, Creative.VAST)
+            assertEquals("vast_error", failed.json.getString("reason"))
+            assertEquals(301, failed.json.getInt("code"))
+            queued.assertNoMore()
+        } finally {
+            onMain { renderer.destroy() }
+        }
+    }
+
+    /**
+     * A renderer destroyed while its VAST is still loading has nothing to report: the cancelled load is not a failure.
+     * The wrapper's server never answers, so the load ends only when its read times out, after the destroy.
+     */
+    @Test
+    fun aLoadCancelledByDestroyIsNotAFailure() {
+        server.stall("/wrapped.xml")
+        val events = Events()
+        val renderer = VastRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Creative.VAST))
+        val wrapper = """
+            <VAST version="4.2"><Ad id="1"><Wrapper><AdSystem>test</AdSystem>
+            <VASTAdTagURI><![CDATA[${server.url("/wrapped.xml")}]]></VASTAdTagURI>
+            </Wrapper></Ad></VAST>
+        """.trimIndent()
+        instrumentation.runOnMainSync { renderer.load(wrapper, events) }
+        waitFor("the wrapper request") { (server.requestCount("/wrapped.xml") == 1).takeIf { it } }
+
+        onMain { renderer.destroy() }
+
+        // Past the parser's 10 s read timeout, when the old code reported the cancelled load as an error.
+        assertFalse("a cancelled load reported an error", events.failed.await(13, TimeUnit.SECONDS))
+        queued.assertNoMore()
+    }
+
+    /** A video in a format the device cannot play loads, and fails when it is shown. */
+    @Test
+    fun aVideoWithNoPlayableMediaFileFailsWhenShown() {
+        val events = Events()
+        val vast = vast("/video.mp4").replace("type=\"video/mp4\"", "type=\"video/x-unplayable\"")
+
+        showAd(vast, events) {
+            assertTrue("the show did not fail", events.failed.await(5, TimeUnit.SECONDS))
+
+            val failed = queued.next()
+            queued.assertAdEvent(failed, "creative_load_failed", EventClass.ERROR, Creative.VAST)
+            assertEquals("no_media_file", failed.json.getString("reason"))
+            assertFalse(failed.json.has("code"))
+            queued.assertNoMore()
+            assertTrue(videoScreens().isEmpty())
         }
     }
 
@@ -156,6 +234,11 @@ class VideoAdTrackingTest {
             SystemClock.sleep(500)
 
             assertEquals(0, events.impressions.get())
+            val failed = queued.next()
+            queued.assertAdEvent(failed, "creative_load_failed", EventClass.ERROR, Creative.VAST)
+            assertEquals("playback_error", failed.json.getString("reason"))
+            assertTrue("no player error code", failed.json.getInt("code") > 0)
+            queued.assertNoMore()
             assertEquals(0, server.requestCount("/impression/dsp"))
             assertEquals(0, server.requestCount("/impression/verifier"))
         }
@@ -205,6 +288,46 @@ class VideoAdTrackingTest {
             assertEquals(0, events.impressions.get())
             assertEquals(0, events.clicks.get())
             assertEquals(0, server.requestCount("/click/video"))
+        }
+    }
+
+    /**
+     * The HTML end card's renderer dies after the video was seen. The screen ends, the ad closes rather than failing,
+     * and the death is reported once, as an ad that was shown.
+     */
+    @Test
+    @SdkSuppress(minSdkVersion = Build.VERSION_CODES.O)
+    fun anEndCardWhoseRendererDiesEndsTheScreenAndIsReported() {
+        server.serve("/video.mp4", "video/mp4", testVideo())
+        val events = Events()
+        val vast = vast("/video.mp4").replace(
+            Regex("<StaticResource[^>]*>.*?</StaticResource>"),
+            "<HTMLResource><![CDATA[<html><body>card</body></html>]]></HTMLResource>",
+        )
+
+        showAd(vast, events) {
+            val screen = waitFor("the video to play") { resumedVideoScreen()?.takeIf { it.isPlaying() } }
+            val skip = waitFor("Skip") {
+                onMain { screen.window.decorView.find(TextView::class.java) { it.text == "Skip" && it.isShown } }
+            }
+            onMain { skip.performClick() }
+            val card = waitFor("the end card to load") {
+                onMain {
+                    screen.window.decorView.find(EndCardView::class.java)?.find(WebView::class.java)
+                        ?.takeIf { it.progress == 100 }
+                }
+            }
+
+            onMain { card.loadUrl("chrome://crash") }
+
+            assertTrue("the ad did not close", events.closed.await(30, TimeUnit.SECONDS))
+            waitFor("the video screen to go") { Unit.takeIf { videoScreens().isEmpty() } }
+            assertEquals("creative_rendered", queued.next().name)
+            val gone = queued.next()
+            queued.assertAdEvent(gone, "render_process_gone", EventClass.ERROR, Creative.VAST)
+            assertTrue(gone.json.getBoolean("did_crash"))
+            assertTrue(gone.json.getBoolean("was_shown"))
+            queued.assertNoMore()
         }
     }
 

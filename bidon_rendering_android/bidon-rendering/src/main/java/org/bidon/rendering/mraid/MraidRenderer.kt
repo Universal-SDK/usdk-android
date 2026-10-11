@@ -11,11 +11,15 @@ import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.ui.AdWindow
+import androidx.core.view.doOnAttach
 import org.bidon.rendering.mraid.ui.MraidAdActivity
+import org.bidon.rendering.telemetry.AdEvents
+import org.bidon.rendering.telemetry.LoadFailure
 
 internal class MraidRenderer(
     private val context: Context,
-    private val rendering: AdRenderingConfig
+    private val rendering: AdRenderingConfig,
+    private val events: AdEvents?,
 ) : AdRenderer {
 
     private var webView: MraidWebView? = null
@@ -23,6 +27,8 @@ internal class MraidRenderer(
     private var listener: AdRenderer.Listener? = null
 
     private var isDestroyed = false
+
+    private var isLoaded = false
 
     private var presentationKey: String? = null
     private var presentation: PresentedAd? = null
@@ -34,6 +40,7 @@ internal class MraidRenderer(
     override fun load(adm: String, listener: AdRenderer.Listener) {
         this.listener = listener
         isDestroyed = false
+        events?.loadStarted()
 
         val wv = MraidWebView(context.applicationContext)
         webView = wv
@@ -47,7 +54,12 @@ internal class MraidRenderer(
             // used to be wired to onImpression, so a creative closing itself counted as a view.
             onClose = {
                 val requestClose = presentation?.closeRequester
-                if (requestClose != null) requestClose() else listener.onClose()
+                if (requestClose != null) {
+                    requestClose()
+                } else {
+                    events?.closed()
+                    listener.onClose()
+                }
             },
             onClick = { listener.onClick() }
         )
@@ -58,15 +70,51 @@ internal class MraidRenderer(
             onClick = { listener.onClick() },
             onPageLoaded = {
                 ctrl.onReady()
+                isLoaded = true
+                events?.loaded()
                 listener.onLoaded()
             },
-            onPageLoadError = { error ->
-                listener.onError(Exception(error))
+            onPageLoadError = { errorCode, description ->
+                // Only the creative's own load: a two-part expand loads its URL into the same WebView afterwards.
+                if (!isLoaded) events?.loadFailed(LoadFailure.WEBVIEW_ERROR, errorCode)
+                listener.onError(Exception(description))
             },
             onWebViewGone = ::onWebViewGone
         )
 
-        wv.loadMraidContent(adm, mraidJs)
+        // Shown inline once the host puts the view in a window; a fullscreen screen reports its own impression.
+        wv.doOnAttach { if (presentation == null && !isDestroyed) reportImpression() }
+
+        // Read apart from the markup: the bridge script missing from our own package is not the creative's failure.
+        val script = try {
+            mraidJs
+        } catch (e: Exception) {
+            controller = null
+            webView = null
+            listener.onError(e)
+            dropView(ctrl, wv)
+            return
+        }
+        try {
+            wv.loadMraidContent(adm, script)
+        } catch (e: Exception) {
+            controller = null
+            webView = null
+            events?.loadFailed(LoadFailure.MARKUP_REJECTED)
+            listener.onError(e)
+            dropView(ctrl, wv)
+        }
+    }
+
+    /**
+     * Tears down a view that failed to load before anyone could be handed it. Called after the failure is reported:
+     * whatever made the load throw can make this throw too.
+     */
+    private fun dropView(ctrl: MraidController, wv: MraidWebView) {
+        runCatching {
+            ctrl.destroy()
+            wv.destroy()
+        }
     }
 
     override fun attach(container: ViewGroup) {
@@ -78,7 +126,6 @@ internal class MraidRenderer(
 
         controller?.setPlacement(MraidPlacementType.INLINE)
         controller?.onViewabilityChanged(isViewable = true)
-        listener?.onImpression()
     }
 
     override fun showFullscreen(activity: Activity) {
@@ -99,10 +146,14 @@ internal class MraidRenderer(
             override val closeButton: CloseButtonConfig get() = rendering.closeButton
             override val lockedOrientation: Int = orientation
             override var closeRequester: (() -> Unit)? = null
+            override val events: AdEvents? get() = this@MraidRenderer.events
             private var rewarded = false
-            override fun onImpression() = run { listener?.onImpression(); Unit }
+            override fun onImpression() = reportImpression()
             override fun onClicked() = run { listener?.onClick(); Unit }
-            override fun onClosed() = run { listener?.onClose(); Unit }
+            override fun onClosed() {
+                events?.closed()
+                listener?.onClose()
+            }
             override fun onRewarded() {
                 if (rewarded) return
                 rewarded = true
@@ -127,7 +178,8 @@ internal class MraidRenderer(
      * closed it, and the screen reports the close; a screen that is still starting finds no view and ends the ad
      * itself.
      */
-    private fun onWebViewGone() {
+    private fun onWebViewGone(didCrash: Boolean) {
+        events?.processGone(didCrash)
         // Takes down an expanded ad's overlay, which the WebView was drawn in.
         controller?.destroy()
         controller = null
@@ -138,6 +190,11 @@ internal class MraidRenderer(
         } else {
             shown.closeRequester?.invoke()
         }
+    }
+
+    private fun reportImpression() {
+        events?.rendered()
+        listener?.onImpression()
     }
 
     override fun destroy() {

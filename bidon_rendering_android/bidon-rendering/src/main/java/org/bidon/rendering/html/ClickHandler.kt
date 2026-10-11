@@ -26,8 +26,8 @@ internal class ClickHandler(
     private val context: Context,
     private val onClick: () -> Unit,
     private val onPageLoaded: (() -> Unit)? = null,
-    private val onPageLoadError: ((String) -> Unit)? = null,
-    private val onWebViewGone: (() -> Unit)? = null
+    private val onPageLoadError: ((errorCode: Int, description: String) -> Unit)? = null,
+    private val onWebViewGone: ((didCrash: Boolean) -> Unit)? = null
 ) : WebViewClient() {
 
     private companion object {
@@ -128,7 +128,7 @@ internal class ClickHandler(
         val message = error?.description?.toString().orEmpty().ifEmpty { "Unknown error" }
         Log.e(TAG, "Load error: $message")
 
-        onPageLoadError?.invoke(message)
+        onPageLoadError?.invoke(error?.errorCode ?: ERROR_UNKNOWN, message)
     }
 
     /**
@@ -142,14 +142,15 @@ internal class ClickHandler(
      */
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
-        val cause = if (detail?.didCrash() == true) "crashed" else "was killed by the system"
+        val didCrash = detail?.didCrash() == true
+        val cause = if (didCrash) "crashed" else "was killed by the system"
         Log.w(TAG, "WebView renderer $cause; ending the ad")
 
         view?.let {
             (it.parent as? ViewGroup)?.removeView(it)
             it.destroy()
         }
-        onWebViewGone?.invoke()
+        onWebViewGone?.invoke(didCrash)
         return true
     }
 }

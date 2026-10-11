@@ -6,11 +6,13 @@ import android.os.Bundle
 import android.view.View
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.annotation.OptIn
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
+import org.bidon.rendering.telemetry.LoadFailure
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.vast.RewardedController
 import org.bidon.rendering.vast.SkipOffset
@@ -229,6 +231,7 @@ internal class VideoAdActivity : AppCompatActivity() {
             }
 
             override fun onError(error: Throwable) {
+                presentation?.events?.loadFailed(LoadFailure.PLAYBACK_ERROR, (error as? PlaybackException)?.errorCode)
                 finish()
             }
         })
@@ -282,6 +285,11 @@ internal class VideoAdActivity : AppCompatActivity() {
                 }
 
                 override fun onError(error: Throwable) {
+                    finish()
+                }
+
+                override fun onRendererGone(didCrash: Boolean) {
+                    presentation?.events?.processGone(didCrash)
                     finish()
                 }
             })

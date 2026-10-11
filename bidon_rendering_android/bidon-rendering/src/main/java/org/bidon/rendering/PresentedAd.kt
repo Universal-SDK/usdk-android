@@ -1,6 +1,7 @@
 package org.bidon.rendering
 
 import android.view.View
+import org.bidon.rendering.telemetry.AdEvents
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -54,6 +55,13 @@ internal interface PresentedAd {
      */
     fun onRewarded()
     fun onFailed(error: Throwable)
+
+    /**
+     * The ad's telemetry events, for what only the screen sees. Every presentation provides them; today only the video
+     * screen reports through them, for a video that cannot play or an end card whose renderer dies. Null when telemetry
+     * is off.
+     */
+    val events: AdEvents?
 }
 
 internal object PresentedAds {

@@ -1,5 +1,6 @@
 package org.bidon.rendering.ui
 
+import org.bidon.rendering.telemetry.AdEvents
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -29,15 +30,21 @@ import org.bidon.rendering.mraid.MraidWebView
 import org.bidon.rendering.mraid.ui.MraidAdActivity
 import org.bidon.rendering.vast.CompanionResource
 import org.bidon.rendering.vast.ui.EndCardView
+import org.bidon.rendering.telemetry.Creative
+import org.bidon.rendering.telemetry.EventClass
+import org.bidon.rendering.telemetry.QueuedEvents
 import org.bidon.rendering.vast.VastCompanion
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * When the process that renders a WebView dies, the app must live on. Android kills the whole app unless the WebView's
@@ -53,6 +60,13 @@ class RenderProcessGoneTest {
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
+    private val directory = File(context.cacheDir, "render-gone-${SystemClock.elapsedRealtimeNanos()}")
+    private val queued by lazy { QueuedEvents(directory) }
+
+    @After
+    fun deleteQueue() {
+        directory.deleteRecursively()
+    }
 
     private class Events : AdRenderer.Listener {
         val loaded = CountDownLatch(1)
@@ -104,10 +118,12 @@ class RenderProcessGoneTest {
     fun mraidAdClosedBeforeItsRendererDiesReportsNothingMore() =
         adClosedBeforeItsRendererDiesReportsNothingMore(Kind.MRAID)
 
-    /** The video's end card ends its screen through its listener's error. */
+    /** The video's end card tells its screen that its renderer died, and whether it crashed. */
     @Test
-    fun anEndCardWhoseRendererDiesIsRemovedAndFails() {
-        val failed = CountDownLatch(1)
+    fun anEndCardWhoseRendererDiesIsRemovedAndReportsIt() {
+        val gone = CountDownLatch(1)
+        val crashed = AtomicReference<Boolean>()
+        val errors = AtomicInteger()
         ActivityScenario.launch(BlankActivity::class.java).use { scenario ->
             lateinit var endCard: EndCardView
             scenario.onActivity {
@@ -115,7 +131,11 @@ class RenderProcessGoneTest {
                     setListener(object : EndCardView.Listener {
                         override fun onClose() = Unit
                         override fun onClick() = Unit
-                        override fun onError(error: Throwable) = failed.countDown()
+                        override fun onError(error: Throwable) = run { errors.incrementAndGet(); Unit }
+                        override fun onRendererGone(didCrash: Boolean) {
+                            crashed.set(didCrash)
+                            gone.countDown()
+                        }
                     })
                     showCompanion(VastCompanion(320, 480, CompanionResource.Html("<html><body>card</body></html>")))
                 }
@@ -127,7 +147,9 @@ class RenderProcessGoneTest {
 
             onMain { webView.loadUrl(CRASH) }
 
-            assertTrue("no error", failed.await(RENDERER_GONE_SECONDS, TimeUnit.SECONDS))
+            assertTrue("renderer death not reported", gone.await(RENDERER_GONE_SECONDS, TimeUnit.SECONDS))
+            assertEquals(true, crashed.get())
+            assertEquals(0, errors.get())
             assertNull(onMain { endCard.find(WebView::class.java) })
             onMain { endCard.destroy() }
         }
@@ -213,6 +235,7 @@ class RenderProcessGoneTest {
 
         assertTrue("no error", events.failed.await(RENDERER_GONE_SECONDS, TimeUnit.SECONDS))
         assertNull(onMain { renderer.getView() })
+        assertProcessGone(kind, how, wasShown = false)
 
         // Showing it now fails the usual way for an ad that is not loaded, and starts no screen.
         ActivityScenario.launch(BlankActivity::class.java).use { scenario ->
@@ -221,6 +244,8 @@ class RenderProcessGoneTest {
             assertTrue(adScreens().isEmpty())
         }
         onMain { renderer.destroy() }
+        // Neither the error that ended the ad nor the show of a dead ad is a second event.
+        queued.assertNoMore()
     }
 
     private fun bannerGoneOnScreenIsRemovedAndFails(kind: Kind, how: String) {
@@ -231,7 +256,8 @@ class RenderProcessGoneTest {
             scenario.onActivity {
                 container = FrameLayout(it)
                 it.setContentView(container)
-                renderer.attach(container)
+                // As the mediation SDK places a banner: it takes the view and adds it to its own layout.
+                container.addView(renderer.getView())
             }
             assertTrue("not shown", events.shown.await(5, TimeUnit.SECONDS))
 
@@ -241,6 +267,9 @@ class RenderProcessGoneTest {
             assertEquals(0, onMain { container.childCount })
         }
         onMain { renderer.destroy() }
+        assertRendered(kind)
+        assertProcessGone(kind, how, wasShown = true)
+        queued.assertNoMore()
     }
 
     private fun adClosedBeforeItsRendererDiesReportsNothingMore(kind: Kind) {
@@ -263,6 +292,9 @@ class RenderProcessGoneTest {
             assertEquals(0, events.errors.get())
         }
         onMain { renderer.destroy() }
+        assertRendered(kind)
+        // The ad was closed: the death of the shared render process is not reported for it.
+        queued.assertNoMore()
     }
 
     private fun aScreenThatFindsNoViewFailsTheAdOnceAndDoesNotCloseIt(screen: Class<out Activity>) {
@@ -273,6 +305,7 @@ class RenderProcessGoneTest {
             override val closeButton = AdRenderingConfig().closeButton
             override val lockedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             override var closeRequester: (() -> Unit)? = null
+            override val events: AdEvents? = null
             override fun onImpression() = Unit
             override fun onClicked() = Unit
             override fun onClosed() {
@@ -304,6 +337,7 @@ class RenderProcessGoneTest {
             override val closeButton = AdRenderingConfig().closeButton
             override val lockedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             override var closeRequester: (() -> Unit)? = null
+            override val events: AdEvents? = null
             override fun onImpression() {
                 impressions.incrementAndGet()
             }
@@ -340,6 +374,7 @@ class RenderProcessGoneTest {
             override val closeButton = AdRenderingConfig().closeButton
             override val lockedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             override var closeRequester: (() -> Unit)? = null
+            override val events: AdEvents? = null
             override fun onImpression() {
                 impressions.incrementAndGet()
             }
@@ -415,12 +450,15 @@ class RenderProcessGoneTest {
             assertEquals("reported as an error after it was shown", 0, events.errors.get())
         }
         onMain { renderer.destroy() }
+        assertRendered(kind)
+        assertProcessGone(kind, how, wasShown = true)
+        queued.assertNoMore()
     }
 
     private fun load(kind: Kind, events: Events): AdRenderer {
         val renderer = when (kind) {
-            Kind.HTML -> HtmlRenderer(context, AdRenderingConfig())
-            Kind.MRAID -> MraidRenderer(context, AdRenderingConfig())
+            Kind.HTML -> HtmlRenderer(context, AdRenderingConfig(), queued.adEvents(creative(kind)))
+            Kind.MRAID -> MraidRenderer(context, AdRenderingConfig(), queued.adEvents(creative(kind)))
         }
         val markup = when (kind) {
             Kind.HTML -> "<html><body><p>ad</p></body></html>"
@@ -429,6 +467,24 @@ class RenderProcessGoneTest {
         instrumentation.runOnMainSync { renderer.load(markup, events) }
         assertTrue("the ad did not load", events.loaded.await(10, TimeUnit.SECONDS))
         return renderer
+    }
+
+    private fun creative(kind: Kind) = when (kind) {
+        Kind.HTML -> Creative.HTML
+        Kind.MRAID -> Creative.MRAID
+    }
+
+    private fun assertRendered(kind: Kind) {
+        val event = queued.next()
+        queued.assertAdEvent(event, "creative_rendered", EventClass.DIAGNOSTIC, creative(kind))
+        assertTrue("no load time", event.json.getLong("load_ms") >= 0)
+    }
+
+    private fun assertProcessGone(kind: Kind, how: String, wasShown: Boolean) {
+        val event = queued.next(RENDERER_GONE_SECONDS)
+        queued.assertAdEvent(event, "render_process_gone", EventClass.ERROR, creative(kind))
+        assertEquals(how == CRASH, event.json.getBoolean("did_crash"))
+        assertEquals(wasShown, event.json.getBoolean("was_shown"))
     }
 
     /** Ends the process that renders [renderer]'s WebView, the way a crash or the low-memory killer would. */

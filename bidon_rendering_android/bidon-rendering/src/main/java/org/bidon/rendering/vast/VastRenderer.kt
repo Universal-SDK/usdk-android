@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.view.View
 import android.view.ViewGroup
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -14,13 +15,16 @@ import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
+import org.bidon.rendering.telemetry.AdEvents
+import org.bidon.rendering.telemetry.LoadFailure
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.vast.ui.VideoAdActivity
 import java.util.concurrent.ConcurrentHashMap
 
 internal class VastRenderer(
     private val context: Context,
-    private val rendering: AdRenderingConfig
+    private val rendering: AdRenderingConfig,
+    private val events: AdEvents?,
 ) : AdRenderer {
 
     companion object {
@@ -49,23 +53,29 @@ internal class VastRenderer(
         this.listener = listener
 
         loadJob?.cancel()
+        events?.loadStarted()
 
         loadJob = scope.launch {
-            try {
-                val result = VastParser().parse(adm)
-
-                result
-                    .onSuccess { ad ->
-                        vastAd = ad
-                        listener.onLoaded()
-                    }
-                    .onFailure { error ->
-                        listener.onError(error)
-                    }
-
+            // Only the parse is guarded: an exception from the host's own callback is not a VAST error.
+            val result = try {
+                VastParser().parse(adm)
+            } catch (e: CancellationException) {
+                // A destroyed renderer cancels its load; that is not a failure to report.
+                throw e
             } catch (e: Exception) {
-                listener.onError(e)
+                Result.failure(e)
             }
+
+            result
+                .onSuccess { ad ->
+                    vastAd = ad
+                    events?.loaded()
+                    listener.onLoaded()
+                }
+                .onFailure { error ->
+                    events?.loadFailed(LoadFailure.VAST_ERROR, (error as? VastParsingException)?.vastError?.code)
+                    listener.onError(error)
+                }
         }
     }
 
@@ -86,6 +96,7 @@ internal class VastRenderer(
                 mediaFiles = ad.mediaFiles
             )
             .getOrElse { error ->
+                events?.loadFailed(LoadFailure.NO_MEDIA_FILE)
                 listener?.onError(error)
                 return
             }
@@ -101,9 +112,14 @@ internal class VastRenderer(
             override val closeButton: CloseButtonConfig get() = rendering.closeButton
             override val lockedOrientation: Int = orientation
             override var closeRequester: (() -> Unit)? = null
+            override val events: AdEvents? get() = this@VastRenderer.events
 
-            override fun onImpression() = run { listener?.onImpression(); Unit }
+            override fun onImpression() {
+                events?.rendered()
+                listener?.onImpression()
+            }
             override fun onClicked() = run { listener?.onClick(); Unit }
+            // The end card, the only WebView, goes with the screen, which forgets this presentation as it closes.
             override fun onClosed() = run { listener?.onClose(); Unit }
             override fun onRewarded() = run { listener?.onReward(); Unit }
             override fun onFailed(error: Throwable) = run { listener?.onError(error); Unit }

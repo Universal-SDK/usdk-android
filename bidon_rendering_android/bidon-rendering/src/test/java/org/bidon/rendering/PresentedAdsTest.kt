@@ -1,5 +1,6 @@
 package org.bidon.rendering
 
+import org.bidon.rendering.telemetry.AdEvents
 import android.content.pm.ActivityInfo
 import android.view.View
 import org.junit.Assert.assertNotNull
@@ -14,6 +15,7 @@ class PresentedAdsTest {
         override val closeButton: CloseButtonConfig get() = CloseButtonConfig()
         override val lockedOrientation: Int get() = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         override var closeRequester: (() -> Unit)? = null
+        override val events: AdEvents? = null
         override fun onImpression() = Unit
         override fun onClicked() = Unit
         override fun onClosed() = Unit

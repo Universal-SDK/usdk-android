@@ -29,6 +29,9 @@ internal class EndCardView(
         fun onClose()
         fun onClick()
         fun onError(error: Throwable)
+
+        /** The HTML end card's renderer process died, and the WebView is already destroyed. */
+        fun onRendererGone(didCrash: Boolean)
     }
 
     private var listener: Listener? = null
@@ -179,11 +182,11 @@ internal class EndCardView(
                 context = context,
                 onClick = { listener?.onClick() },
                 onPageLoaded = {},
-                onPageLoadError = { listener?.onError(Exception(it)) },
-                onWebViewGone = {
-                    // Already destroyed by the ClickHandler. The error ends the video ad's screen.
+                onPageLoadError = { _, description -> listener?.onError(Exception(description)) },
+                onWebViewGone = { didCrash ->
+                    // Already destroyed by the ClickHandler.
                     webView = null
-                    listener?.onError(IllegalStateException("The end card's renderer process is gone"))
+                    listener?.onRendererGone(didCrash)
                 }
             )
 

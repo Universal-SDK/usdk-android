@@ -225,8 +225,8 @@ class DisplayRewardTest {
             JSONObject("""{"close_button":{"delay_seconds":$closeDelaySeconds}}""")
         )
         val renderer = when (kind) {
-            Kind.HTML -> HtmlRenderer(context, rendering)
-            Kind.MRAID -> MraidRenderer(context, rendering)
+            Kind.HTML -> HtmlRenderer(context, rendering, events = null)
+            Kind.MRAID -> MraidRenderer(context, rendering, events = null)
         }
         val markup = when (kind) {
             Kind.HTML -> "<html><body><p>ad</p></body></html>"

@@ -9,14 +9,18 @@ import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
+import org.bidon.rendering.telemetry.AdEvents
+import org.bidon.rendering.telemetry.LoadFailure
 import org.bidon.rendering.ui.AdWindow
+import androidx.core.view.doOnAttach
 import org.bidon.rendering.ui.FullscreenAdActivity
 import android.app.Activity
 import android.content.Intent
 
 internal class HtmlRenderer(
     context: Context,
-    private val rendering: AdRenderingConfig
+    private val rendering: AdRenderingConfig,
+    private val events: AdEvents?,
 ) : AdRenderer {
 
     private val appContext = context.applicationContext
@@ -38,11 +42,12 @@ internal class HtmlRenderer(
     ) {
         this.listener = listener
         isDestroyed = false
+        events?.loadStarted()
 
         val html = injectViewportMetaTag(adm)
         lastHtml = html
 
-        webView = HtmlWebView(appContext).apply {
+        val view = HtmlWebView(appContext).apply {
 
             webViewClient = ClickHandler(
                 context = appContext,
@@ -51,27 +56,39 @@ internal class HtmlRenderer(
                 },
                 onPageLoaded = {
                     isLoaded = true
+                    events?.loaded()
                     this@HtmlRenderer.listener?.onLoaded()
                 },
-                onPageLoadError = { error ->
-                    this@HtmlRenderer.listener?.onError(Exception(error))
+                onPageLoadError = { errorCode, description ->
+                    // Only the creative's own load; a navigation after it is not a load failure.
+                    if (!isLoaded) events?.loadFailed(LoadFailure.WEBVIEW_ERROR, errorCode)
+                    this@HtmlRenderer.listener?.onError(Exception(description))
                 },
                 onWebViewGone = ::onWebViewGone
             )
 
             webChromeClient = WebChromeClient()
 
-            try {
-                loadDataWithBaseURL(
-                    null,
-                    html,
-                    "text/html",
-                    "UTF-8",
-                    null
-                )
-            } catch (e: Exception) {
-                listener.onError(e)
-            }
+            // Shown inline once the host puts the view in a window; a fullscreen screen reports its own impression.
+            doOnAttach { if (presentationKey == null && !isDestroyed) reportImpression() }
+        }
+        webView = view
+
+        try {
+            view.loadDataWithBaseURL(
+                null,
+                html,
+                "text/html",
+                "UTF-8",
+                null
+            )
+        } catch (e: Exception) {
+            // A view that failed to take its markup is never handed out, so it cannot be shown either. It is torn
+            // down last: whatever made the load throw can make this throw too, and the failure is reported first.
+            webView = null
+            events?.loadFailed(LoadFailure.MARKUP_REJECTED)
+            listener.onError(e)
+            runCatching { view.destroy() }
         }
     }
 
@@ -86,7 +103,6 @@ internal class HtmlRenderer(
         }
 
         container.addView(view)
-        listener?.onImpression()
     }
 
     override fun showFullscreen(activity: Activity) {
@@ -108,10 +124,14 @@ internal class HtmlRenderer(
             override val closeButton: CloseButtonConfig get() = rendering.closeButton
             override val lockedOrientation: Int = orientation
             override var closeRequester: (() -> Unit)? = null
+            override val events: AdEvents? get() = this@HtmlRenderer.events
             private var rewarded = false
-            override fun onImpression() = run { listener?.onImpression(); Unit }
+            override fun onImpression() = reportImpression()
             override fun onClicked() = run { listener?.onClick(); Unit }
-            override fun onClosed() = run { listener?.onClose(); Unit }
+            override fun onClosed() {
+                events?.closed()
+                listener?.onClose()
+            }
             override fun onRewarded() {
                 if (rewarded) return
                 rewarded = true
@@ -134,7 +154,8 @@ internal class HtmlRenderer(
      * reports the close; a screen that is still starting finds no view and ends the ad itself. An ad already closed
      * has nothing left to report.
      */
-    private fun onWebViewGone() {
+    private fun onWebViewGone(didCrash: Boolean) {
+        events?.processGone(didCrash)
         webView = null
         isLoaded = false
         if (presentationKey == null) {
@@ -142,6 +163,11 @@ internal class HtmlRenderer(
         } else {
             PresentedAds.get(presentationKey)?.closeRequester?.invoke()
         }
+    }
+
+    private fun reportImpression() {
+        events?.rendered()
+        listener?.onImpression()
     }
 
     override fun destroy() {
