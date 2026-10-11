@@ -2,9 +2,11 @@ package org.bidon.bidon.impl
 
 import android.util.Log
 import android.view.ViewGroup
+import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import org.bidon.bidon.BidonBannerAuctionParams
 import org.bidon.bidon.BidonDemandId
+import org.bidon.bidon.RendererLoadDeadline
 import org.bidon.rendering.AdType
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.BidonRenderer
@@ -40,6 +42,9 @@ internal class BidonBannerImpl :
     private var renderer: AdRenderer? = null
     private var isImpressionSent = false
 
+    private val scope = MainScope()
+    private var loadDeadline: RendererLoadDeadline? = null
+
     override fun getAuctionParam(
         auctionParamsScope: AdAuctionParamSource
     ): Result<AdAuctionParams> = auctionParamsScope {
@@ -64,7 +69,8 @@ internal class BidonBannerImpl :
         val ad = getAd()
 
         renderer = BidonRenderer.createRenderer(adParams.creativeType, adParams.rendering, adInfo(AdType.BANNER))
-        renderer?.load(adParams.adm, object : AdRenderer.Listener {
+
+        val listener = object : AdRenderer.Listener {
             override fun onLoaded() {
                 Log.d(TAG, "Ad loaded")
                 isAdReadyToShow = true
@@ -93,7 +99,17 @@ internal class BidonBannerImpl :
                 isAdReadyToShow = false
                 emitEvent(AdEvent.LoadFailed(BidonError.NoFill(BidonDemandId)))
             }
-        })
+        }
+
+        val deadline = RendererLoadDeadline(scope, adParams.adUnit.timeout, listener, onTimeout = ::onLoadTimedOut)
+        loadDeadline = deadline
+        renderer?.load(adParams.adm, deadline)
+    }
+
+    private fun onLoadTimedOut() {
+        Log.e(TAG, "Ad load timed out")
+        destroy()
+        emitEvent(AdEvent.LoadFailed(BidonError.FillTimedOut(BidonDemandId)))
     }
 
     override fun getAdView(): AdViewHolder? {
@@ -102,6 +118,9 @@ internal class BidonBannerImpl :
     }
 
     override fun destroy() {
+        loadDeadline?.cancel()
+        loadDeadline = null
+
         renderer?.destroy()
         renderer = null
         isAdReadyToShow = false
