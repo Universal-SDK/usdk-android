@@ -2,11 +2,11 @@ package org.bidon.bidon.impl
 
 import android.util.Log
 import android.view.ViewGroup
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import org.bidon.bidon.BidonBannerAuctionParams
 import org.bidon.bidon.BidonDemandId
+import org.bidon.bidon.RendererLoadDeadline
 import org.bidon.rendering.AdType
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.BidonRenderer
@@ -21,7 +21,6 @@ import org.bidon.sdk.adapter.impl.AdEventFlow
 import org.bidon.sdk.config.BidonError
 import org.bidon.sdk.stats.StatisticsCollector
 import org.bidon.sdk.stats.impl.StatisticsCollectorImpl
-import org.bidon.bidon.RendererLoadDeadline
 
 internal class BidonBannerImpl :
     AdSource.Banner<BidonBannerAuctionParams>,
@@ -43,7 +42,7 @@ internal class BidonBannerImpl :
     private var renderer: AdRenderer? = null
     private var isImpressionSent = false
 
-    private val scope = CoroutineScope(Dispatchers.Main)
+    private val scope = MainScope()
     private var loadDeadline: RendererLoadDeadline? = null
 
     override fun getAuctionParam(
@@ -69,39 +68,10 @@ internal class BidonBannerImpl :
 
         val ad = getAd()
 
-        loadDeadline?.cancel()
-        renderer?.destroy()
-
         renderer = BidonRenderer.createRenderer(adParams.creativeType, adParams.rendering, adInfo(AdType.BANNER))
 
-        loadDeadline = RendererLoadDeadline(
-            scope = scope,
-            timeoutMs = adParams.adUnit.timeout,
-            onTimeout = {
-                Log.e(TAG, "Ad load timeout after ${adParams.adUnit.timeout} ms")
-
-                isAdReadyToShow = false
-
-                renderer?.destroy()
-                renderer = null
-                loadDeadline = null
-
-                ad?.let {
-                    emitEvent(AdEvent.LoadFailed(BidonError.NoFill(BidonDemandId)))
-                }
-            }
-        )
-
-        loadDeadline?.start()
-
-        renderer?.load(adParams.adm, object : AdRenderer.Listener {
+        val listener = object : AdRenderer.Listener {
             override fun onLoaded() {
-                if (loadDeadline?.finish() != true) {
-                    return
-                }
-
-                loadDeadline = null
-
                 Log.d(TAG, "Ad loaded")
                 isAdReadyToShow = true
                 ad?.let { emitEvent(AdEvent.Fill(it)) }
@@ -125,17 +95,21 @@ internal class BidonBannerImpl :
             override fun onReward() = Unit
 
             override fun onError(error: Throwable) {
-                if (loadDeadline?.finish() != true) {
-                    return
-                }
-
-                loadDeadline = null
-
                 Log.e(TAG, "Ad error: ${error.message}")
                 isAdReadyToShow = false
                 emitEvent(AdEvent.LoadFailed(BidonError.NoFill(BidonDemandId)))
             }
-        })
+        }
+
+        val deadline = RendererLoadDeadline(scope, adParams.adUnit.timeout, listener, onTimeout = ::onLoadTimedOut)
+        loadDeadline = deadline
+        renderer?.load(adParams.adm, deadline)
+    }
+
+    private fun onLoadTimedOut() {
+        Log.e(TAG, "Ad load timed out")
+        destroy()
+        emitEvent(AdEvent.LoadFailed(BidonError.FillTimedOut(BidonDemandId)))
     }
 
     override fun getAdView(): AdViewHolder? {

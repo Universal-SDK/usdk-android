@@ -1,145 +1,149 @@
 package org.bidon.bidon
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
-import org.junit.After
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import org.bidon.rendering.AdRenderer
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.util.concurrent.atomic.AtomicInteger
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class RendererLoadDeadlineTest {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+    private val scope = TestScope()
+    private val reported = mutableListOf<String>()
+    private var timeouts = 0
 
-    @After
-    fun tearDown() {
-        scope.cancel()
+    private val listener = object : AdRenderer.Listener {
+        override fun onLoaded() { reported += "loaded" }
+        override fun onImpression() { reported += "impression" }
+        override fun onClick() { reported += "click" }
+        override fun onClose() { reported += "close" }
+        override fun onReward() { reported += "reward" }
+        override fun onError(error: Throwable) { reported += "error" }
+    }
+
+    private fun deadline() = RendererLoadDeadline(scope, TIMEOUT_MS, listener, onTimeout = { timeouts++ })
+
+    private fun passTime(ms: Long) {
+        scope.advanceTimeBy(ms)
+        scope.runCurrent()
     }
 
     @Test
-    fun start_timeoutFires_callsOnTimeoutOnce() = runBlocking {
-        val calls = AtomicInteger(0)
+    fun aLoadThatNeverEndsTimesOutOnceAtTheAdUnitsTimeout() {
+        deadline()
 
-        val deadline = RendererLoadDeadline(
-            scope = scope,
-            timeoutMs = 50L,
-            onTimeout = { calls.incrementAndGet() }
-        )
+        passTime(TIMEOUT_MS - 1)
+        assertEquals(0, timeouts)
 
-        deadline.start()
-        delay(100L)
-
-        assertEquals(1, calls.get())
+        passTime(1)
+        passTime(10 * TIMEOUT_MS)
+        assertEquals(1, timeouts)
+        assertEquals(emptyList<String>(), reported)
     }
 
     @Test
-    fun finish_beforeTimeout_cancelsAndReturnsTrue() = runBlocking {
-        val calls = AtomicInteger(0)
+    fun aLoadInTimeReportsTheFillAndNoTimeout() {
+        val deadline = deadline()
 
-        val deadline = RendererLoadDeadline(
-            scope = scope,
-            timeoutMs = 200L,
-            onTimeout = { calls.incrementAndGet() }
-        )
+        passTime(TIMEOUT_MS - 1)
+        deadline.onLoaded()
+        passTime(10 * TIMEOUT_MS)
 
-        deadline.start()
-        delay(20L)
-
-        val finished = deadline.finish()
-
-        assertTrue(finished)
-        delay(250L) // wait past original timeout
-        assertEquals(0, calls.get())
+        assertEquals(0, timeouts)
+        assertEquals(listOf("loaded"), reported)
     }
 
     @Test
-    fun finish_afterTimeout_returnsFalse_andDoesNotCallOnTimeoutAgain() = runBlocking {
-        val calls = AtomicInteger(0)
+    fun aFailureInTimeReportsTheFailureAndNoTimeout() {
+        val deadline = deadline()
 
-        val deadline = RendererLoadDeadline(
-            scope = scope,
-            timeoutMs = 50L,
-            onTimeout = { calls.incrementAndGet() }
-        )
+        deadline.onError(Exception())
+        passTime(10 * TIMEOUT_MS)
 
-        deadline.start()
-        delay(100L) // timeout already fired
+        assertEquals(0, timeouts)
+        assertEquals(listOf("error"), reported)
+    }
 
-        assertEquals(1, calls.get())
+    /** The response arrives just after the timeout has fired: the timeout was the one failure, and there is no fill. */
+    @Test
+    fun aLoadJustAfterTheTimeoutIsDropped() {
+        val deadline = deadline()
 
-        val finished = deadline.finish() // race: response arrived after deadline
+        passTime(TIMEOUT_MS)
+        deadline.onLoaded()
+        deadline.onError(Exception())
 
-        assertFalse(finished)
-        assertEquals(1, calls.get()) // still exactly one
+        assertEquals(1, timeouts)
+        assertEquals(emptyList<String>(), reported)
     }
 
     @Test
-    fun cancel_preventsTimeout() = runBlocking {
-        val calls = AtomicInteger(0)
+    fun nothingTheRendererReportsAfterTheTimeoutIsPassedOn() {
+        val deadline = deadline()
 
-        val deadline = RendererLoadDeadline(
-            scope = scope,
-            timeoutMs = 50L,
-            onTimeout = { calls.incrementAndGet() }
-        )
+        passTime(TIMEOUT_MS)
+        deadline.onImpression()
+        deadline.onClick()
+        deadline.onClose()
+        deadline.onReward()
 
-        deadline.start()
+        assertEquals(emptyList<String>(), reported)
+    }
+
+    /** A video with no media file it can play fails only when it is shown, long after the load. */
+    @Test
+    fun anErrorAfterTheLoadIsPassedOn() {
+        val deadline = deadline()
+
+        deadline.onLoaded()
+        passTime(10 * TIMEOUT_MS)
+        deadline.onError(Exception())
+
+        assertEquals(listOf("loaded", "error"), reported)
+    }
+
+    @Test
+    fun theAdsEventsAfterTheLoadArePassedOn() {
+        val deadline = deadline()
+
+        deadline.onLoaded()
+        deadline.onImpression()
+        deadline.onClick()
+        deadline.onReward()
+        deadline.onClose()
+
+        assertEquals(listOf("loaded", "impression", "click", "reward", "close"), reported)
+    }
+
+    @Test
+    fun theLoadSettlesOnce() {
+        val deadline = deadline()
+
+        deadline.onError(Exception())
+        deadline.onLoaded()
+        deadline.onLoaded()
+
+        assertEquals(listOf("error"), reported)
+    }
+
+    @Test
+    fun aCancelledLoadNeitherTimesOutNorPassesAnythingOn() {
+        val deadline = deadline()
+
         deadline.cancel()
+        passTime(10 * TIMEOUT_MS)
+        deadline.onLoaded()
+        deadline.onError(Exception())
+        deadline.onImpression()
 
-        delay(100L)
-        assertEquals(0, calls.get())
+        assertEquals(0, timeouts)
+        assertEquals(emptyList<String>(), reported)
     }
 
-    @Test
-    fun finish_calledTwice_secondReturnsFalse() = runBlocking {
-        val deadline = RendererLoadDeadline(
-            scope = scope,
-            timeoutMs = 500L,
-            onTimeout = { }
-        )
-
-        deadline.start()
-
-        assertTrue(deadline.finish())
-        assertFalse(deadline.finish())
-    }
-
-    @Test
-    fun start_afterFinish_canBeRestarted() = runBlocking {
-        val calls = AtomicInteger(0)
-
-        val deadline = RendererLoadDeadline(
-            scope = scope,
-            timeoutMs = 50L,
-            onTimeout = { calls.incrementAndGet() }
-        )
-
-        deadline.start()
-        assertTrue(deadline.finish()) // cancel first run
-
-        deadline.start() // restart
-        delay(100L)
-
-        assertEquals(1, calls.get())
-    }
-
-    @Test
-    fun cancel_thenFinish_returnsFalse() = runBlocking {
-        val deadline = RendererLoadDeadline(
-            scope = scope,
-            timeoutMs = 200L,
-            onTimeout = { }
-        )
-
-        deadline.start()
-        deadline.cancel()
-
-        assertFalse(deadline.finish())
+    private companion object {
+        const val TIMEOUT_MS = 5_000L
     }
 }
