@@ -25,6 +25,63 @@
             android:name="org.bidon.rendering.ui.BlankActivity"
             android:exported="false" />
 
+        <!-- Screens an ad's link must never reach: one opens from the host app's own deep links but is not exported,
+             the other is exported and views links, but never declared itself openable from the web. -->
+        <activity
+            android:name="org.bidon.rendering.html.HostDeepLinkActivity"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="bidontest" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name="org.bidon.rendering.html.HostViewActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="bidontest-internal" />
+            </intent-filter>
+        </activity>
+
+        <!-- A host screen, not exported, that routes the app's own web links on one site inside the app. -->
+        <activity
+            android:name="org.bidon.rendering.html.HostWebActivity"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="host-routed.example" />
+            </intent-filter>
+        </activity>
+
+        <!-- An exported screen that opens from web links that carry no address at all. -->
+        <activity
+            android:name="org.bidon.rendering.html.HostBrowsableActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+            </intent-filter>
+        </activity>
+
+        <!-- An exported screen that opens from links, as an app that accepts links from the web declares itself. -->
+        <activity
+            android:name="org.bidon.rendering.html.HostLinkActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="bidontest-open" />
+            </intent-filter>
+        </activity>
+
         <!-- Owns a telemetry queue in a process of its own, so tests can kill it and read back what survived. -->
         <service
             android:name="org.bidon.rendering.telemetry.VictimService"
