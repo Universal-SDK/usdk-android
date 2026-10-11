@@ -5,6 +5,7 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableSharedFlow
 import org.bidon.bidon.BidonDemandId
 import org.bidon.bidon.BidonFullscreenAuctionParams
+import org.bidon.rendering.AdType
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.CreativeType
@@ -61,7 +62,7 @@ internal class BidonInterstitialImpl :
 
         val ad = getAd()
 
-        renderer = BidonRenderer.createRenderer(adParams.creativeType, adParams.rendering)
+        renderer = BidonRenderer.createRenderer(adParams.creativeType, adParams.rendering, adInfo(AdType.INTERSTITIAL))
         renderer?.load(adParams.adm, object : AdRenderer.Listener {
             override fun onLoaded() {
                 Log.d(TAG, "Ad loaded")

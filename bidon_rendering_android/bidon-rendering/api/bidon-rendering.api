@@ -1,3 +1,9 @@
+public final class org/bidon/rendering/AdInfo {
+	public fun <init> (Ljava/lang/String;Lorg/bidon/rendering/AdType;)V
+	public final fun getAuctionId ()Ljava/lang/String;
+	public final fun getType ()Lorg/bidon/rendering/AdType;
+}
+
 public abstract interface class org/bidon/rendering/AdRenderer {
 	public abstract fun attach (Landroid/view/ViewGroup;)V
 	public abstract fun destroy ()V
@@ -32,14 +38,23 @@ public final class org/bidon/rendering/AdRenderingConfig$Companion {
 	public final fun fromJson (Lorg/json/JSONObject;)Lorg/bidon/rendering/AdRenderingConfig;
 }
 
+public final class org/bidon/rendering/AdType : java/lang/Enum {
+	public static final field BANNER Lorg/bidon/rendering/AdType;
+	public static final field INTERSTITIAL Lorg/bidon/rendering/AdType;
+	public static final field REWARDED Lorg/bidon/rendering/AdType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/bidon/rendering/AdType;
+	public static fun values ()[Lorg/bidon/rendering/AdType;
+}
+
 public final class org/bidon/rendering/BidonRenderer {
 	public static final field INSTANCE Lorg/bidon/rendering/BidonRenderer;
 	public final fun createHtmlRenderer (Lorg/bidon/rendering/AdRenderingConfig;)Lorg/bidon/rendering/AdRenderer;
 	public static synthetic fun createHtmlRenderer$default (Lorg/bidon/rendering/BidonRenderer;Lorg/bidon/rendering/AdRenderingConfig;ILjava/lang/Object;)Lorg/bidon/rendering/AdRenderer;
 	public final fun createMraidRenderer (Lorg/bidon/rendering/AdRenderingConfig;)Lorg/bidon/rendering/AdRenderer;
 	public static synthetic fun createMraidRenderer$default (Lorg/bidon/rendering/BidonRenderer;Lorg/bidon/rendering/AdRenderingConfig;ILjava/lang/Object;)Lorg/bidon/rendering/AdRenderer;
-	public final fun createRenderer (Lorg/bidon/rendering/CreativeType;Lorg/bidon/rendering/AdRenderingConfig;)Lorg/bidon/rendering/AdRenderer;
-	public static synthetic fun createRenderer$default (Lorg/bidon/rendering/BidonRenderer;Lorg/bidon/rendering/CreativeType;Lorg/bidon/rendering/AdRenderingConfig;ILjava/lang/Object;)Lorg/bidon/rendering/AdRenderer;
+	public final fun createRenderer (Lorg/bidon/rendering/CreativeType;Lorg/bidon/rendering/AdRenderingConfig;Lorg/bidon/rendering/AdInfo;)Lorg/bidon/rendering/AdRenderer;
+	public static synthetic fun createRenderer$default (Lorg/bidon/rendering/BidonRenderer;Lorg/bidon/rendering/CreativeType;Lorg/bidon/rendering/AdRenderingConfig;Lorg/bidon/rendering/AdInfo;ILjava/lang/Object;)Lorg/bidon/rendering/AdRenderer;
 	public final fun createVastRenderer (Lorg/bidon/rendering/AdRenderingConfig;)Lorg/bidon/rendering/AdRenderer;
 	public static synthetic fun createVastRenderer$default (Lorg/bidon/rendering/BidonRenderer;Lorg/bidon/rendering/AdRenderingConfig;ILjava/lang/Object;)Lorg/bidon/rendering/AdRenderer;
 	public final fun init (Landroid/content/Context;Lorg/bidon/rendering/RendererConfig;)V

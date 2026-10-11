@@ -8,6 +8,8 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Looper
 import android.util.Log
+import org.bidon.rendering.telemetry.AdEvents
+import org.bidon.rendering.telemetry.AdType as WireAdType
 import org.bidon.rendering.telemetry.BackgroundTelemetry
 import org.bidon.rendering.telemetry.BatchBody
 import org.bidon.rendering.telemetry.BatchSender
@@ -15,6 +17,7 @@ import org.bidon.rendering.telemetry.Clock
 import org.bidon.rendering.telemetry.CrashCapture
 import org.bidon.rendering.telemetry.CrashReport
 import org.bidon.rendering.telemetry.CrashSlot
+import org.bidon.rendering.telemetry.Creative
 import org.bidon.rendering.telemetry.DiskEventStore
 import org.bidon.rendering.telemetry.EventSender
 import org.bidon.rendering.telemetry.HttpTelemetryClient
@@ -101,6 +104,35 @@ internal object RendererTelemetry {
         val report = CrashReport(OWN_PACKAGES, sessionId, Clock.System)
         val mainThread = Looper.getMainLooper().thread
         CrashCapture.install { previous -> CrashCapture(previous, report, mainThread) { CrashSlot(directory()) } }
+    }
+
+    /**
+     * The telemetry events of one ad of [type], labelled with [ad], or none when [telemetry] is off, so an app with
+     * telemetry off never mints a session (D-026).
+     */
+    fun adEvents(telemetry: Telemetry, type: CreativeType, ad: AdInfo?): AdEvents? {
+        if (telemetry === Telemetry.Disabled) return null
+        return AdEvents(
+            telemetry = telemetry,
+            sessionId = sessionId,
+            auctionId = ad?.auctionId,
+            adType = ad?.type?.let(::wireAdType),
+            creative = creative(type),
+            clock = Clock.System,
+            monotonicClock = MonotonicClock.System,
+        )
+    }
+
+    private fun wireAdType(type: AdType): WireAdType = when (type) {
+        AdType.BANNER -> WireAdType.BANNER
+        AdType.INTERSTITIAL -> WireAdType.INTERSTITIAL
+        AdType.REWARDED -> WireAdType.REWARDED
+    }
+
+    private fun creative(type: CreativeType): Creative = when (type) {
+        CreativeType.HTML -> Creative.HTML
+        CreativeType.MRAID -> Creative.MRAID
+        CreativeType.VAST -> Creative.VAST
     }
 
     private fun reportFailure(failure: Throwable) {

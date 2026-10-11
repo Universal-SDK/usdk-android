@@ -27,8 +27,8 @@ internal class MraidWebView(context: Context) : HtmlWebView(context) {
         bridge: MraidJsBridge,
         onClick: () -> Unit,
         onPageLoaded: () -> Unit,
-        onPageLoadError: (String) -> Unit,
-        onWebViewGone: () -> Unit
+        onPageLoadError: (errorCode: Int, description: String) -> Unit,
+        onWebViewGone: (didCrash: Boolean) -> Unit
     ) {
         this.bridge = bridge
 

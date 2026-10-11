@@ -64,17 +64,21 @@ object BidonRenderer {
     /**
      * A renderer for one ad. [rendering] is the DSP's config for this bid; one renderer shows one
      * ad, so it keeps that config for its whole life. Without one it uses the server's defaults.
+     * [ad] labels the renderer's telemetry events, and is read once, here; without it they carry no auction or
+     * ad type.
      */
     fun createRenderer(
         type: CreativeType,
-        rendering: AdRenderingConfig = AdRenderingConfig()
+        rendering: AdRenderingConfig = AdRenderingConfig(),
+        ad: AdInfo? = null,
     ): AdRenderer {
         ensureInitialized()
 
+        val events = RendererTelemetry.adEvents(telemetry, type, ad)
         return when (type) {
-            CreativeType.HTML -> HtmlRenderer(appContext, rendering)
-            CreativeType.VAST -> VastRenderer(appContext, rendering)
-            CreativeType.MRAID -> MraidRenderer(appContext, rendering)
+            CreativeType.HTML -> HtmlRenderer(appContext, rendering, events)
+            CreativeType.VAST -> VastRenderer(appContext, rendering, events)
+            CreativeType.MRAID -> MraidRenderer(appContext, rendering, events)
         }
     }
 
