@@ -54,8 +54,8 @@ class CrashCaptureTest {
         capture().uncaughtException(thread, crash)
 
         val event = movedEvents().single()
-        assertEquals("render_crashed", event.getString("event_name"))
-        assertEquals(session.value, event.getString("session_id"))
+        assertEquals("render_crashed", event.getJSONObject("envelope").getString("event_name"))
+        assertEquals(session.value, event.getJSONObject("envelope").getString("session_id"))
         assertFalse(event.getBoolean("crashed_on_main_thread"))
         assertEquals(listOf(thread to crash), previous.calls)
     }

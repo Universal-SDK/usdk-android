@@ -137,7 +137,7 @@ internal class AdEvents(
                 adType = adType,
                 samplingRate = rate,
             )
-            val json = envelope.toJson().apply {
+            val json = envelope.eventJson().apply {
                 put("creative_type", creative.wireName)
                 fields()
             }

@@ -143,10 +143,21 @@ class AdEventsTest {
         events.rendered()
 
         val json = telemetry.single("creative_rendered")
-        assertEquals(ENVELOPE_KEYS + setOf("creative_type", "load_ms"), json.keySet())
-        assertEnvelope(json, "creative_rendered", rate = 0.25)
+        assertEquals(setOf("envelope", "creative_type", "load_ms"), json.keySet())
+        assertEnvelope(json.envelope, "creative_rendered", rate = 0.25)
         assertEquals("mraid", json.getString("creative_type"))
         assertJsonInteger(250L, json, "load_ms")
+    }
+
+    @Test
+    fun `an event's own fields sit next to the envelope, not inside it`() {
+        val events = adEvents(creative = Creative.MRAID)
+
+        events.rendered()
+
+        val json = telemetry.single("creative_rendered")
+        assertEquals("mraid", json.getString("creative_type"))
+        assertFalse(json.envelope.has("creative_type"))
     }
 
     @Test
@@ -160,8 +171,8 @@ class AdEventsTest {
         events.loadFailed(LoadFailure.NO_MEDIA_FILE, 403)
 
         val json = telemetry.single("creative_load_failed")
-        assertEquals(ENVELOPE_KEYS + setOf("creative_type", "reason", "code"), json.keySet())
-        assertEnvelope(json, "creative_load_failed", rate = 0.5)
+        assertEquals(setOf("envelope", "creative_type", "reason", "code"), json.keySet())
+        assertEnvelope(json.envelope, "creative_load_failed", rate = 0.5)
         assertEquals("vast", json.getString("creative_type"))
         assertEquals("no_media_file", json.getString("reason"))
         assertJsonInteger(403L, json, "code")
@@ -178,8 +189,8 @@ class AdEventsTest {
         events.processGone(didCrash = true)
 
         val json = telemetry.single("render_process_gone")
-        assertEquals(ENVELOPE_KEYS + setOf("creative_type", "did_crash", "was_shown"), json.keySet())
-        assertEnvelope(json, "render_process_gone", rate = 0.125)
+        assertEquals(setOf("envelope", "creative_type", "did_crash", "was_shown"), json.keySet())
+        assertEnvelope(json.envelope, "render_process_gone", rate = 0.125)
         assertEquals("html", json.getString("creative_type"))
         assertEquals(true, json.get("did_crash"))
         assertEquals(false, json.get("was_shown"))
@@ -203,7 +214,7 @@ class AdEventsTest {
             val json = tokener.nextValue()
             assertTrue(text, json is JSONObject)
             assertEquals(text, 0.toChar(), tokener.nextClean())
-            assertEquals(auctionId, (json as JSONObject).getString("auction_id"))
+            assertEquals(auctionId, (json as JSONObject).envelope.getString("auction_id"))
         }
     }
 
@@ -219,7 +230,7 @@ class AdEventsTest {
 
             assertEquals(3, recording.emitted.size)
             recording.emitted.forEach { emit ->
-                assertEquals("${emit.name} at $rate", rate.fraction, emit.json().getDouble("sampling_rate"), 0.0)
+                assertEquals("${emit.name} at $rate", rate.fraction, emit.json().envelope.getDouble("sampling_rate"), 0.0)
             }
         }
     }
@@ -232,7 +243,7 @@ class AdEventsTest {
         events.loadFailed(LoadFailure.WEBVIEW_ERROR)
         events.processGone(didCrash = true)
 
-        val ids = telemetry.emitted.map { it.json().getString("event_id") }
+        val ids = telemetry.emitted.map { it.json().envelope.getString("event_id") }
         ids.forEach { assertEquals(4, UUID.fromString(it).version()) }
         assertEquals(3, ids.toSet().size)
     }
@@ -246,15 +257,15 @@ class AdEventsTest {
         telemetry.beforeCapture = { now += 7 }
 
         events.rendered()
-        assertEquals(2_000_000_000_007L, telemetry.single("creative_rendered").getLong("event_ts"))
+        assertEquals(2_000_000_000_007L, telemetry.single("creative_rendered").envelope.getLong("event_ts"))
 
         now = 2_100_000_000_000L
         events.loadFailed(LoadFailure.WEBVIEW_ERROR)
-        assertEquals(2_100_000_000_007L, telemetry.single("creative_load_failed").getLong("event_ts"))
+        assertEquals(2_100_000_000_007L, telemetry.single("creative_load_failed").envelope.getLong("event_ts"))
 
         now = 2_200_000_000_000L
         events.processGone(didCrash = false)
-        assertEquals(2_200_000_000_007L, telemetry.single("render_process_gone").getLong("event_ts"))
+        assertEquals(2_200_000_000_007L, telemetry.single("render_process_gone").envelope.getLong("event_ts"))
     }
 
     @Test
@@ -264,7 +275,7 @@ class AdEventsTest {
 
         events.rendered()
 
-        assertEquals(5L, telemetry.single("creative_rendered").getLong("event_ts"))
+        assertEquals(5L, telemetry.single("creative_rendered").envelope.getLong("event_ts"))
     }
 
     // rule 5, rule 25 (blank is Kotlin's isBlank)
@@ -281,7 +292,7 @@ class AdEventsTest {
 
             assertEquals(3, recording.emitted.size)
             recording.emitted.forEach { emit ->
-                assertEquals("${emit.name} <$auctionId>", auctionId, emit.json().getString("auction_id"))
+                assertEquals("${emit.name} <$auctionId>", auctionId, emit.json().envelope.getString("auction_id"))
             }
         }
     }
@@ -298,7 +309,7 @@ class AdEventsTest {
 
             assertEquals(3, recording.emitted.size)
             recording.emitted.forEach { emit ->
-                assertFalse("${emit.name} <$auctionId>", emit.json().has("auction_id"))
+                assertFalse("${emit.name} <$auctionId>", emit.json().envelope.has("auction_id"))
             }
         }
     }
@@ -317,7 +328,7 @@ class AdEventsTest {
 
             assertEquals(3, recording.emitted.size)
             recording.emitted.forEach { emit ->
-                assertEquals("${emit.name} $adType", adType.wireName, emit.json().getString("ad_type"))
+                assertEquals("${emit.name} $adType", adType.wireName, emit.json().envelope.getString("ad_type"))
             }
         }
     }
@@ -331,7 +342,7 @@ class AdEventsTest {
         events.processGone(didCrash = true)
 
         assertEquals(3, telemetry.emitted.size)
-        telemetry.emitted.forEach { emit -> assertFalse(emit.name, emit.json().has("ad_type")) }
+        telemetry.emitted.forEach { emit -> assertFalse(emit.name, emit.json().envelope.has("ad_type")) }
     }
 
     // rule 7
@@ -347,7 +358,7 @@ class AdEventsTest {
             events.processGone(didCrash = true)
 
             assertEquals(3, recording.emitted.size)
-            recording.emitted.forEach { emit -> assertFalse("${emit.name} $adType", emit.json().has("ad_format")) }
+            recording.emitted.forEach { emit -> assertFalse("${emit.name} $adType", emit.json().envelope.has("ad_format")) }
         }
     }
 
@@ -363,7 +374,7 @@ class AdEventsTest {
 
         assertEquals(3, telemetry.emitted.size)
         telemetry.emitted.forEach { emit ->
-            assertEquals(emit.name, session.value, emit.json().getString("session_id"))
+            assertEquals(emit.name, session.value, emit.json().envelope.getString("session_id"))
         }
     }
 
@@ -467,7 +478,7 @@ class AdEventsTest {
 
         events.rendered()
 
-        assertEquals(ENVELOPE_KEYS + "creative_type", telemetry.single("creative_rendered").keySet())
+        assertEquals(setOf("envelope", "creative_type"), telemetry.single("creative_rendered").keySet())
     }
 
     @Test
@@ -478,14 +489,14 @@ class AdEventsTest {
 
         events.rendered()
 
-        assertEquals(ENVELOPE_KEYS + "creative_type", telemetry.single("creative_rendered").keySet())
+        assertEquals(setOf("envelope", "creative_type"), telemetry.single("creative_rendered").keySet())
     }
 
     @Test
     fun `there is no load time when neither end of the load was seen`() {
         adEvents().rendered()
 
-        assertEquals(ENVELOPE_KEYS + "creative_type", telemetry.single("creative_rendered").keySet())
+        assertEquals(setOf("envelope", "creative_type"), telemetry.single("creative_rendered").keySet())
     }
 
     @Test
@@ -703,7 +714,7 @@ class AdEventsTest {
         adEvents().loadFailed(LoadFailure.VAST_ERROR)
 
         assertEquals(
-            ENVELOPE_KEYS + setOf("creative_type", "reason"),
+            setOf("envelope", "creative_type", "reason"),
             telemetry.single("creative_load_failed").keySet(),
         )
     }
@@ -1349,7 +1360,7 @@ class AdEventsTest {
                     events.processGone(didCrash = true)
 
                     assertEquals(3, recording.emitted.size)
-                    recording.emitted.forEach { emit -> assertEquals(wall, emit.json().getLong("event_ts")) }
+                    recording.emitted.forEach { emit -> assertEquals(wall, emit.json().envelope.getLong("event_ts")) }
                     val expected = runCatching { Math.subtractExact(end, start) }.getOrNull()?.takeIf { it >= 0 }
                     val rendered = recording.single("creative_rendered")
                     if (expected != null) {
@@ -1430,7 +1441,10 @@ class AdEventsTest {
         assertEquals(emptyList<Throwable>(), otherThreadFailures.toList())
     }
 
+    private val JSONObject.envelope get() = getJSONObject("envelope")
+
     private fun assertEnvelope(json: JSONObject, name: String, rate: Double) {
+        assertEquals(ENVELOPE_KEYS, json.keySet())
         assertEquals(4, UUID.fromString(json.getString("event_id")).version())
         assertEquals(name, json.getString("event_name"))
         assertEquals(now, json.getLong("event_ts"))

@@ -66,7 +66,7 @@ class TelemetrySentInBackgroundTest {
         val events = json.getJSONArray("events")
         assertEquals(
             listOf("event_0", "event_1", "event_2", "ready"),
-            List(events.length()) { events.getJSONObject(it).getString("event_name") },
+            List(events.length()) { events.getJSONObject(it).getJSONObject("envelope").getString("event_name") },
         )
     }
 

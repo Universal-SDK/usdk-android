@@ -58,7 +58,7 @@ class EventEnvelopePropertyTest {
                     samplingRate = SamplingRate.of(rate)!!,
                 )
 
-                val json = JSONObject(envelope.encode().toString(Charsets.UTF_8))
+                val json = JSONObject(envelope.encode().toString(Charsets.UTF_8)).getJSONObject("envelope")
 
                 assertEquals(envelope.eventId, json.getString("event_id"))
                 assertEquals(name, json.getString("event_name"))
