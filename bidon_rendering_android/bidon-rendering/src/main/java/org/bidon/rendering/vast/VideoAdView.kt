@@ -1,16 +1,14 @@
 package org.bidon.rendering.vast.ui
 
-import android.content.ActivityNotFoundException
 import android.content.Context
-import android.content.Intent
 import android.graphics.Color
-import android.net.Uri
 import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import org.bidon.rendering.AdRenderingConfig
+import org.bidon.rendering.LinkOpener
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.ui.clickOnlyOnTap
 import org.bidon.rendering.ui.dp
@@ -37,6 +35,7 @@ internal class VideoAdView(context: Context) : FrameLayout(context) {
     private val muteButton: ImageButton
     private val ctaButton: TextView
 
+    private val links = LinkOpener(context)
     private var clickThroughUrl: String? = null
     private var skipOffset: SkipOffset = SkipOffset.Time(AdRenderingConfig.DEFAULT_SKIP_OFFSET_MS)
     private var skipEnabled = false
@@ -236,9 +235,6 @@ internal class VideoAdView(context: Context) : FrameLayout(context) {
     private fun openClickThrough() {
         val url = clickThroughUrl
         if (url.isNullOrBlank()) return
-        try {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        } catch (e: ActivityNotFoundException) {
-        }
+        links.open(url)
     }
 }
