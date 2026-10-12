@@ -1,9 +1,7 @@
 package org.bidon.rendering.vast.ui
 
 import android.content.Context
-import android.content.Intent
 import android.graphics.Color
-import android.net.Uri
 import android.view.Gravity
 import android.view.View
 import android.webkit.WebChromeClient
@@ -12,6 +10,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import coil.load
+import org.bidon.rendering.LinkOpener
 import org.bidon.rendering.html.ClickHandler
 import org.bidon.rendering.html.HtmlWebView
 import org.bidon.rendering.vast.CompanionResource
@@ -42,6 +41,7 @@ internal class EndCardView(
     private val closeButton: ImageButton
     private val ctaButton: TextView
 
+    private val links = LinkOpener(context)
     private var clickThroughUrl: String? = null
 
     init {
@@ -239,12 +239,8 @@ internal class EndCardView(
     }
 
     private fun openClickThrough() {
-        clickThroughUrl ?: return
-
-        try {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(clickThroughUrl))
-            )
-        } catch (_: Exception) {}
+        val url = clickThroughUrl
+        if (url.isNullOrBlank()) return
+        links.open(url)
     }
 }
