@@ -59,7 +59,7 @@ class AdEventsPropertyTest {
 
                 assertEquals(3, telemetry.emitted.size)
                 telemetry.emitted.forEach { emit ->
-                    val json = emit.json()
+                    val json = emit.json().getJSONObject("envelope")
                     if (auctionId != null && auctionId.isNotBlank()) {
                         assertEquals(auctionId, json.getString("auction_id"))
                     } else {

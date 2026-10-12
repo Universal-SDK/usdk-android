@@ -17,7 +17,17 @@ class EventEnvelopeTest {
     private var now = 1_790_326_698_635L
     private val clock = Clock { now }
 
-    private fun EventEnvelope.json() = JSONObject(encode().toString(Charsets.UTF_8))
+    private fun EventEnvelope.event() = JSONObject(encode().toString(Charsets.UTF_8))
+
+    private fun EventEnvelope.json() = event().getJSONObject("envelope")
+
+    /** The ingest handler reads an event's name from `events[].envelope`; an event without one is not counted. */
+    @Test
+    fun `the envelope goes out as an object of its own, with nothing next to it`() {
+        val event = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.ALL).event()
+
+        assertEquals(setOf("envelope"), event.keySet())
+    }
 
     @Test
     fun `every field goes out under the name the ingest contract gives it`() {

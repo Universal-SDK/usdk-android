@@ -37,8 +37,8 @@ class RendererTelemetryAdEventsTest {
 
                 val event = telemetry.events.single()
                 assertEquals(creativeWire, event.getString("creative_type"))
-                assertEquals(adTypeWire, event.getString("ad_type"))
-                assertEquals("auction-$creativeWire", event.getString("auction_id"))
+                assertEquals(adTypeWire, event.getJSONObject("envelope").getString("ad_type"))
+                assertEquals("auction-$creativeWire", event.getJSONObject("envelope").getString("auction_id"))
             }
         }
     }
@@ -49,8 +49,8 @@ class RendererTelemetryAdEventsTest {
         RendererTelemetry.adEvents(telemetry, CreativeType.VAST, ad = null)!!.rendered()
 
         val event = telemetry.events.single()
-        assertFalse(event.has("auction_id"))
-        assertFalse(event.has("ad_type"))
-        assertEquals(RendererTelemetry.sessionId.value, event.getString("session_id"))
+        assertFalse(event.getJSONObject("envelope").has("auction_id"))
+        assertFalse(event.getJSONObject("envelope").has("ad_type"))
+        assertEquals(RendererTelemetry.sessionId.value, event.getJSONObject("envelope").getString("session_id"))
     }
 }

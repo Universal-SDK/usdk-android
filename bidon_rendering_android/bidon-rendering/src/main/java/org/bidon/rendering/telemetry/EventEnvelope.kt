@@ -29,13 +29,19 @@ internal class EventEnvelope private constructor(
 ) : TelemetryEvent {
 
     /**
-     * The envelope as one UTF-8 JSON object with snake_case keys. Absent fields are left out rather than written as
-     * `null`: the contract types them as plain strings, which `null` is not.
+     * An event that is only its envelope, as one UTF-8 JSON object: the fields, with snake_case keys, under `envelope`.
+     * Absent fields are left out rather than written as `null`: the contract types them as plain strings, which
+     * `null` is not.
      */
-    override fun encode(): ByteArray = toJson().toString().toByteArray(Charsets.UTF_8)
+    override fun encode(): ByteArray = eventJson().toString().toByteArray(Charsets.UTF_8)
 
-    /** The envelope's fields as a JSON object, for events that add fields of their own next to them. */
-    fun toJson(): JSONObject = JSONObject().apply {
+    /**
+     * The event as a JSON object holding the envelope's fields under `envelope`, for events that add fields of their
+     * own next to it. The ingest contract reads an event's name and identity only from there.
+     */
+    fun eventJson(): JSONObject = JSONObject().put("envelope", fields())
+
+    private fun fields() = JSONObject().apply {
         put("event_id", eventId)
         put("event_name", eventName)
         put("event_ts", eventTs)

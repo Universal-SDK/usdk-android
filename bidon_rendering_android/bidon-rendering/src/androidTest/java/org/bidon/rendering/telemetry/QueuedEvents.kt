@@ -16,7 +16,7 @@ internal class QueuedEvents(directory: File) {
 
     /** One event as it was stored. */
     class Stored(val eventClass: EventClass, val json: JSONObject) {
-        val name: String get() = json.getString("event_name")
+        val name: String get() = json.getJSONObject("envelope").getString("event_name")
     }
 
     private val stored = LinkedBlockingQueue<Stored>()
@@ -57,9 +57,9 @@ internal class QueuedEvents(directory: File) {
     ) {
         assertEquals(name, event.name)
         assertEquals(eventClass, event.eventClass)
-        assertEquals(AUCTION_ID, event.json.getString("auction_id"))
-        assertEquals(adType.wireName, event.json.getString("ad_type"))
-        assertEquals(sessionId.value, event.json.getString("session_id"))
+        assertEquals(AUCTION_ID, event.json.getJSONObject("envelope").getString("auction_id"))
+        assertEquals(adType.wireName, event.json.getJSONObject("envelope").getString("ad_type"))
+        assertEquals(sessionId.value, event.json.getJSONObject("envelope").getString("session_id"))
         assertEquals(creative.wireName, event.json.getString("creative_type"))
     }
 

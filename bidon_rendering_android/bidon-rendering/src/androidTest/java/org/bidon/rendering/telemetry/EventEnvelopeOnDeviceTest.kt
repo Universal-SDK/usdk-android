@@ -30,7 +30,7 @@ class EventEnvelopeOnDeviceTest {
                 samplingRate = SamplingRate.of(0.1)!!,
             )
 
-            val json = JSONObject(envelope.encode().toString(Charsets.UTF_8))
+            val json = JSONObject(envelope.encode().toString(Charsets.UTF_8)).getJSONObject("envelope")
 
             assertEquals(envelope.eventId, json.getString("event_id"))
             assertEquals(awkward, json.getString("event_name"))

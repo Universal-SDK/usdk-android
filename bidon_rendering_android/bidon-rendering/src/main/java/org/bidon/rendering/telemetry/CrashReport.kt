@@ -36,7 +36,7 @@ internal class CrashReport(
         val exceptions = chain(throwable)
         var maxFrames = MAX_FRAMES
         while (true) {
-            val event = envelope.toJson().apply {
+            val event = envelope.eventJson().apply {
                 put("crashed_on_main_thread", onMainThread)
                 put("exceptions", JSONArray(exceptions.map { describe(it, maxFrames) }))
             }

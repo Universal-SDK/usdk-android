@@ -64,14 +64,28 @@ class CrashReportTest {
     fun `the event is render_crashed, in the envelope, with the time and session of the crash`() {
         val event = decode(report.encode(crash(own("vast.VastRenderer", "load")), onMainThread = true)!!)
 
-        assertEquals("render_crashed", event.getString("event_name"))
-        assertEquals(session.value, event.getString("session_id"))
-        assertEquals(1_790_000_000_000, event.getLong("event_ts"))
-        assertTrue(event.getString("event_id").isNotBlank())
-        assertEquals(1.0, event.getDouble("sampling_rate"), 0.0)
+        val envelope = event.getJSONObject("envelope")
+        assertEquals("render_crashed", envelope.getString("event_name"))
+        assertEquals(session.value, envelope.getString("session_id"))
+        assertEquals(1_790_000_000_000, envelope.getLong("event_ts"))
+        assertTrue(envelope.getString("event_id").isNotBlank())
+        assertEquals(1.0, envelope.getDouble("sampling_rate"), 0.0)
         assertTrue(event.getBoolean("crashed_on_main_thread"))
-        assertFalse(event.has("auction_id"))
-        assertFalse(event.has("ad_type"))
+        assertFalse(envelope.has("auction_id"))
+        assertFalse(envelope.has("ad_type"))
+    }
+
+    @Test
+    fun `the crash's own fields sit next to the envelope, not inside it`() {
+        val event = decode(report.encode(crash(own("vast.VastRenderer", "load")), onMainThread = true)!!)
+
+        assertEquals(setOf("envelope", "crashed_on_main_thread", "exceptions"), event.keySet())
+        assertEquals(
+            setOf("event_id", "event_name", "event_ts", "session_id", "sampling_rate"),
+            event.getJSONObject("envelope").keySet(),
+        )
+        assertTrue(event.getBoolean("crashed_on_main_thread"))
+        assertTrue(event.getJSONArray("exceptions").length() > 0)
     }
 
     @Test
