@@ -38,6 +38,22 @@ class EventQueueTest {
         assertTrue(dropped.snapshot().isEmpty())
     }
 
+    /** Every launch opens the queue, so an intact one is read and left alone: a rewrite would cost every launch. */
+    @Test
+    fun `opening an intact queue leaves its file as it was`() {
+        open().apply {
+            repeat(100) { append("record $it".encodeToByteArray(), TTL) }
+            close()
+        }
+        queueFile.setLastModified(LONG_AGO)
+        val bytes = queueFile.readBytes()
+
+        open().close()
+
+        assertEquals(LONG_AGO, queueFile.lastModified())
+        assertTrue(bytes.contentEquals(queueFile.readBytes()))
+    }
+
     @Test
     fun `a record larger than the per-record cap is refused and counted`() {
         val queue = open(EventQueue.Limits(maxFileBytes = 4_096, maxRecordBytes = 100))
@@ -354,6 +370,9 @@ class EventQueueTest {
 
     private companion object {
         const val TTL = 15 * 60 * 1_000L
+
+        /** A whole second, which every file system keeps exactly, and far enough back that no write lands on it. */
+        const val LONG_AGO = 1_000_000_000_000L
     }
 }
 
