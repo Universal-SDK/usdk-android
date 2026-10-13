@@ -213,6 +213,16 @@ class MraidCommandsNeedTapTest {
         assertEquals("\"open,after\"", shown.scriptResult)
     }
 
+    @Test
+    fun theCreativeIsToldWhatTheAdSupports() {
+        val shown = show(
+            "",
+            script = "['sms', 'tel', 'calendar', 'storePicture', 'inlineVideo', 'vpaid'].map(mraid.supports).join()",
+        )
+
+        assertEquals("\"true,true,false,false,true,false\"", shown.scriptResult)
+    }
+
     private companion object {
         /** Collects the action of each MRAID error event in `errors`. */
         const val ERRORS = "<script>window.errors = []; mraid.addEventListener('error', function (message, action) {" +

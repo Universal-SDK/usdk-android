@@ -100,6 +100,11 @@
 
     function isReady() { return _isReady; }
 
+    // Links to sms: and tel: open the device's messaging and phone apps when it has them, as any link opens its app.
+    var _supported = { sms: true, tel: true, calendar: false, storePicture: false, inlineVideo: true };
+
+    function supports(feature) { return _supported[feature] === true; }
+
     function getExpandProperties() {
         return JSON.parse(JSON.stringify(_expandProperties));
     }
@@ -212,7 +217,7 @@
     // Played by whatever opens the link: a browser, or an app that accepts such links from the web.
     function playVideo(url) { openLink(url, "playVideo"); }
 
-    // Opened as a link, not saved to the device.
+    // Opened as a link, not saved to the device, which is why supports("storePicture") is false.
     function storePicture(url) { openLink(url, "storePicture"); }
 
     // Removed from the standard in MRAID 3.0, and not supported here.
@@ -239,6 +244,7 @@
         getPlacementType: getPlacementType,
         isViewable: isViewable,
         isReady: isReady,
+        supports: supports,
         getExpandProperties: getExpandProperties,
         getResizeProperties: getResizeProperties,
         getScreenSize: getScreenSize,
