@@ -1,9 +1,13 @@
 package org.bidon.rendering.html
 
+import android.app.Instrumentation.ActivityMonitor
+import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.webkit.WebResourceRequest
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -20,28 +24,50 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ClickHandlerTest {
 
-    private class FakeRequest(private val uri: Uri) : WebResourceRequest {
+    private class FakeRequest(private val uri: Uri, private val gesture: Boolean) : WebResourceRequest {
         override fun getUrl(): Uri = uri
         override fun isForMainFrame(): Boolean = true
         override fun isRedirect(): Boolean = false
-        override fun hasGesture(): Boolean = true
+        override fun hasGesture(): Boolean = gesture
         override fun getMethod(): String = "GET"
         override fun getRequestHeaders(): MutableMap<String, String> = mutableMapOf()
     }
 
     private var clicks = 0
 
-    private fun navigateTo(url: String): Boolean {
+    private val instrumentation = InstrumentationRegistry.getInstrumentation()
+
+    /**
+     * Keeps a web or store link the handler opens from reaching the browser or the store. One left on top of the test
+     * app's screens holds up every later test that waits for one of them to show.
+     */
+    private val webPage = ActivityMonitor(
+        IntentFilter(Intent.ACTION_VIEW).apply {
+            addDataScheme("https")
+            addDataScheme("market")
+            addCategory(Intent.CATEGORY_BROWSABLE)
+        },
+        null,
+        true,
+    ).also { instrumentation.addMonitor(it) }
+
+    @After
+    fun removeMonitor() {
+        instrumentation.removeMonitor(webPage)
+    }
+
+    private fun navigateTo(url: String, tapped: Boolean = true): Boolean {
         val handler = ClickHandler(
-            context = InstrumentationRegistry.getInstrumentation().targetContext,
+            context = instrumentation.targetContext,
             onClick = { clicks++ }
         )
-        return handler.shouldOverrideUrlLoading(null, FakeRequest(Uri.parse(url)))
+        return handler.shouldOverrideUrlLoading(null, FakeRequest(Uri.parse(url), tapped))
     }
 
     @Test
     fun anOrdinaryClickThroughIsTakenOverNotLoaded() {
         assertTrue(navigateTo("https://example.com/landing"))
+        assertEquals("not opened outside the ad", 1, webPage.hits)
     }
 
     @Test
@@ -62,10 +88,13 @@ class ClickHandlerTest {
         assertTrue(navigateTo("intent://#Intent;broken;end"))
     }
 
+    /** With a tap or without: a creative runs its own script whenever it likes. */
     @Test
     fun theCreativeTalkingToItselfIsLetThrough() {
         assertFalse(navigateTo("javascript:void(0)"))
         assertFalse(navigateTo("about:blank"))
+        assertFalse(navigateTo("javascript:void(0)", tapped = false))
+        assertFalse(navigateTo("about:blank", tapped = false))
     }
 
     @Test
@@ -74,6 +103,15 @@ class ClickHandlerTest {
         clicks = 0
         navigateTo("fake-scheme-nothing-handles://open")
         assertEquals(1, clicks)
+    }
+
+    /** It is still refused: the ad never becomes the page it was sent to. */
+    @Test
+    fun aNavigationWithoutATapIsRefusedAndIsNotAClick() {
+        clicks = 0
+        assertTrue(navigateTo("https://example.com/landing", tapped = false))
+        assertEquals(0, clicks)
+        assertEquals("opened outside the ad", 0, webPage.hits)
     }
 
     @Test

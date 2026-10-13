@@ -46,6 +46,14 @@ internal class ClickHandler(
             return false
         }
 
+        // A navigation no tap started is not a click: a browser would not hand it to another app either. The WebView
+        // hands a tap to the first navigation after it and to no other, so one tap opens one link. Refused all the
+        // same: the ad never becomes the page it was sent to.
+        if (!request.hasGesture()) {
+            Log.d(TAG, "Refused a navigation without a tap: $url")
+            return true
+        }
+
         Log.d(TAG, "Intercepted click: $url")
 
         onClick()

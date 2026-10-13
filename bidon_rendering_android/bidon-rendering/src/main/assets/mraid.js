@@ -149,14 +149,27 @@
     }
 
     // ──────────────────────────────────────────
-    // MRAID API — actions (delegate to native)
+    // MRAID API — actions
     // ──────────────────────────────────────────
 
-    function open(url) {
-        if (!url) { fireErrorEvent("URL required", "open"); return; }
-        try { window._mraidBridge.open(url); }
-        catch (e) { fireErrorEvent(e.message, "open"); }
+    // A link leaves the ad the way every other link in the creative does, as a navigation. ClickHandler opens it,
+    // and counts the click, only when a tap started it; the bridge could not tell, since the creative's script may
+    // call it at any time.
+    function openLink(url, action) {
+        if (!url) { fireErrorEvent("URL required", action); return; }
+        // The creative's own page rather than a link: it would replace the creative in place. Only to tell the
+        // creative; it could navigate there itself.
+        if (/^\s*(about|javascript):/i.test(url)) { fireErrorEvent("Not a link", action); return; }
+        // Usually tells the creative why nothing opens; the decision is ClickHandler's, out of the creative's reach. A
+        // second link after one tap passes here and is refused there.
+        var activation = window.navigator.userActivation;
+        if (activation && !activation.isActive) { fireErrorEvent("Opens only after a tap on the ad", action); return; }
+        // A link the page cannot resolve throws, and the creative's own handler would stop with it.
+        try { window.location.href = url; }
+        catch (e) { fireErrorEvent(e.message, action); }
     }
+
+    function open(url) { openLink(url, "open"); }
 
     function expand(url) {
         if (_state !== "default") {
@@ -196,25 +209,15 @@
         } catch (e) { fireErrorEvent(e.message, "resize"); }
     }
 
-    function playVideo(url) {
-        if (!url) { fireErrorEvent("URL required", "playVideo"); return; }
-        try { window._mraidBridge.playVideo(url); }
-        catch (e) { fireErrorEvent(e.message, "playVideo"); }
-    }
+    // Played by whatever opens the link: a browser, or an app that accepts such links from the web.
+    function playVideo(url) { openLink(url, "playVideo"); }
 
-    function storePicture(url) {
-        if (!url) { fireErrorEvent("URL required", "storePicture"); return; }
-        try { window._mraidBridge.storePicture(url); }
-        catch (e) { fireErrorEvent(e.message, "storePicture"); }
-    }
+    // Opened as a link, not saved to the device.
+    function storePicture(url) { openLink(url, "storePicture"); }
 
-    function createCalendarEvent(parameters) {
-        try {
-            window._mraidBridge.createCalendarEvent(
-                parameters.description || "",
-                parameters.start || ""
-            );
-        } catch (e) { fireErrorEvent(e.message, "createCalendarEvent"); }
+    // Removed from the standard in MRAID 3.0, and not supported here.
+    function createCalendarEvent() {
+        fireErrorEvent("Calendar events are not supported", "createCalendarEvent");
     }
 
     // ──────────────────────────────────────────
