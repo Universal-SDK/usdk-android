@@ -2,15 +2,12 @@ package org.bidon.rendering.mraid
 
 import android.app.Activity
 import android.content.Context
-import android.content.Intent
 import android.os.Handler
 import android.os.Looper
-import android.provider.CalendarContract
 import android.util.DisplayMetrics
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import org.bidon.rendering.LinkOpener
 import org.bidon.rendering.ui.FullscreenAdActivity
 
 /**
@@ -22,13 +19,10 @@ internal class MraidController(
     private val context: Context,
     private val webView: MraidWebView,
     private val placement: MraidPlacementType,
-    private val onClose: () -> Unit,
-    private val onClick: () -> Unit
+    private val onClose: () -> Unit
 ) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
-
-    private val links = LinkOpener(context)
 
     /** Set by [destroy]. Set and read on the main thread only: the bridge moves every command there first. */
     private var destroyed = false
@@ -77,13 +71,6 @@ internal class MraidController(
     // ──────────────────────────────────────────
     // MRAID commands
     // ──────────────────────────────────────────
-
-    fun open(url: String) {
-        post {
-            onClick()
-            links.open(url)
-        }
-    }
 
     fun expand(url: String?) {
         if (currentState != MraidState.DEFAULT) return
@@ -162,29 +149,6 @@ internal class MraidController(
             webView.translationY = offsetYPx.toFloat()
 
             stateMachine.transitionTo(MraidState.RESIZED)
-        }
-    }
-
-    /** Opens the video as a link: a browser plays it, or an app that accepts such links from the web. */
-    fun playVideo(url: String) {
-        post { links.open(url) }
-    }
-
-    /** Opens the picture as a link; nothing is saved to the device. */
-    fun storePicture(url: String) {
-        post { links.open(url) }
-    }
-
-    fun createCalendarEvent(description: String, start: String) {
-        post {
-            try {
-                val intent = Intent(Intent.ACTION_INSERT).apply {
-                    data = CalendarContract.Events.CONTENT_URI
-                    putExtra(CalendarContract.Events.TITLE, description)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-            } catch (_: Exception) {}
         }
     }
 

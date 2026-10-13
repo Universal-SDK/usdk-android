@@ -404,7 +404,7 @@ class RenderProcessGoneTest {
         val webViews = onMain { listOf(MraidWebView(context), MraidWebView(context)) }
         try {
             val (destroyedOne, liveOne) = webViews.map {
-                onMain { MraidController(context, it, MraidPlacementType.INLINE, { closes.incrementAndGet() }, {}) }
+                onMain { MraidController(context, it, MraidPlacementType.INLINE, { closes.incrementAndGet() }) }
             }
             onMain {
                 destroyedOne.onReady()

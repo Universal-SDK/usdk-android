@@ -60,8 +60,7 @@ internal class MraidRenderer(
                     events?.closed()
                     listener.onClose()
                 }
-            },
-            onClick = { listener.onClick() }
+            }
         )
         controller = ctrl
 

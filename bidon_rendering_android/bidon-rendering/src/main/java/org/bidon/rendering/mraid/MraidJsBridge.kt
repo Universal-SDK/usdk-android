@@ -24,11 +24,6 @@ internal class MraidJsBridge(
     }
 
     @JavascriptInterface
-    fun open(url: String) {
-        onMain { controller.open(url) }
-    }
-
-    @JavascriptInterface
     fun expand(url: String?) {
         onMain { controller.expand(url) }
     }
@@ -52,21 +47,6 @@ internal class MraidJsBridge(
     @JavascriptInterface
     fun resize(width: Int, height: Int, offsetX: Int, offsetY: Int) {
         onMain { controller.resize(width, height, offsetX, offsetY) }
-    }
-
-    @JavascriptInterface
-    fun playVideo(url: String) {
-        onMain { controller.playVideo(url) }
-    }
-
-    @JavascriptInterface
-    fun storePicture(url: String) {
-        onMain { controller.storePicture(url) }
-    }
-
-    @JavascriptInterface
-    fun createCalendarEvent(description: String, start: String) {
-        onMain { controller.createCalendarEvent(description, start) }
     }
 
     @JavascriptInterface

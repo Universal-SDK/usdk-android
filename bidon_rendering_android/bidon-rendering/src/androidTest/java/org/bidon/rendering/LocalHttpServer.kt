@@ -13,8 +13,8 @@ import kotlin.concurrent.thread
 /**
  * A minimal HTTP server on the device's loopback interface, for tests that need the renderer's real
  * connections: a wrapped VAST document, a video, a tracking pixel. It serves canned bodies by path,
- * can leave a path hanging, answers 404 for anything else, and records the path and query of every
- * request.
+ * can leave a path hanging, can redirect a path elsewhere, answers 404 for anything else, and records the
+ * path and query of every request.
  */
 class LocalHttpServer : Closeable {
 
@@ -30,6 +30,7 @@ class LocalHttpServer : Closeable {
     private val requests = Collections.synchronizedList(mutableListOf<String>())
     private val posted = Collections.synchronizedList(mutableListOf<Pair<String, String>>())
     private val stalled = ConcurrentHashMap.newKeySet<String>()
+    private val redirects = ConcurrentHashMap<String, String>()
     private val closed = CountDownLatch(1)
 
     init {
@@ -55,6 +56,11 @@ class LocalHttpServer : Closeable {
     /** Accepts requests for [path] and never answers them, like a server that stopped responding. */
     fun stall(path: String) {
         stalled += path
+    }
+
+    /** Answers requests for [path] with a redirect to [location], as a click tracker does. */
+    fun redirect(path: String, location: String) {
+        redirects[path] = location
     }
 
     /** The path and query of every request for [path], whatever its query. */
@@ -107,7 +113,10 @@ class LocalHttpServer : Closeable {
                 }
 
                 val body = bodies[pathAndQuery.substringBefore("?")]
-                val head = if (body == null) {
+                val location = redirects[pathAndQuery.substringBefore("?")]
+                val head = if (location != null) {
+                    "HTTP/1.1 302 Found\r\nLocation: $location\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                } else if (body == null) {
                     "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                 } else {
                     "HTTP/1.1 200 OK\r\nContent-Type: ${body.contentType}\r\n" +
