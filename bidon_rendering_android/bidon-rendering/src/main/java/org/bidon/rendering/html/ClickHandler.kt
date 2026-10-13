@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.annotation.RequiresApi
@@ -65,6 +66,18 @@ internal class ClickHandler(
         return true
     }
 
+    /**
+     * A form sent with POST replaces the page without asking [shouldOverrideUrlLoading], so the creative could turn the
+     * ad into any page it likes. Its request is answered here, before it leaves the device, with "No Content", on which
+     * the WebView keeps the page it has. A tapped form is turned away too: it is neither sent nor counted as a click.
+     * Called on a background thread.
+     */
+    override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+        if (request?.isForMainFrame != true || request.method != "POST") return null
+        Log.d(TAG, "Refused a form sent from the creative: ${request.url}")
+        return WebResourceResponse(null, null, 204, "No Content", emptyMap(), null)
+    }
+
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
         Log.d(TAG, "Page loaded: $url")
@@ -86,6 +99,8 @@ internal class ClickHandler(
         // Only the creative itself failing counts as a load failure. Creatives routinely pull in
         // tracking pixels and assets that 404, and one of those must not fail the whole ad.
         if (request?.isForMainFrame != true) return
+        // A form the creative sent, refused in shouldInterceptRequest; the creative itself is still there.
+        if (request.method == "POST") return
 
         val message = error?.description?.toString().orEmpty().ifEmpty { "Unknown error" }
         Log.e(TAG, "Load error: $message")

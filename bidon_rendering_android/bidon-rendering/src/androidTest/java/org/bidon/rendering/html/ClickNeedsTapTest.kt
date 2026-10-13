@@ -41,13 +41,23 @@ class ClickNeedsTapTest {
         server.close()
     }
 
-    private class Shown(val links: List<String>, val clicks: Int)
+    /** [address] is the page the ad shows at the end, as its script sees it. */
+    private class Shown(
+        val links: List<String>,
+        val clicks: Int,
+        val pagesLoaded: Int,
+        val loadErrors: Int,
+        val address: String,
+    )
 
     /** Shows [body] filling the ad, lets it run, taps it if [tapped], and returns what it opened. */
     private fun show(body: String, tapped: Boolean): Shown {
         val clicks = AtomicInteger()
+        val pagesLoaded = AtomicInteger()
+        val loadErrors = AtomicInteger()
         val loaded = CountDownLatch(1)
         lateinit var webView: HtmlWebView
+        var address = ""
         val links = ActivityScenario.launch(BlankActivity::class.java).use { scenario ->
             LinkStarts.during {
                 try {
@@ -56,7 +66,11 @@ class ClickNeedsTapTest {
                         webView.webViewClient = ClickHandler(
                             activity,
                             onClick = { clicks.incrementAndGet() },
-                            onPageLoaded = { loaded.countDown() },
+                            onPageLoaded = {
+                                pagesLoaded.incrementAndGet()
+                                loaded.countDown()
+                            },
+                            onPageLoadError = { _, _ -> loadErrors.incrementAndGet() },
                         )
                         activity.setContentView(webView)
                         webView.loadHtmlContent("$FILL$body", baseUrl = server.url("/"))
@@ -67,6 +81,7 @@ class ClickNeedsTapTest {
                         instrumentation.runOnMainSync { webView.tap() }
                         SystemClock.sleep(SETTLE_MILLIS)
                     }
+                    address = addressOf(webView)
                 } finally {
                     instrumentation.runOnMainSync {
                         (webView.parent as ViewGroup).removeView(webView)
@@ -75,7 +90,20 @@ class ClickNeedsTapTest {
                 }
             }
         }
-        return Shown(links, clicks.get())
+        return Shown(links, clicks.get(), pagesLoaded.get(), loadErrors.get(), address)
+    }
+
+    private fun addressOf(webView: HtmlWebView): String {
+        val done = CountDownLatch(1)
+        var address = ""
+        instrumentation.runOnMainSync {
+            webView.evaluateJavascript("location.href") {
+                address = it
+                done.countDown()
+            }
+        }
+        assertTrue("the page did not answer", done.await(5, TimeUnit.SECONDS))
+        return address
     }
 
     @Test
@@ -93,6 +121,40 @@ class ClickNeedsTapTest {
         val shown = show("<iframe src='${server.url("/frame")}'></iframe>", tapped = false)
 
         assertEquals("the iframe was never loaded", 1, server.requestCount("/frame"))
+        assertEquals(emptyList<String>(), shown.links)
+        assertEquals(0, shown.clicks)
+    }
+
+    /**
+     * A form sent with POST never reaches the code that refuses navigations, so it is turned away on its way out. A
+     * tapped one is turned away too: it is neither sent nor counted.
+     */
+    @Test
+    fun aCreativeThatPostsAFormAsItLoadsStaysTheAd() {
+        val shown = show(
+            "<form id='f' method='post' action='${server.url("/form")}'><input name='a' value='b'></form>" +
+                "<script>document.getElementById('f').submit()</script>",
+            tapped = false,
+        )
+
+        assertEquals("the form was sent", 0, server.requestCount("/form"))
+        assertEquals("the ad was replaced by another page", "\"${server.url("/")}\"", shown.address)
+        assertEquals("the ad was loaded again", 1, shown.pagesLoaded)
+        assertEquals("the ad was reported as failed to load", 0, shown.loadErrors)
+        assertEquals(emptyList<String>(), shown.links)
+        assertEquals(0, shown.clicks)
+    }
+
+    @Test
+    fun aTappedFormIsNotSentEither() {
+        val shown = show(
+            "<form style='height: 100%' method='post' action='${server.url("/form")}'>" +
+                "<button id='ad'>Send</button></form>",
+            tapped = true,
+        )
+
+        assertEquals("the form was sent", 0, server.requestCount("/form"))
+        assertEquals("the ad was replaced by another page", "\"${server.url("/")}\"", shown.address)
         assertEquals(emptyList<String>(), shown.links)
         assertEquals(0, shown.clicks)
     }
