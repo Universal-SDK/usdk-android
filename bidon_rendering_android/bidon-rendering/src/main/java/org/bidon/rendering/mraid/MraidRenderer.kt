@@ -49,6 +49,7 @@ internal class MraidRenderer(
             context = context.applicationContext,
             webView = wv,
             placement = MraidPlacementType.INLINE,
+            closeButton = rendering.closeButton,
             // mraid.close() from the creative. While it is fullscreen the hosting activity has to
             // dismiss itself; inline there is no activity, so it is reported straight up. This
             // used to be wired to onImpression, so a creative closing itself counted as a view.
@@ -74,7 +75,7 @@ internal class MraidRenderer(
                 listener.onLoaded()
             },
             onPageLoadError = { errorCode, description ->
-                // Only the creative's own load: a two-part expand loads its URL into the same WebView afterwards.
+                // Only the creative's own load: the creative cannot load another page into the ad after it.
                 if (!isLoaded) events?.loadFailed(LoadFailure.WEBVIEW_ERROR, errorCode)
                 listener.onError(Exception(description))
             },
@@ -179,7 +180,7 @@ internal class MraidRenderer(
      */
     private fun onWebViewGone(didCrash: Boolean) {
         events?.processGone(didCrash)
-        // Takes down an expanded ad's overlay, which the WebView was drawn in.
+        // Takes down an expanded ad's dialog, which the WebView was drawn in.
         controller?.destroy()
         controller = null
         webView = null

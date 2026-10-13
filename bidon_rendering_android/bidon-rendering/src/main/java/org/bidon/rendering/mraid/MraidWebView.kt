@@ -1,6 +1,8 @@
 package org.bidon.rendering.mraid
 
 import android.content.Context
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.webkit.WebChromeClient
 import org.bidon.rendering.html.ClickHandler
 import org.bidon.rendering.html.HtmlWebView
@@ -14,6 +16,12 @@ import org.bidon.rendering.html.HtmlWebView
 internal class MraidWebView(context: Context) : HtmlWebView(context) {
 
     private var bridge: MraidJsBridge? = null
+
+    /**
+     * Called as the user touches the ad, or presses a key that activates what has focus in it, before the creative
+     * sees either.
+     */
+    var onUserInput: (() -> Unit)? = null
 
     // No settings are changed here on purpose. HtmlWebView owns the WebView configuration for
     // both HTML and MRAID; this class used to override mixedContentMode with a different value
@@ -75,6 +83,11 @@ internal class MraidWebView(context: Context) : HtmlWebView(context) {
         evaluateSafe("mraid.fireSizeChangeEvent($width, $height)")
     }
 
+    /** [message] and [action] are the SDK's own constants, never text from the creative. */
+    fun fireError(message: String, action: String) {
+        evaluateSafe("mraid.fireErrorEvent('$message', '$action')")
+    }
+
     // ──────────────────────────────────────────
     // Internal helpers
     // ──────────────────────────────────────────
@@ -104,8 +117,30 @@ internal class MraidWebView(context: Context) : HtmlWebView(context) {
         }
     }
 
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) onUserInput?.invoke()
+        return super.dispatchTouchEvent(event)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && event.keyCode in ACTIVATION_KEYS) {
+            onUserInput?.invoke()
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun destroy() {
         bridge = null
         super.destroy()
+    }
+
+    private companion object {
+        /** The keys Android and the web take as activating what has focus. */
+        val ACTIVATION_KEYS = setOf(
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_SPACE,
+        )
     }
 }

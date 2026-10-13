@@ -24,13 +24,8 @@ internal class MraidJsBridge(
     }
 
     @JavascriptInterface
-    fun expand(url: String?) {
-        onMain { controller.expand(url) }
-    }
-
-    @JavascriptInterface
     fun expand() {
-        onMain { controller.expand(null) }
+        onMain { controller.expand() }
     }
 
     @JavascriptInterface

@@ -41,7 +41,7 @@ internal class FullscreenAdActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         supportActionBar?.hide()
-        AdWindow.goFullscreen(this)
+        AdWindow.goFullscreen(window)
         onBackPressedDispatcher.addCallback(this, holdBack)
 
         presentationKey = intent.getStringExtra(PresentedAds.EXTRA_KEY)
