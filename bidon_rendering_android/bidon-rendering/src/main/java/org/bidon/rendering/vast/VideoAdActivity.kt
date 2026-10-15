@@ -78,7 +78,7 @@ internal class VideoAdActivity : AppCompatActivity() {
 
         // Was SCREEN_ORIENTATION_SENSOR, which invited the rotation that recreated this
         // activity and restarted the video from the beginning.
-        AdWindow.goFullscreen(this)
+        AdWindow.goFullscreen(window)
         onBackPressedDispatcher.addCallback(this, holdBack)
 
         val mediaUrl = intent.getStringExtra(EXTRA_MEDIA_URL)

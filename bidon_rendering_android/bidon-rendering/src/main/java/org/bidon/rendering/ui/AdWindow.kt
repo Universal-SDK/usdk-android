@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -67,8 +68,7 @@ internal object AdWindow {
      * off, so on a phone with gesture navigation the swipe reached the ad as a tap: Back did
      * nothing and the advertiser's page opened instead.
      */
-    fun goFullscreen(activity: Activity) {
-        val window = activity.window
+    fun goFullscreen(window: Window) {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE

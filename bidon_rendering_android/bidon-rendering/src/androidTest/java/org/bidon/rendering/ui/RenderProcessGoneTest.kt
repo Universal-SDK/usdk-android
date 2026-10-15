@@ -18,6 +18,7 @@ import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.AdRenderingConfig
+import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.html.ClickHandler
 import org.bidon.rendering.html.HtmlRenderer
 import org.bidon.rendering.html.HtmlWebView
@@ -404,7 +405,11 @@ class RenderProcessGoneTest {
         val webViews = onMain { listOf(MraidWebView(context), MraidWebView(context)) }
         try {
             val (destroyedOne, liveOne) = webViews.map {
-                onMain { MraidController(context, it, MraidPlacementType.INLINE, { closes.incrementAndGet() }) }
+                onMain {
+                    MraidController(context, it, MraidPlacementType.INLINE, CloseButtonConfig()) {
+                        closes.incrementAndGet()
+                    }
+                }
             }
             onMain {
                 destroyedOne.onReady()

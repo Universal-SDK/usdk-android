@@ -181,13 +181,12 @@
             fireErrorEvent("Can only expand from default state", "expand");
             return;
         }
-        try {
-            if (url) {
-                window._mraidBridge.expand(url);
-            } else {
-                window._mraidBridge.expand();
-            }
-        } catch (e) { fireErrorEvent(e.message, "expand"); }
+        if (url) {
+            fireErrorEvent("Expanding to another page is not supported", "expand");
+            return;
+        }
+        try { window._mraidBridge.expand(); }
+        catch (e) { fireErrorEvent(e.message, "expand"); }
     }
 
     function close() {

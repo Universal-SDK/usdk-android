@@ -41,12 +41,10 @@ internal class MraidStateMachine(
     var current: MraidState = MraidState.LOADING
         private set
 
-    fun transitionTo(next: MraidState): Boolean {
-        val allowed = allowedTransitions(current, placement)
+    fun canTransitionTo(next: MraidState): Boolean = next in allowedTransitions(current, placement)
 
-        if (next !in allowed) {
-            return false
-        }
+    fun transitionTo(next: MraidState): Boolean {
+        if (!canTransitionTo(next)) return false
 
         current = next
         onStateChanged(next)
