@@ -42,7 +42,7 @@ import java.util.concurrent.atomic.AtomicReference
  * fills it.
  *
  * 7003, 7005 and 7002 are checked where their sites are driven: `RenderProcessGoneTest` and `VideoAdTrackingTest`.
- * 11003 has no site in the renderer yet, so it has no test here.
+ * 11003 needs a second process and is checked in `CrossProcessAdsTest`.
  */
 @RunWith(AndroidJUnit4::class)
 class ShowTelemetryTest {

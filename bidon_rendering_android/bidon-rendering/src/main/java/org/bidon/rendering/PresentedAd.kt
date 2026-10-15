@@ -1,6 +1,12 @@
 package org.bidon.rendering
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import android.util.Log
 import android.view.View
+import java.io.File
 import org.bidon.rendering.telemetry.AdEvents
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -85,5 +91,38 @@ internal object PresentedAds {
 
     fun unregister(key: String?) {
         key?.let { entries.remove(it) }
+    }
+
+    fun crossProcessError(context: Context, targetActivityClass: Class<*>): IllegalStateException? {
+        val currentProcess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            android.app.Application.getProcessName()
+        } else {
+            try {
+                File("/proc/self/cmdline").readText().trim('\u0000')
+            } catch (e: Exception) {
+                Log.w("BidonRenderer", "Could not read /proc/self/cmdline, skipping process check", e)
+                return null
+            }
+        }
+
+        val component = ComponentName(context, targetActivityClass)
+        val targetProcess = try {
+            context.packageManager.getActivityInfo(component, 0).processName
+        } catch (e: PackageManager.NameNotFoundException) {
+            Log.w("BidonRenderer", "Target activity info not found in manifest", e)
+            return null
+        }
+
+        return evaluateProcessNames(currentProcess, targetProcess)
+    }
+
+    @org.jetbrains.annotations.VisibleForTesting
+    internal fun evaluateProcessNames(current: String, target: String): IllegalStateException? {
+        if (current != target) {
+            return IllegalStateException(
+                "Execution failed: Ad shown from process '$current' but target activity runs in '$target'. Cross-process rendering is disabled."
+            )
+        }
+        return null
     }
 }

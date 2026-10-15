@@ -6,6 +6,7 @@ import android.view.View
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PresentedAdsTest {
@@ -64,5 +65,27 @@ class PresentedAdsTest {
         assertNull(PresentedAds.get(null))
         assertNull(PresentedAds.get("never-registered"))
         PresentedAds.unregister(null) // must not throw
+    }
+
+    @Test
+    fun `evaluateProcessNames returns IllegalStateException with both process names on mismatch`() {
+        val currentProcess = "com.demo.tetris:ads"
+        val targetProcess = "com.demo.tetris"
+
+        val error = PresentedAds.evaluateProcessNames(currentProcess, targetProcess)
+
+        assertNotNull(error)
+        assertTrue(error!!.message!!.contains("Ad shown from process 'com.demo.tetris:ads'"))
+        assertTrue(error.message!!.contains("but target activity runs in 'com.demo.tetris'"))
+    }
+
+    @Test
+    fun `evaluateProcessNames returns null when process names are identical`() {
+        val currentProcess = "com.demo.tetris"
+        val targetProcess = "com.demo.tetris"
+
+        val error = PresentedAds.evaluateProcessNames(currentProcess, targetProcess)
+
+        assertNull(error)
     }
 }

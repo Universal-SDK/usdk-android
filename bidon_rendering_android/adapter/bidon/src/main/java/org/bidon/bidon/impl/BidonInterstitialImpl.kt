@@ -43,6 +43,8 @@ internal class BidonInterstitialImpl :
 
     private val scope = MainScope()
     private var loadDeadline: RendererLoadDeadline? = null
+    private var isShowCalled = false
+    private var isShownEmitted = false
 
     override fun getAuctionParam(
         auctionParamsScope: AdAuctionParamSource
@@ -64,6 +66,8 @@ internal class BidonInterstitialImpl :
 
     override fun load(adParams: BidonFullscreenAuctionParams) {
         Log.d(TAG, "load() creativeType=${adParams.creativeType}")
+        isShowCalled = false
+        isShownEmitted = false
 
         val ad = getAd()
 
@@ -79,6 +83,7 @@ internal class BidonInterstitialImpl :
             override fun onImpression() {
                 if (!isImpressionSent) {
                     isImpressionSent = true
+                    isShownEmitted = true
                     ad?.let { emitEvent(AdEvent.Shown(it)) }
                 }
             }
@@ -99,7 +104,17 @@ internal class BidonInterstitialImpl :
             override fun onError(error: Throwable) {
                 Log.e(TAG, "Ad error: ${error.message}")
                 isAdReadyToShow = false
-                emitEvent(AdEvent.LoadFailed(BidonError.NoFill(BidonDemandId)))
+
+                if (isShownEmitted) {
+                    Log.w(TAG, "Ad runtime error after impression: ${error.message}", error)
+                    return
+                }
+
+                if (isShowCalled) {
+                    emitEvent(AdEvent.ShowFailed(BidonError.Unspecified(BidonDemandId, error)))
+                } else {
+                    emitEvent(AdEvent.LoadFailed(BidonError.NoFill(BidonDemandId)))
+                }
             }
         }
 
@@ -119,6 +134,7 @@ internal class BidonInterstitialImpl :
             emitEvent(AdEvent.ShowFailed(BidonError.AdNotReady))
             return
         }
+        isShowCalled = true
         r.showFullscreen(activity)
     }
 
@@ -130,5 +146,8 @@ internal class BidonInterstitialImpl :
         renderer = null
         isAdReadyToShow = false
         isImpressionSent = false
+
+        isShowCalled = false
+        isShownEmitted = false
     }
 }

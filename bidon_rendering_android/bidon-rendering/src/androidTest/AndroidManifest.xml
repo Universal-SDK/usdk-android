@@ -103,6 +103,17 @@
             android:name="org.bidon.rendering.telemetry.CrashVictimService"
             android:exported="false"
             android:process=":crash_victim" />
+
+        <!-- Runs the cross-process check in a process of its own, as a host that shows ads from outside the main process. -->
+        <service
+            android:name="org.bidon.rendering.telemetry.AdsService"
+            android:process=":ads"
+            android:exported="false" />
+
+        <activity
+            android:name="org.bidon.rendering.telemetry.ShowFromAdsActivity"
+            android:process=":ads"
+            android:exported="false" />
     </application>
 
 </manifest>

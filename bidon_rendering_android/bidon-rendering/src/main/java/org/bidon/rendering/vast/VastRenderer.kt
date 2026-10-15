@@ -95,6 +95,9 @@ internal class VastRenderer(
         // A destroyed renderer has dropped its ad, so it fails here as one that never loaded.
         val ad = vastAd ?: return failShow(events, listener, ErrorCode.SHOW_NOT_READY)
         if (presentationKey != null) return failShow(events, listener, ErrorCode.SHOW_TWICE)
+        PresentedAds.crossProcessError(activity, VideoAdActivity::class.java)?.let {
+            return failShow(events, listener, ErrorCode.SHOWN_FROM_OTHER_PROCESS, cause = it)
+        }
         events?.showStarted()
 
         val media = MediaFileSelector

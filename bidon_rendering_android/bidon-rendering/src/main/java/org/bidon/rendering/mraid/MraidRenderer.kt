@@ -202,6 +202,9 @@ internal class MraidRenderer(
     override fun showFullscreen(activity: Activity) {
         events?.showRequested()
         readyCheckFailure()?.let { return failShow(events, listener, it) }
+        PresentedAds.crossProcessError(activity, MraidAdActivity::class.java)?.let {
+            return failShow(events, listener, ErrorCode.SHOWN_FROM_OTHER_PROCESS, cause = it)
+        }
         events?.showStarted()
 
         // Fullscreen means interstitial placement, which forbids expand and resize. Only the

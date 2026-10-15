@@ -51,4 +51,4 @@ The unit test `ErrorCodeTest` reads this file and fails when it and the `ErrorCo
 | 8004 | WEBVIEW_RESOURCE_NETWORK | network | – | – | webview | webview_error | reserved | BID-134 |
 | 11001 | SHOW_NOT_READY | publisher | – | ready_check | – | ad_show_failed | active | BID-140 |
 | 11002 | SHOW_TWICE | publisher | – | ready_check | – | ad_show_failed | active | BID-140 |
-| 11003 | SHOWN_FROM_OTHER_PROCESS | publisher | – | ready_check | – | ad_show_failed | reserved | BID-140 |
+| 11003 | SHOWN_FROM_OTHER_PROCESS | publisher | – | ready_check | – | ad_show_failed | active | BID-86 |
