@@ -170,18 +170,52 @@ class MraidExpandTest {
         assertEquals("\"expanded,default,error expand,expanded\"", run("events.join()"))
     }
 
-    /** A key that activates what has focus in the ad counts as the touch, for the user without a touch screen. */
+    // A key that activates what has focus in the ad counts as the touch, for the user without a touch screen.
+
     @Test
-    fun afterAClosePressingEnterOnTheAdLetsItExpandAgain() {
-        expand()
-        run("mraid.close()")
-        SystemClock.sleep(SETTLE_MILLIS)
+    fun afterAClosePressingEnterOnTheAdLetsItExpandAgain() = assertPressingLetsItExpandAgain(KeyEvent.KEYCODE_ENTER)
 
-        instrumentation.runOnMainSync { banner.requestFocus() }
-        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_ENTER)
+    @Test
+    fun afterAClosePressingNumpadEnterOnTheAdLetsItExpandAgain() =
+        assertPressingLetsItExpandAgain(KeyEvent.KEYCODE_NUMPAD_ENTER)
+
+    @Test
+    fun afterAClosePressingTheDpadCentreOnTheAdLetsItExpandAgain() =
+        assertPressingLetsItExpandAgain(KeyEvent.KEYCODE_DPAD_CENTER)
+
+    @Test
+    fun afterAClosePressingSpaceOnTheAdLetsItExpandAgain() = assertPressingLetsItExpandAgain(KeyEvent.KEYCODE_SPACE)
+
+    @Test
+    fun afterAClosePressingALetterOnTheAdDoesNotLetItExpandAgain() {
+        closeAndFocusTheBanner()
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_A)
         expand()
 
-        assertEquals("\"expanded,default,expanded\"", run("events.join()"))
+        assertEquals("\"expanded,default,error expand\"", run("events.join()"))
+    }
+
+    // A key held down or let go after the close is not a new press. A press that closes the ad through a control in the
+    // creative lets go after the close, and a held key repeats.
+
+    @Test
+    fun afterACloseAKeyHeldDownDoesNotLetItExpandAgain() {
+        closeAndFocusTheBanner()
+        val down = SystemClock.uptimeMillis()
+        instrumentation.sendKeySync(KeyEvent(down, down, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 1))
+        expand()
+
+        assertEquals("\"expanded,default,error expand\"", run("events.join()"))
+    }
+
+    @Test
+    fun afterACloseAKeyLetGoDoesNotLetItExpandAgain() {
+        closeAndFocusTheBanner()
+        val down = SystemClock.uptimeMillis()
+        instrumentation.sendKeySync(KeyEvent(down, down, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0))
+        expand()
+
+        assertEquals("\"expanded,default,error expand\"", run("events.join()"))
     }
 
     /** A host that shows the banner in a dialog of its own, a bottom sheet for instance. */
@@ -414,6 +448,26 @@ class MraidExpandTest {
     private fun expand() {
         run("mraid.expand()")
         SystemClock.sleep(SETTLE_MILLIS)
+    }
+
+    private fun assertPressingLetsItExpandAgain(keyCode: Int) {
+        closeAndFocusTheBanner()
+        // A creative that handles the key itself. Otherwise Android follows a key the ad leaves alone with its fallback,
+        // Enter for numpad Enter, and the test would pass on Enter.
+        run("document.addEventListener('keydown', function (e) { e.preventDefault() })")
+        instrumentation.sendKeyDownUpSync(keyCode)
+        expand()
+
+        assertEquals("\"expanded,default,expanded\"", run("events.join()"))
+    }
+
+    /** Expanded and closed, which holds the next expand, with the keys going to the banner. */
+    private fun closeAndFocusTheBanner() {
+        expand()
+        run("mraid.close()")
+        SystemClock.sleep(SETTLE_MILLIS)
+        instrumentation.runOnMainSync { banner.requestFocus() }
+        waitUntil("the banner did not take the focus") { banner.hasFocus() }
     }
 
     private fun assertBackInItsContainer() {
