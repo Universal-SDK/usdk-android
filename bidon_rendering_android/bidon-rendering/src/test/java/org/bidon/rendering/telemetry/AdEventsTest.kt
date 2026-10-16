@@ -693,7 +693,7 @@ class AdEventsTest {
             assertEquals(reason.wireName, recording.single("creative_load_failed").getString("reason"))
         }
         assertEquals(
-            listOf("webview_error", "markup_rejected", "vast_error", "no_media_file", "playback_error"),
+            listOf("webview_error", "markup_rejected", "vast_error", "no_media_file", "playback_error", "blank_creative"),
             LoadFailure.entries.map { it.wireName },
         )
     }

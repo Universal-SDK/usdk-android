@@ -10,6 +10,7 @@ import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
+import org.bidon.rendering.html.ContentProbe
 import org.bidon.rendering.ui.AdWindow
 import androidx.core.view.doOnAttach
 import org.bidon.rendering.mraid.ui.MraidAdActivity
@@ -24,10 +25,12 @@ internal class MraidRenderer(
 
     private var webView: MraidWebView? = null
     private var controller: MraidController? = null
+    private var probe: ContentProbe? = null
     private var listener: AdRenderer.Listener? = null
 
     private var isDestroyed = false
 
+    private var isPageFinished = false
     private var isLoaded = false
 
     private var presentationKey: String? = null
@@ -40,6 +43,9 @@ internal class MraidRenderer(
     override fun load(adm: String, listener: AdRenderer.Listener) {
         this.listener = listener
         isDestroyed = false
+        cancelProbe()
+        isPageFinished = false
+        isLoaded = false
         events?.loadStarted()
 
         val wv = MraidWebView(context.applicationContext)
@@ -68,16 +74,31 @@ internal class MraidRenderer(
         wv.attachBridge(
             bridge = MraidJsBridge(ctrl),
             onClick = { listener.onClick() },
+            // A view an earlier load left behind reports nothing: the renderer's state belongs to the latest load.
             onPageLoaded = {
-                ctrl.onReady(afterReady = {})
-                isLoaded = true
-                events?.loaded()
-                listener.onLoaded()
+                if (webView === wv && !isPageFinished) {
+                    isPageFinished = true
+                    val pageProbe = ContentProbe(wv) { hasContent -> onProbed(ctrl, wv, hasContent) }
+                    probe = pageProbe
+                    // Read after the creative has heard `ready`, which many creatives wait for to draw anything.
+                    ctrl.onReady(afterReady = { if (probe === pageProbe) pageProbe.start() })
+                }
             },
             onPageLoadError = { errorCode, description ->
-                // Only the creative's own load: the creative cannot load another page into the ad after it.
-                if (!isLoaded) events?.loadFailed(LoadFailure.WEBVIEW_ERROR, errorCode)
-                listener.onError(Exception(description))
+                if (webView === wv) {
+                    // Only the creative's own load, which lasts until the page has been read, fails the load: the
+                    // creative cannot load another page into the ad after it. A failed load's view is never handed out,
+                    // and the page Android shows for the error is never read, since the view is no longer the ad's.
+                    val failsTheLoad = !isLoaded
+                    if (failsTheLoad) {
+                        cancelProbe()
+                        controller = null
+                        webView = null
+                        events?.loadFailed(LoadFailure.WEBVIEW_ERROR, errorCode)
+                    }
+                    listener.onError(Exception(description))
+                    if (failsTheLoad) dropView(ctrl, wv)
+                }
             },
             onWebViewGone = ::onWebViewGone
         )
@@ -115,6 +136,27 @@ internal class MraidRenderer(
             ctrl.destroy()
             wv.destroy()
         }
+    }
+
+    /** A page with something on it has loaded; a blank one is a failed load, and its view is never handed out. */
+    private fun onProbed(ctrl: MraidController, wv: MraidWebView, hasContent: Boolean) {
+        probe = null
+        if (hasContent) {
+            isLoaded = true
+            events?.loaded()
+            listener?.onLoaded()
+            return
+        }
+        controller = null
+        webView = null
+        events?.loadFailed(LoadFailure.BLANK_CREATIVE)
+        listener?.onError(ContentProbe.blankCreative())
+        dropView(ctrl, wv)
+    }
+
+    private fun cancelProbe() {
+        probe?.cancel()
+        probe = null
     }
 
     override fun attach(container: ViewGroup) {
@@ -179,6 +221,7 @@ internal class MraidRenderer(
      * itself.
      */
     private fun onWebViewGone(didCrash: Boolean) {
+        cancelProbe()
         events?.processGone(didCrash)
         // Takes down an expanded ad's dialog, which the WebView was drawn in.
         controller?.destroy()
@@ -199,6 +242,7 @@ internal class MraidRenderer(
 
     override fun destroy() {
         isDestroyed = true
+        cancelProbe()
 
         PresentedAds.unregister(presentationKey)
         presentationKey = null

@@ -26,8 +26,10 @@ internal class HtmlRenderer(
     private val appContext = context.applicationContext
 
     private var webView: HtmlWebView? = null
+    private var probe: ContentProbe? = null
     private var listener: AdRenderer.Listener? = null
 
+    private var isPageFinished = false
     private var isLoaded = false
     private var isDestroyed = false
 
@@ -42,6 +44,9 @@ internal class HtmlRenderer(
     ) {
         this.listener = listener
         isDestroyed = false
+        cancelProbe()
+        isPageFinished = false
+        isLoaded = false
         events?.loadStarted()
 
         val html = injectViewportMetaTag(adm)
@@ -54,15 +59,27 @@ internal class HtmlRenderer(
                 onClick = {
                     this@HtmlRenderer.listener?.onClick()
                 },
+                // A view an earlier load left behind reports nothing: the renderer's state belongs to the latest load.
                 onPageLoaded = {
-                    isLoaded = true
-                    events?.loaded()
-                    this@HtmlRenderer.listener?.onLoaded()
+                    if (webView === this && !isPageFinished) {
+                        isPageFinished = true
+                        probe = ContentProbe(this) { hasContent -> onProbed(this, hasContent) }.also { it.start() }
+                    }
                 },
                 onPageLoadError = { errorCode, description ->
-                    // Only the creative's own load; a navigation after it is not a load failure.
-                    if (!isLoaded) events?.loadFailed(LoadFailure.WEBVIEW_ERROR, errorCode)
-                    this@HtmlRenderer.listener?.onError(Exception(description))
+                    if (webView === this) {
+                        // Only the creative's own load, which lasts until the page has been read, fails the load; a
+                        // navigation after it does not. A failed load's view is never handed out, and the page Android
+                        // shows for the error is never read, since the view is no longer the ad's.
+                        val failsTheLoad = !isLoaded
+                        if (failsTheLoad) {
+                            cancelProbe()
+                            webView = null
+                            events?.loadFailed(LoadFailure.WEBVIEW_ERROR, errorCode)
+                        }
+                        this@HtmlRenderer.listener?.onError(Exception(description))
+                        if (failsTheLoad) runCatching { this@apply.destroy() }
+                    }
                 },
                 onWebViewGone = ::onWebViewGone
             )
@@ -90,6 +107,26 @@ internal class HtmlRenderer(
             listener.onError(e)
             runCatching { view.destroy() }
         }
+    }
+
+    /** A page with something on it has loaded; a blank one is a failed load, and its view is never handed out. */
+    private fun onProbed(view: HtmlWebView, hasContent: Boolean) {
+        probe = null
+        if (hasContent) {
+            isLoaded = true
+            events?.loaded()
+            listener?.onLoaded()
+            return
+        }
+        webView = null
+        events?.loadFailed(LoadFailure.BLANK_CREATIVE)
+        listener?.onError(ContentProbe.blankCreative())
+        runCatching { view.destroy() }
+    }
+
+    private fun cancelProbe() {
+        probe?.cancel()
+        probe = null
     }
 
     override fun getView(): View? = webView
@@ -155,6 +192,7 @@ internal class HtmlRenderer(
      * has nothing left to report.
      */
     private fun onWebViewGone(didCrash: Boolean) {
+        cancelProbe()
         events?.processGone(didCrash)
         webView = null
         isLoaded = false
@@ -172,6 +210,7 @@ internal class HtmlRenderer(
 
     override fun destroy() {
         isDestroyed = true
+        cancelProbe()
 
         PresentedAds.unregister(presentationKey)
         presentationKey = null
