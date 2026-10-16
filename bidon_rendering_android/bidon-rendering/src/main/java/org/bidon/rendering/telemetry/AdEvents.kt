@@ -27,6 +27,9 @@ internal enum class LoadFailure(val wireName: String) {
 
     /** The player could not play the video. */
     PLAYBACK_ERROR("playback_error"),
+
+    /** The page loaded with nothing on it that could be seen. */
+    BLANK_CREATIVE("blank_creative"),
 }
 
 /**

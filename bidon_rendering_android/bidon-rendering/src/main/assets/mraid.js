@@ -14,6 +14,8 @@
     var _placementType = "inline";
     var _isViewable = false;
     var _isReady = false;
+    // The creative asked whether it is on screen before it was: it may draw nothing until it is.
+    var _waitsForViewable = false;
 
     var _expandProperties = {
         width: window.screen.width,
@@ -41,6 +43,7 @@
         if (typeof listener !== "function") return;
         if (!_listeners[event]) _listeners[event] = [];
         _listeners[event].push(listener);
+        if (event === "viewableChange" && !_isViewable) _waitsForViewable = true;
     }
 
     function removeEventListener(event, listener) {
@@ -96,7 +99,10 @@
 
     function getPlacementType() { return _placementType; }
 
-    function isViewable() { return _isViewable; }
+    function isViewable() {
+        if (!_isViewable) _waitsForViewable = true;
+        return _isViewable;
+    }
 
     function isReady() { return _isReady; }
 
@@ -277,7 +283,8 @@
         fireErrorEvent: fireErrorEvent,
 
         // Internal
-        _setPlacementType: _setPlacementType
+        _setPlacementType: _setPlacementType,
+        _waitsForViewable: function () { return _waitsForViewable; }
     };
 
 }(window));

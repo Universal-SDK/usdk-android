@@ -69,12 +69,13 @@ internal class MraidController(
     // Lifecycle
     // ──────────────────────────────────────────
 
-    /** Call after WebView is attached and mraid.js is injected */
-    fun onReady() {
+    /** Call once the page has loaded. [afterReady] runs once the creative has heard `ready`, unless destroyed first. */
+    fun onReady(afterReady: () -> Unit) {
         post {
-            stateMachine.transitionTo(MraidState.DEFAULT)
+            stateMachine.ready()
             webView.fireReadyEvent()
             webView.fireViewableChange(isViewable = true)
+            afterReady()
         }
     }
 

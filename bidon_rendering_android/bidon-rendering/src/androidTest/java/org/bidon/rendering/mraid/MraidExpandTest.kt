@@ -24,6 +24,7 @@ import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.AdRenderingConfig
+import org.bidon.rendering.TestCreatives.PAINTED
 import org.bidon.rendering.TestCreatives.SETTLE_MILLIS
 import org.bidon.rendering.tap
 import org.bidon.rendering.ui.BlankActivity
@@ -74,7 +75,7 @@ class MraidExpandTest {
             override fun onReward() = Unit
             override fun onError(error: Throwable) = Unit
         }
-        instrumentation.runOnMainSync { renderer.load(STATES, listener) }
+        instrumentation.runOnMainSync { renderer.load(PAINTED + STATES, listener) }
         assertTrue("the ad did not load", loaded.await(10, TimeUnit.SECONDS))
         scenario = ActivityScenario.launch(BlankActivity::class.java)
         scenario.onActivity { activity ->

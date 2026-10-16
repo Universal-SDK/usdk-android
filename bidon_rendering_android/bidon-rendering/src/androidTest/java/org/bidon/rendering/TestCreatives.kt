@@ -15,6 +15,9 @@ object TestCreatives {
     /** Stretches the creative's element with the id `ad` over the whole ad, so a tap in the middle lands on it. */
     const val FILL = "<style>html, body { margin: 0; height: 100% } #ad { display: block; height: 100% }</style>"
 
+    /** A white page, so a creative that is only a script still shows something and is not turned away as blank. */
+    const val PAINTED = "<style>body { background: #fff }</style>"
+
     /** How long a creative is given to act, once it has loaded and again after a tap. */
     const val SETTLE_MILLIS = 1_000L
 }

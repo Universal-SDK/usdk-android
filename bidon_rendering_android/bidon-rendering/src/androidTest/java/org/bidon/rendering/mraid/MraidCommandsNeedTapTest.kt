@@ -16,6 +16,7 @@ import org.bidon.rendering.TestCreatives.FILL
 import org.bidon.rendering.TestCreatives.LINKS
 import org.bidon.rendering.TestCreatives.OPENED
 import org.bidon.rendering.TestCreatives.OTHER_APP_LINK
+import org.bidon.rendering.TestCreatives.PAINTED
 import org.bidon.rendering.TestCreatives.SETTLE_MILLIS
 import org.bidon.rendering.swipe
 import org.bidon.rendering.tap
@@ -66,7 +67,7 @@ class MraidCommandsNeedTapTest {
         val links = ActivityScenario.launch(BlankActivity::class.java).use { scenario ->
             LinkStarts.during {
                 try {
-                    instrumentation.runOnMainSync { renderer.load("$FILL$body", listener) }
+                    instrumentation.runOnMainSync { renderer.load("$PAINTED$FILL$body", listener) }
                     assertTrue("the ad did not load", listener.loaded.await(10, TimeUnit.SECONDS))
                     scenario.onActivity { activity ->
                         activity.setContentView(FrameLayout(activity).also { renderer.attach(it) })

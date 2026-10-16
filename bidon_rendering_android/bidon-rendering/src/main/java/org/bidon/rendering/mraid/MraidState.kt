@@ -43,6 +43,11 @@ internal class MraidStateMachine(
 
     fun canTransitionTo(next: MraidState): Boolean = next in allowedTransitions(current, placement)
 
+    /** Leaves [MraidState.LOADING] without a state change: the creative hears it with the ready event. */
+    fun ready() {
+        if (current == MraidState.LOADING) current = MraidState.DEFAULT
+    }
+
     fun transitionTo(next: MraidState): Boolean {
         if (!canTransitionTo(next)) return false
 
