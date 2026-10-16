@@ -412,8 +412,8 @@ class RenderProcessGoneTest {
                 }
             }
             onMain {
-                destroyedOne.onReady()
-                liveOne.onReady()
+                destroyedOne.onReady(afterReady = {})
+                liveOne.onReady(afterReady = {})
             }
             instrumentation.waitForIdleSync()
 

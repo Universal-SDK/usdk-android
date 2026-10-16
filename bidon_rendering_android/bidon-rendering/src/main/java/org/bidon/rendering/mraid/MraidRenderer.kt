@@ -69,7 +69,7 @@ internal class MraidRenderer(
             bridge = MraidJsBridge(ctrl),
             onClick = { listener.onClick() },
             onPageLoaded = {
-                ctrl.onReady()
+                ctrl.onReady(afterReady = {})
                 isLoaded = true
                 events?.loaded()
                 listener.onLoaded()

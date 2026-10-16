@@ -67,8 +67,13 @@ internal class MraidWebView(context: Context) : HtmlWebView(context) {
     // JS event helpers (called by MraidController)
     // ──────────────────────────────────────────
 
+    /**
+     * The state change to `default`, then `ready`. Delivered at once, not queued until the view is in a window as the
+     * other events are: many creatives draw only on `ready`, and a creative that has drawn nothing by the end of its
+     * load is turned away as blank. Main thread.
+     */
     fun fireReadyEvent() {
-        evaluateSafe("mraid.fireReadyEvent()")
+        evaluateJavascript("mraid.fireStateChangeEvent('${MraidState.DEFAULT.toJs()}'); mraid.fireReadyEvent()", null)
     }
 
     fun fireStateChange(state: MraidState) {
