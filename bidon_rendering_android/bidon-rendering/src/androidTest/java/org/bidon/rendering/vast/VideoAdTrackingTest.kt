@@ -161,6 +161,49 @@ class VideoAdTrackingTest {
         }
     }
 
+    /** A response of two ads plays the pod's first one, and the buyer of the other is not told of an impression. */
+    @Test
+    fun onlyTheChosenAdOfAResponseCountsAnImpression() {
+        server.serve("/video.mp4", "video/mp4", testVideo())
+        val events = Events()
+        val inner = { xml: String -> xml.substringAfter("<VAST version=\"4.2\">").substringBeforeLast("</VAST>") }
+        val unchosen = inner(vast("/other-video.mp4"))
+            .replace("<Ad id=\"1\">", "<Ad id=\"2\" sequence=\"2\">")
+            .replace("/impression/", "/other-impression/")
+            .replace("/click/", "/other-click/")
+            .replace(
+                "<Duration>00:00:10</Duration>",
+                "<Duration>00:00:10</Duration><TrackingEvents><Tracking event=\"start\"><![CDATA[${server.url("/other-start")}]]></Tracking></TrackingEvents>"
+            )
+        val chosen = inner(vast("/video.mp4")).replace("<Ad id=\"1\">", "<Ad id=\"1\" sequence=\"1\">")
+
+        check("/other-impression/dsp" in unchosen && "/other-click/video" in unchosen && "/other-start" in unchosen) {
+            "the unchosen fixture does not carry its own URLs"
+        }
+        check("/other-" !in chosen) { "the chosen fixture carries the unchosen ad's URLs" }
+
+        showAd("""<VAST version="4.2">$unchosen$chosen</VAST>""", events) {
+            waitFor("the video to play") { resumedVideoScreen()?.takeIf { it.isPlaying() } }
+            assertTrue(events.impressionReported.await(5, TimeUnit.SECONDS))
+            waitFor("both impression pixels") {
+                (server.requestCount("/impression/dsp") == 1 &&
+                    server.requestCount("/impression/verifier") == 1).takeIf { it }
+            }
+            // Pixels go out on a background thread; give a stray one time to arrive.
+            SystemClock.sleep(1_000)
+
+            assertEquals(1, events.impressions.get())
+            assertEquals(1, server.requestCount("/impression/dsp"))
+            assertEquals(1, server.requestCount("/impression/verifier"))
+            assertEquals(0, server.requestCount("/other-impression/dsp"))
+            assertEquals(0, server.requestCount("/other-impression/verifier"))
+            assertEquals(0, server.requestCount("/other-start"))
+            assertEquals(0, server.requestCount("/other-click/video"))
+            assertEquals(0, server.requestCount("/other-click/end-card"))
+            assertEquals(0, server.requestCount("/other-video.mp4"))
+        }
+    }
+
     /** A wrapper with nowhere to go fails the load, and the event carries the VAST error code and nothing of the ad. */
     @Test
     fun aVastDocumentThatCannotBeParsedReportsItsErrorCode() {
