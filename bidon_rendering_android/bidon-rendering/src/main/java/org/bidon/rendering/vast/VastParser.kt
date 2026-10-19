@@ -51,24 +51,36 @@ internal class VastParser {
         inheritedImpressions: MutableList<String>,
         inheritedTracking: MutableList<TrackingEvent>,
         inheritedClickTracking: MutableList<String>,
-        inheritedCompanions: MutableList<VastCompanion> = mutableListOf()
+        inheritedCompanions: MutableList<VastCompanion> = mutableListOf(),
+        podsAllowed: Boolean = true
     ): Result<VastAd> = withContext(Dispatchers.IO) {
 
         try {
 
-            val parser = Xml.newPullParser().apply {
-
-                setFeature(
-                    XmlPullParser.FEATURE_PROCESS_NAMESPACES,
-                    false
+            // Only one ad of the response is read, so only that ad's pixels can fire.
+            val sequences = adSequences(xml)
+            val chosenAd = VastAdChoice.choose(sequences, podsAllowed)
+            if (chosenAd == null && wrapperDepth > 0) {
+                return@withContext Result.failure(
+                    VastParsingException(
+                        VastError(
+                            303,
+                            "No ad in the wrapped response may play"
+                        )
+                    )
                 )
-
-                setInput(StringReader(xml))
             }
+
+            val parser = newParser(xml)
 
             var eventType = parser.eventType
 
+            var adIndex = -1
+            // A document with no <Ad> directly under <VAST> is read whole, as before.
+            var inChosenAd = sequences.isEmpty()
+
             var isWrapper = false
+            var wrapperAllowsPods = false
             var wrapperUrl: String? = null
             var skipOffset: SkipOffset? = null
 
@@ -86,60 +98,68 @@ internal class VastParser {
 
             while (eventType != XmlPullParser.END_DOCUMENT) {
 
-                if (eventType == XmlPullParser.START_TAG) {
+                when {
+                    eventType == XmlPullParser.START_TAG && isAdElement(parser) ->
+                        inChosenAd = ++adIndex == chosenAd
 
-                    when (parser.name) {
+                    eventType == XmlPullParser.END_TAG && isAdElement(parser) ->
+                        inChosenAd = false
 
-                        "Wrapper" -> {
-                            isWrapper = true
-                        }
+                    eventType == XmlPullParser.START_TAG && inChosenAd ->
+                        when (parser.name) {
 
-                        "VASTAdTagURI" -> {
-                            wrapperUrl = parser.nextText().trim()
-                        }
+                            "Wrapper" -> {
+                                isWrapper = true
+                                val allowMultipleAds = parser.getAttributeValue(null, "allowMultipleAds")?.trim()
+                                wrapperAllowsPods = allowMultipleAds == "true" || allowMultipleAds == "1"
+                            }
 
-                        "Impression" -> {
-                            impressions.add(
-                                parser.nextText().trim()
-                            )
-                        }
+                            "VASTAdTagURI" -> {
+                                wrapperUrl = parser.nextText().trim()
+                            }
 
-                        "Linear" -> {
-                            val skipAttr = parser.getAttributeValue(null, "skipoffset")
-                            if (skipAttr != null) {
-                                skipOffset = SkipOffset.parse(skipAttr)
+                            "Impression" -> {
+                                impressions.add(
+                                    parser.nextText().trim()
+                                )
+                            }
+
+                            "Linear" -> {
+                                val skipAttr = parser.getAttributeValue(null, "skipoffset")
+                                if (skipAttr != null) {
+                                    skipOffset = SkipOffset.parse(skipAttr)
+                                }
+                            }
+
+                            "MediaFile" -> {
+                                parseMediaFile(parser)?.let {
+                                    mediaFiles.add(it)
+                                }
+                            }
+
+                            "Tracking" -> {
+                                parseTracking(parser)?.let {
+                                    trackingEvents.add(it)
+                                }
+                            }
+
+                            "ClickThrough" -> {
+                                clickThroughUrl =
+                                    parser.nextText().trim()
+                            }
+
+                            "ClickTracking" -> {
+                                clickTrackingUrls.add(
+                                    parser.nextText().trim()
+                                )
+                            }
+
+                            "Companion" -> {
+                                parseCompanion(parser)?.let {
+                                    companions.add(it)
+                                }
                             }
                         }
-
-                        "MediaFile" -> {
-                            parseMediaFile(parser)?.let {
-                                mediaFiles.add(it)
-                            }
-                        }
-
-                        "Tracking" -> {
-                            parseTracking(parser)?.let {
-                                trackingEvents.add(it)
-                            }
-                        }
-
-                        "ClickThrough" -> {
-                            clickThroughUrl =
-                                parser.nextText().trim()
-                        }
-
-                        "ClickTracking" -> {
-                            clickTrackingUrls.add(
-                                parser.nextText().trim()
-                            )
-                        }
-
-                        "Companion" -> {
-                            parseCompanion(parser)?.let {
-                                companions.add(it)
-                            }
-                        }
-                    }
                 }
 
                 eventType = parser.next()
@@ -194,7 +214,8 @@ internal class VastParser {
                     inheritedImpressions = impressions,
                     inheritedTracking = trackingEvents,
                     inheritedClickTracking = clickTrackingUrls,
-                    inheritedCompanions = companions
+                    inheritedCompanions = companions,
+                    podsAllowed = wrapperAllowsPods
                 )
             }
 
@@ -229,6 +250,36 @@ internal class VastParser {
                 )
             )
         }
+    }
+
+    private fun newParser(xml: String): XmlPullParser =
+        Xml.newPullParser().apply {
+            setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+            setInput(StringReader(xml))
+        }
+
+    /** An `<Ad>` directly under `<VAST>`. */
+    private fun isAdElement(parser: XmlPullParser): Boolean =
+        parser.depth == 2 && parser.name == "Ad"
+
+    /**
+     * The `sequence` of each `<Ad>` in document order, or null when it has none or it is not a
+     * positive integer: such an ad is stand-alone.
+     */
+    private fun adSequences(xml: String): List<Int?> {
+        val parser = newParser(xml)
+        val sequences = mutableListOf<Int?>()
+        var eventType = parser.eventType
+        while (eventType != XmlPullParser.END_DOCUMENT) {
+            if (eventType == XmlPullParser.START_TAG && isAdElement(parser)) {
+                sequences += parser.getAttributeValue(null, "sequence")
+                    ?.trim()
+                    ?.toIntOrNull()
+                    ?.takeIf { it >= 1 }
+            }
+            eventType = parser.next()
+        }
+        return sequences
     }
 
     private fun parseMediaFile(
