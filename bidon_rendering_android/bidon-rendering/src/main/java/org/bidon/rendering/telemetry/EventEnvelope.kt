@@ -65,7 +65,10 @@ internal class EventEnvelope private constructor(
             samplingRate: SamplingRate,
         ) = capture(name.wireName, sessionId, clock, auctionId, adType, adFormat, samplingRate)
 
-        /** Captures an event named [eventName] as of now on [clock]. Tests use it for names the SDK never emits. */
+        /**
+         * Captures an event named [eventName] as of now on [clock]. Production code calls the [EventName] overload,
+         * which delegates here; tests call this one for names the SDK never emits.
+         */
         fun capture(
             eventName: String,
             sessionId: SessionId,

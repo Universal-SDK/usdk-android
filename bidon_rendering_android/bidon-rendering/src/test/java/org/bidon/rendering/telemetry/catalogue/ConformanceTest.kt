@@ -172,6 +172,53 @@ class ConformanceTest {
     )
 
     @Test
+    fun `a missing event_ts is reported`() = assertOnly(
+        Violation("ad_load_failed", "envelope.event_ts", Rule.MISSING_EVENT_TS),
+        "{${envelope().replace("\"event_ts\":1700000000000,", "")}}",
+    )
+
+    @Test
+    fun `a string field rejects a number and a boolean`() {
+        assertOnly(Violation("ad_load_failed", "demand_id", Rule.WRONG_TYPE), "{${envelope()},\"demand_id\":5}")
+        assertOnly(Violation("ad_load_failed", "demand_id", Rule.WRONG_TYPE), "{${envelope()},\"demand_id\":true}")
+    }
+
+    @Test
+    fun `a double field rejects a string`() = assertOnly(
+        Violation("ad_request_started", "price_floor", Rule.WRONG_TYPE),
+        "{${envelope("ad_request_started")},\"price_floor\":\"3\"}",
+    )
+
+    @Test
+    fun `every field the server stamps is reported when the client sends it`() {
+        listOf(
+            "schema_version" to "\"1\"",
+            "app_id" to "7",
+            "app_key" to "\"k\"",
+            "bundle" to "\"b\"",
+            "country" to "\"PT\"",
+            "trace_id" to "\"t\"",
+        ).forEach { (key, value) ->
+            assertOnly(
+                Violation("ad_load_failed", "envelope.$key", Rule.SERVER_STAMPED),
+                "{${envelope(extra = ",\"$key\":$value")}}",
+            )
+        }
+    }
+
+    @Test
+    fun `a repeated field with a bad element after a good one is reported`() {
+        assertOnly(
+            Violation("sdk_init_completed", "adapters_registered", Rule.WRONG_TYPE),
+            "{${envelope("sdk_init_completed")},\"adapters_registered\":[\"a\",1]}",
+        )
+        assertOnly(
+            Violation("sdk_init_completed", "adapters_registered", Rule.NULL_VALUE),
+            "{${envelope("sdk_init_completed")},\"adapters_registered\":[\"a\",null]}",
+        )
+    }
+
+    @Test
     fun `any value in an enum-typed field is reported`() {
         val enumCatalogue = inline(
             """

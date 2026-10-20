@@ -26,7 +26,7 @@ class GoldenEventsTest {
     private fun tree(value: Any?): Any? = when (value) {
         is JSONObject -> value.keySet().associateWith { tree(value.get(it)) }
         is JSONArray -> (0 until value.length()).map { tree(value.get(it)) }
-        JSONObject.NULL -> "<null>"
+        JSONObject.NULL -> null
         is Int, is Long, is BigInteger -> BigInteger(value.toString())
         is Number -> value.toDouble()
         else -> value
@@ -49,7 +49,6 @@ class GoldenEventsTest {
         is List<*> -> if (value.isEmpty()) "[]" else value
             .joinToString(",\n", "[\n", "\n$indent]") { "$indent  ${pretty(it, "$indent  ")}" }
         is String -> JSONObject.quote(value)
-        is Double -> value.toString()
         else -> value.toString()
     }
 
@@ -81,6 +80,15 @@ class GoldenEventsTest {
                 sample,
                 encoded,
             )
+        }
+    }
+
+    @Test
+    fun `each sample is strict JSON, pretty-printed with sorted keys`() {
+        // org.json reads single quotes and trailing commas; the backend's decoder does not.
+        EventName.entries.forEach { name ->
+            val text = CatalogueTestSupport.resourceText(GoldenEvents.samplePath(name)) ?: return@forEach
+            assertEquals("${GoldenEvents.samplePath(name)} is not in canonical form", pretty(parse(text)) + "\n", text)
         }
     }
 

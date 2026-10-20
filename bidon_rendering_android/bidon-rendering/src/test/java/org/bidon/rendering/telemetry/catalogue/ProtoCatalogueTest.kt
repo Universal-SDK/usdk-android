@@ -27,14 +27,17 @@ class ProtoCatalogueTest {
     private fun proto(body: String) =
         "syntax = \"proto3\";\npackage test.v1;\nmessage Envelope { string event_id = 1; }\n\n$body\n"
 
-    private fun assertUnsupported(body: String) {
-        assertThrows(UnsupportedProtoException::class.java) { ProtoCatalogue.parse(proto(body)) }
+    /** Parsing [body] fails, and the message names [construct], so it failed for that and nothing else. */
+    private fun assertUnsupported(construct: String, body: String) {
+        val error = assertThrows(UnsupportedProtoException::class.java) { ProtoCatalogue.parse(proto(body)) }
+        assertTrue("expected `$construct` in: ${error.message}", error.message!!.contains("`$construct`"))
     }
 
     private val vendored get() = CatalogueTestSupport.vendoredCatalogue()
 
     @Test
     fun `a oneof is refused rather than skipped`() = assertUnsupported(
+        "oneof",
         """
         message E {
           option (event_name) = "e";
@@ -45,6 +48,7 @@ class ProtoCatalogueTest {
 
     @Test
     fun `a nested message declaration is refused`() = assertUnsupported(
+        "message",
         """
         message E {
           option (event_name) = "e";
@@ -56,23 +60,35 @@ class ProtoCatalogueTest {
 
     @Test
     fun `a uint64 field is refused`() = assertUnsupported(
+        "uint64",
         "message E {\n  option (event_name) = \"e\";\n  uint64 big = 1;\n}",
     )
 
     @Test
     fun `a bytes field is refused`() = assertUnsupported(
+        "bytes",
         "message E {\n  option (event_name) = \"e\";\n  bytes blob = 1;\n}",
     )
 
     @Test
     fun `an optional field is refused`() = assertUnsupported(
+        "optional",
         "message E {\n  option (event_name) = \"e\";\n  optional string a = 1;\n}",
     )
 
     @Test
     fun `an unknown top-level keyword is refused`() = assertUnsupported(
+        "service",
         "service Ingest {\n  rpc Send (E) returns (E);\n}",
     )
+
+    @Test
+    fun `a message with an empty event name is not an event, as the ingest skips it`() {
+        val catalogue = ProtoCatalogue.parse(
+            proto("message E { option (event_name) = \"\"; Envelope envelope = 1; }"),
+        )
+        assertEquals(emptySet<String>(), catalogue.events.keys)
+    }
 
     @Test
     fun `the vendored catalogue parses and yields exactly the 42 client event names`() {

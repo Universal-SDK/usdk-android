@@ -72,9 +72,10 @@ internal class ProtoCatalogue(
     private class Parser(private val tokens: List<String>) {
         private var pos = 0
         private val enums = mutableSetOf<String>()
+        private val declared = mutableListOf<Declared>()
 
-        /** Each message as written, field types still by name, with its `event_name` when it has one. */
-        private val messages = mutableListOf<Triple<String, String?, Map<String, Pair<String, Boolean>>>>()
+        /** A message as written: a field typed by a name is a [FieldType.MessageRef] until [resolve] looks it up. */
+        private class Declared(val name: String, val eventName: String?, val fields: Map<String, FieldType>)
 
         fun parse(): ProtoCatalogue {
             while (pos < tokens.size) {
@@ -88,9 +89,12 @@ internal class ProtoCatalogue(
                     else -> unsupported("top-level `$keyword`")
                 }
             }
-            val byName = messages.associate { (name, _, fields) -> name to Message(name, resolve(name, fields)) }
-            val events = messages.mapNotNull { (name, eventName, _) -> eventName?.let { it to byName.getValue(name) } }
-            return ProtoCatalogue(byName, events.toMap())
+            val names = declared.map { it.name }.toSet()
+            val messages = declared.associate { it.name to Message(it.name, resolve(it, names)) }
+            // The ingest skips a message whose event name is empty, so it is not an event here either.
+            val events = declared.filter { !it.eventName.isNullOrEmpty() }
+                .associate { it.eventName!! to messages.getValue(it.name) }
+            return ProtoCatalogue(messages, events)
         }
 
         /** The `event_name` option: `extend google.protobuf.MessageOptions { string event_name = 50000; }`, no more. */
@@ -120,7 +124,7 @@ internal class ProtoCatalogue(
         private fun message() {
             val name = identifier()
             var eventName: String? = null
-            val fields = linkedMapOf<String, Pair<String, Boolean>>()
+            val fields = linkedMapOf<String, FieldType>()
             expect("{")
             while (peek() != "}") {
                 when (val token = next()) {
@@ -132,48 +136,46 @@ internal class ProtoCatalogue(
                         eventName = string()
                         expect(";")
                     }
-                    "repeated" -> field(identifier(), repeated = true, fields)
+                    "repeated" -> {
+                        val type = identifier()
+                        val kind = SCALARS[type] ?: unsupported("repeated `$type` in message $name")
+                        field(FieldType.Repeated(kind), fields)
+                    }
                     "map" -> {
                         expect("<")
                         expect("string")
                         expect(",")
                         expect("string")
                         expect(">")
-                        field(MAP, repeated = false, fields)
+                        field(FieldType.StringMap, fields)
                     }
                     "oneof", "message", "enum", "optional", "reserved", "extensions", "group", "required" ->
                         unsupported("`$token` in message $name")
-                    else -> field(token, repeated = false, fields)
+                    else -> field(SCALARS[token]?.let(FieldType::Scalar) ?: FieldType.MessageRef(token), fields)
                 }
             }
             expect("}")
-            messages += Triple(name, eventName, fields)
+            declared += Declared(name, eventName, fields)
         }
 
-        private fun field(type: String, repeated: Boolean, into: MutableMap<String, Pair<String, Boolean>>) {
+        private fun field(type: FieldType, into: MutableMap<String, FieldType>) {
             val name = identifier()
             expect("=")
             number()
             expect(";")
-            into[name] = type to repeated
+            into[name] = type
         }
 
-        private fun resolve(message: String, fields: Map<String, Pair<String, Boolean>>): Map<String, FieldType> {
-            val declared = messages.map { it.first }.toSet()
-            return fields.mapValues { (field, typeAndRepeated) ->
-                val (type, repeated) = typeAndRepeated
-                val scalar = SCALARS[type]
+        /** [message]'s fields with every type name resolved to an enum or a declared message. */
+        private fun resolve(message: Declared, names: Set<String>): Map<String, FieldType> =
+            message.fields.mapValues { (field, type) ->
                 when {
-                    type == MAP -> FieldType.StringMap
-                    scalar != null && repeated -> FieldType.Repeated(scalar)
-                    scalar != null -> FieldType.Scalar(scalar)
-                    repeated -> unsupported("repeated `$type` in $message.$field")
-                    type in enums -> FieldType.EnumRef(type)
-                    type in declared -> FieldType.MessageRef(type)
-                    else -> unsupported("type `$type` of $message.$field")
+                    type !is FieldType.MessageRef -> type
+                    type.name in enums -> FieldType.EnumRef(type.name)
+                    type.name in names -> type
+                    else -> unsupported("type `${type.name}` of ${message.name}.$field")
                 }
             }
-        }
 
         private fun peek(): String = tokens.getOrNull(pos) ?: unsupported("unexpected end of file")
 
@@ -184,8 +186,8 @@ internal class ProtoCatalogue(
             if (actual != token) unsupported("expected `$token`, found `$actual`")
         }
 
-        private fun identifier(): String =
-            next().takeIf { it.first().isLetter() || it.first() == '_' } ?: unsupported("expected a name at ${tokens[pos - 1]}")
+        private fun identifier(): String = next().takeIf { it.first().isLetter() || it.first() == '_' }
+            ?: unsupported("expected a name, found `${tokens[pos - 1]}`")
 
         private fun string(): String = next().takeIf { it.length >= 2 && it.startsWith('"') && it.endsWith('"') }
             ?.removeSurrounding("\"") ?: unsupported("expected a string, found `${tokens[pos - 1]}`")
@@ -194,10 +196,5 @@ internal class ProtoCatalogue(
             ?: unsupported("expected a number, found `${tokens[pos - 1]}`")
 
         private fun unsupported(what: String): Nothing = throw UnsupportedProtoException("Unsupported proto: $what")
-
-        private companion object {
-            /** The type name a `map<string, string>` field is recorded under before resolving. */
-            const val MAP = "map<string,string>"
-        }
     }
 }

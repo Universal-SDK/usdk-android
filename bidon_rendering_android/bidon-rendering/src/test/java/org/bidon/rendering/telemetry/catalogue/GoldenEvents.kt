@@ -23,9 +23,9 @@ internal object GoldenEvents {
 
     /** The encoded text of [name], as the encoder wrote it. */
     fun encode(name: EventName): String = when (name) {
-        EventName.CREATIVE_RENDERED -> adEvent(name) {
+        EventName.CREATIVE_RENDERED -> adEvent(name) { advance ->
             loadStarted()
-            elapsed += LOAD_MILLIS
+            advance(LOAD_MILLIS)
             loaded()
             rendered()
         }
@@ -48,10 +48,12 @@ internal object GoldenEvents {
     private const val NOW = 1_790_326_698_635L
     private const val LOAD_MILLIS = 420L
     private val CLOCK = Clock { NOW }
-    private var elapsed = 0L
 
-    /** Runs [actions] on a fresh ad's events and returns the one event named [name] they emitted. */
-    private fun adEvent(name: EventName, actions: AdEvents.() -> Unit): String {
+    /**
+     * Runs [actions] on a fresh ad's events and returns the one event named [name] they emitted. [actions] gets a
+     * function that moves the ad's monotonic clock forward.
+     */
+    private fun adEvent(name: EventName, actions: AdEvents.(advance: (Long) -> Unit) -> Unit): String {
         val emitted = mutableMapOf<String, String>()
         val telemetry = object : Telemetry {
             override fun emit(eventName: String, eventClass: EventClass, capture: (SamplingRate) -> TelemetryEvent) {
@@ -60,9 +62,9 @@ internal object GoldenEvents {
 
             override fun sync() = Unit
         }
-        elapsed = 10_000L
+        var elapsed = 10_000L
         AdEvents(telemetry, SESSION, AUCTION, AdType.INTERSTITIAL, Creative.HTML, CLOCK, MonotonicClock { elapsed })
-            .actions()
+            .actions { elapsed += it }
         return emitted.getValue(name.wireName)
     }
 

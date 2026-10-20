@@ -1,6 +1,7 @@
 package org.bidon.rendering.telemetry.catalogue
 
 import org.bidon.rendering.telemetry.EventName
+import org.bidon.rendering.telemetry.catalogue.Conformance.Rule
 import org.bidon.rendering.telemetry.catalogue.Conformance.Violation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -27,19 +28,34 @@ class CatalogueConformanceTest {
     fun `the violations across all samples are exactly the pending entries`() {
         val found = violationsBySample().values.flatten().toSet()
         val pending = PendingCatalogue.entries.map { Violation(it.event, it.key, it.rule) }.toSet()
-
-        val stale = pending - found
-        val new = found - pending
-        val message = buildString {
-            stale.forEach {
-                appendLine("Stale pending entry ${describe(it)}: no sample breaks it any more; the catalogue now accepts it, remove it.")
-            }
-            new.forEach {
-                appendLine("New violation ${describe(it)}: a sample breaks the catalogue and no pending entry covers it.")
-            }
-        }
-        assertTrue(message, stale.isEmpty() && new.isEmpty())
+        val problems = mismatches(found, pending)
+        assertTrue(problems.joinToString("\n"), problems.isEmpty())
     }
+
+    @Test
+    fun `a pending entry no sample breaks any more is reported as stale`() {
+        val fixed = Violation("e", "a", Rule.UNKNOWN_FIELD)
+        assertEquals(
+            listOf("Stale pending entry e.a (UNKNOWN_FIELD): no sample breaks it any more; remove it."),
+            mismatches(found = emptySet(), pending = setOf(fixed)),
+        )
+    }
+
+    @Test
+    fun `a violation no pending entry covers is reported as new`() {
+        val broken = Violation("e", "b", Rule.WRONG_TYPE)
+        assertEquals(
+            listOf("New violation e.b (WRONG_TYPE): a sample breaks the catalogue and no pending entry covers it."),
+            mismatches(found = setOf(broken), pending = emptySet()),
+        )
+    }
+
+    /** One line per pending entry nothing breaks any more, then one per violation the pending list does not cover. */
+    private fun mismatches(found: Set<Violation>, pending: Set<Violation>): List<String> =
+        (pending - found).map { "Stale pending entry ${describe(it)}: no sample breaks it any more; remove it." } +
+            (found - pending).map {
+                "New violation ${describe(it)}: a sample breaks the catalogue and no pending entry covers it."
+            }
 
     @Test
     fun `the pending list has no duplicate entries`() {
@@ -50,7 +66,10 @@ class CatalogueConformanceTest {
     @Test
     fun `every pending entry names the ticket that removes it`() {
         PendingCatalogue.entries.forEach {
-            assertTrue("Pending entry ${it.event}.${it.key} has a blank removedBy", it.removedBy.isNotBlank())
+            assertTrue(
+                "Pending entry ${it.event}.${it.key} must name the ticket that removes it: ${it.removedBy}",
+                it.removedBy.startsWith("Telemetry: ") && it.removedBy.length > "Telemetry: ".length,
+            )
         }
     }
 
