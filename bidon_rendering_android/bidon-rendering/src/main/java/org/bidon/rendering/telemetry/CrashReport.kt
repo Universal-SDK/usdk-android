@@ -32,7 +32,7 @@ internal class CrashReport(
      */
     fun encode(throwable: Throwable, onMainThread: Boolean): ByteArray? {
         // A crash bypasses the gate and is always kept (D-031).
-        val envelope = EventEnvelope.capture(EVENT_NAME, sessionId, clock, samplingRate = SamplingRate.ALL)
+        val envelope = EventEnvelope.capture(EventName.RENDER_CRASHED, sessionId, clock, samplingRate = SamplingRate.ALL)
         val exceptions = chain(throwable)
         var maxFrames = MAX_FRAMES
         while (true) {
@@ -94,8 +94,6 @@ internal class CrashReport(
         "$className.$methodName(${fileName ?: "Unknown Source"}:$lineNumber)"
 
     companion object {
-
-        const val EVENT_NAME = "render_crashed"
 
         /** The most frames kept per exception before the size cap starts cutting. */
         private const val MAX_FRAMES = 64
