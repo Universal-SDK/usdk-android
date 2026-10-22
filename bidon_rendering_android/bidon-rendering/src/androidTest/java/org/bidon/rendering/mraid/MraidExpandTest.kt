@@ -2,12 +2,9 @@ package org.bidon.rendering.mraid
 
 import android.app.Activity
 import android.app.Dialog
-import android.app.UiAutomation
 import android.content.Intent
-import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.SystemClock
-import android.view.Display
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -27,8 +24,12 @@ import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.TestCreatives.PAINTED
 import org.bidon.rendering.TestCreatives.SETTLE_MILLIS
 import org.bidon.rendering.tap
+import org.bidon.rendering.telemetry.Creative
+import org.bidon.rendering.telemetry.QueuedEvents
 import org.bidon.rendering.ui.BlankActivity
 import org.bidon.rendering.ui.CloseButton
+import org.bidon.rendering.waitUntil
+import org.bidon.rendering.whileTheDeviceIsRotated
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -39,6 +40,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -57,7 +59,11 @@ class MraidExpandTest {
     private val loaded = CountDownLatch(1)
     private val clicks = AtomicInteger()
 
-    private val renderer = MraidRenderer(instrumentation.targetContext, AdRenderingConfig(), events = null)
+    private val directory = File(instrumentation.targetContext.cacheDir, "mraid-expand-${SystemClock.elapsedRealtimeNanos()}")
+    private val queued by lazy { QueuedEvents(directory) }
+    private val renderer by lazy {
+        MraidRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Creative.MRAID))
+    }
     private lateinit var scenario: ActivityScenario<BlankActivity>
     private lateinit var container: FrameLayout
 
@@ -86,12 +92,14 @@ class MraidExpandTest {
         }
         SystemClock.sleep(SETTLE_MILLIS)
         run("events.length = 0")
+        queued.assertImpression(queued.next())
     }
 
     @After
     fun tearDown() {
         instrumentation.runOnMainSync { renderer.destroy() }
         if (::scenario.isInitialized) scenario.close()
+        directory.deleteRecursively()
     }
 
     @Test
@@ -361,20 +369,51 @@ class MraidExpandTest {
 
     @Test
     fun aRotationLeavesNoExpandedAdAndABannerThatExpandsAgain() {
-        val automation = instrumentation.uiAutomation
-        val rotation = displayRotation()
         expand()
-        try {
-            automation.setRotation(UiAutomation.ROTATION_FREEZE_90)
-            waitUntil("the host was not recreated") { !banner.isAttachedToWindow }
+        instrumentation.whileTheDeviceIsRotated {
+            instrumentation.waitUntil("the host was not recreated") { !banner.isAttachedToWindow }
 
             assertCollapsedAfterTheHostWentAway()
-        } finally {
-            automation.setRotation(UiAutomation.ROTATION_FREEZE_0)
-            automation.setRotation(UiAutomation.ROTATION_UNFREEZE)
-            // Waits for the screen to turn back, so the next test starts upright, without hiding why this one failed.
-            val deadline = SystemClock.uptimeMillis() + WAIT_MILLIS
-            while (displayRotation() != rotation && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(100)
+        }
+    }
+
+    /** Expanding and closing moves the one banner between windows, which is not a second sight of it. */
+    @Test
+    fun expandingAndClosingTheBannerCountsNoSecondImpression() {
+        expand()
+        tapOnScreen { closeButton()!! }
+        SystemClock.sleep(SETTLE_MILLIS)
+
+        assertBackInItsContainer()
+        instrumentation.runOnMainSync { banner.tap() }
+        expand()
+        run("mraid.close()")
+        SystemClock.sleep(SETTLE_MILLIS)
+
+        assertEquals("\"expanded,default,expanded,default\"", run("events.join()"))
+        queued.assertNoMore()
+    }
+
+    @Test
+    fun aRecreatedHostWithAnExpandedBannerCountsNoSecondImpression() {
+        expand()
+
+        scenario.recreate()
+        SystemClock.sleep(SETTLE_MILLIS)
+        assertCollapsedAfterTheHostWentAway()
+
+        queued.assertNoMore()
+    }
+
+    @Test
+    fun aRotatedHostWithAnExpandedBannerCountsNoSecondImpression() {
+        expand()
+
+        instrumentation.whileTheDeviceIsRotated {
+            instrumentation.waitUntil("the host was not recreated") { !banner.isAttachedToWindow }
+            assertCollapsedAfterTheHostWentAway()
+
+            queued.assertNoMore()
         }
     }
 
@@ -468,7 +507,7 @@ class MraidExpandTest {
         run("mraid.close()")
         SystemClock.sleep(SETTLE_MILLIS)
         instrumentation.runOnMainSync { banner.requestFocus() }
-        waitUntil("the banner did not take the focus") { banner.hasFocus() }
+        instrumentation.waitUntil("the banner did not take the focus") { banner.hasFocus() }
     }
 
     private fun assertBackInItsContainer() {
@@ -536,17 +575,6 @@ class MraidExpandTest {
         }
     }
 
-    private fun waitUntil(failure: String, condition: () -> Boolean) {
-        val deadline = SystemClock.uptimeMillis() + WAIT_MILLIS
-        while (true) {
-            var met = false
-            instrumentation.runOnMainSync { met = condition() }
-            if (met) return
-            assertTrue(failure, SystemClock.uptimeMillis() < deadline)
-            SystemClock.sleep(100)
-        }
-    }
-
     private fun activityOf(scenario: ActivityScenario<BlankActivity>): Activity {
         lateinit var activity: Activity
         scenario.onActivity { activity = it }
@@ -556,7 +584,7 @@ class MraidExpandTest {
     /** The resumed activity that [matches], once there is one. */
     private fun waitForActivity(matches: (Activity) -> Boolean): Activity {
         var found: Activity? = null
-        waitUntil("no such activity was resumed") {
+        instrumentation.waitUntil("no such activity was resumed") {
             found = ActivityLifecycleMonitorRegistry.getInstance()
                 .getActivitiesInStage(Stage.RESUMED)
                 .firstOrNull(matches)
@@ -564,10 +592,6 @@ class MraidExpandTest {
         }
         return found!!
     }
-
-    private fun displayRotation(): Int =
-        instrumentation.targetContext.getSystemService(DisplayManager::class.java)
-            .getDisplay(Display.DEFAULT_DISPLAY).rotation
 
     private fun pageUrl(): String? {
         var url: String? = null
@@ -599,7 +623,6 @@ class MraidExpandTest {
     private companion object {
         const val BANNER_WIDTH = 320
         const val BANNER_HEIGHT = 50
-        const val WAIT_MILLIS = 10_000L
 
         /** Records every state change and error the creative hears, in order. */
         const val STATES = "<script>window.events = [];" +

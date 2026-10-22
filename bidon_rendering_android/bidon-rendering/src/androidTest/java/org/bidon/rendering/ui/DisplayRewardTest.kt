@@ -18,12 +18,16 @@ import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.html.HtmlRenderer
 import org.bidon.rendering.mraid.MraidRenderer
 import org.bidon.rendering.mraid.ui.MraidAdActivity
+import org.bidon.rendering.telemetry.Creative
+import org.bidon.rendering.telemetry.QueuedEvents
 import org.json.JSONObject
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -38,6 +42,13 @@ import java.util.concurrent.atomic.AtomicInteger
 class DisplayRewardTest {
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
+    private val directory = File(instrumentation.targetContext.cacheDir, "display-reward-${SystemClock.elapsedRealtimeNanos()}")
+    private val queued by lazy { QueuedEvents(directory) }
+
+    @After
+    fun deleteQueue() {
+        directory.deleteRecursively()
+    }
 
     private class Events : AdRenderer.Listener {
         val loaded = CountDownLatch(1)
@@ -102,6 +113,51 @@ class DisplayRewardTest {
 
     @Test
     fun mraidRewardsAfterTheImpressionWhenThereIsNoDelay() = rewardsAfterTheImpressionWhenThereIsNoDelay(Kind.MRAID)
+
+    @Test
+    fun htmlCountsOneImpressionWhenRecreated() = countsOneImpressionWhenRecreated(Kind.HTML)
+
+    @Test
+    fun mraidCountsOneImpressionWhenRecreated() = countsOneImpressionWhenRecreated(Kind.MRAID)
+
+    @Test
+    fun htmlCountsNoImpressionForAnAdLoadedButNeverShown() = countsNoImpressionForAnAdNeverShown(Kind.HTML)
+
+    @Test
+    fun mraidCountsNoImpressionForAnAdLoadedButNeverShown() = countsNoImpressionForAnAdNeverShown(Kind.MRAID)
+
+    /**
+     * The impression is counted when the screen first resumes, measured from the show request. A recreation, for
+     * example by a theme or language change, shows the same ad again and counts nothing more.
+     */
+    private fun countsOneImpressionWhenRecreated(kind: Kind) {
+        val events = Events()
+        showAd(kind, closeDelaySeconds = 1, events) {
+            val screen = waitFor("the ad screen") { resumedAdScreen() }
+            val impression = queued.next()
+            queued.assertImpression(impression)
+            queued.assertRenderDuration(impression)
+
+            onMain { screen.recreate() }
+            waitFor("the recreated screen") { resumedAdScreen()?.takeIf { it !== screen } }
+            SystemClock.sleep(1_000)
+
+            assertEquals(1, events.order.count { it == "impression" })
+            queued.assertNoMore()
+        }
+    }
+
+    /** An ad that was loaded but never shown was never seen, so it is not counted. */
+    private fun countsNoImpressionForAnAdNeverShown(kind: Kind) {
+        val events = Events()
+        val renderer = newRenderer(kind, AdRenderingConfig())
+        instrumentation.runOnMainSync { renderer.load(markup(kind), events) }
+        assertTrue("the ad did not load", events.loaded.await(10, TimeUnit.SECONDS))
+
+        instrumentation.runOnMainSync { renderer.destroy() }
+
+        queued.assertNoMore()
+    }
 
     private fun rewardsWhenTheCloseButtonBecomesAvailable(kind: Kind) {
         val events = Events()
@@ -220,19 +276,11 @@ class DisplayRewardTest {
      * [block] with the moment it was shown, and tears everything down.
      */
     private fun showAd(kind: Kind, closeDelaySeconds: Int, events: Events, block: (shownAt: Long) -> Unit) {
-        val context = instrumentation.targetContext
         val rendering = AdRenderingConfig.fromJson(
             JSONObject("""{"close_button":{"delay_seconds":$closeDelaySeconds}}""")
         )
-        val renderer = when (kind) {
-            Kind.HTML -> HtmlRenderer(context, rendering, events = null)
-            Kind.MRAID -> MraidRenderer(context, rendering, events = null)
-        }
-        val markup = when (kind) {
-            Kind.HTML -> "<html><body><p>ad</p></body></html>"
-            Kind.MRAID -> "<html><body><script src=\"mraid.js\"></script><p>ad</p></body></html>"
-        }
-        instrumentation.runOnMainSync { renderer.load(markup, events) }
+        val renderer = newRenderer(kind, rendering)
+        instrumentation.runOnMainSync { renderer.load(markup(kind), events) }
         assertTrue("the ad did not load", events.loaded.await(10, TimeUnit.SECONDS))
         ActivityScenario.launch(BlankActivity::class.java).use { scenario ->
             try {
@@ -250,6 +298,19 @@ class DisplayRewardTest {
                 onMain { renderer.destroy() }
             }
         }
+    }
+
+    private fun newRenderer(kind: Kind, rendering: AdRenderingConfig): AdRenderer {
+        val context = instrumentation.targetContext
+        return when (kind) {
+            Kind.HTML -> HtmlRenderer(context, rendering, queued.adEvents(Creative.HTML))
+            Kind.MRAID -> MraidRenderer(context, rendering, queued.adEvents(Creative.MRAID))
+        }
+    }
+
+    private fun markup(kind: Kind) = when (kind) {
+        Kind.HTML -> "<html><body><p>ad</p></body></html>"
+        Kind.MRAID -> "<html><body><script src=\"mraid.js\"></script><p>ad</p></body></html>"
     }
 
     private fun isAdScreen(activity: Activity) = activity is FullscreenAdActivity || activity is MraidAdActivity

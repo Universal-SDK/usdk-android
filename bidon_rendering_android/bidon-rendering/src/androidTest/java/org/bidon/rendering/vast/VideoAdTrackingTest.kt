@@ -151,9 +151,9 @@ class VideoAdTrackingTest {
             SystemClock.sleep(1_000)
 
             assertEquals(1, events.impressions.get())
-            val rendered = queued.next()
-            queued.assertAdEvent(rendered, "creative_rendered", EventClass.DIAGNOSTIC, Creative.VAST)
-            assertTrue("no load time", rendered.json.getLong("load_ms") >= 0)
+            val impression = queued.next()
+            queued.assertImpression(impression)
+            queued.assertRenderDuration(impression)
             queued.assertNoMore()
             assertEquals(1, server.requestCount("/impression/dsp"))
             assertEquals(1, server.requestCount("/impression/verifier"))
@@ -365,7 +365,7 @@ class VideoAdTrackingTest {
 
             assertTrue("the ad did not close", events.closed.await(30, TimeUnit.SECONDS))
             waitFor("the video screen to go") { Unit.takeIf { videoScreens().isEmpty() } }
-            assertEquals("creative_rendered", queued.next().name)
+            queued.assertImpression(queued.next())
             val gone = queued.next()
             queued.assertAdEvent(gone, "render_process_gone", EventClass.ERROR, Creative.VAST)
             assertTrue(gone.json.getBoolean("did_crash"))
