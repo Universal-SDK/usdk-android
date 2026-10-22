@@ -32,7 +32,8 @@ import java.util.concurrent.TimeUnit
  *
  * The renderer is a process singleton, started once and never reset, so these tests share one telemetry and run in
  * name order. The host starts the renderer before the adapter in every test, as the demo app does. Only this class
- * configures telemetry in this test APK, so the first test starts with no endpoint at all. The test APK's manifest
+ * configures telemetry in this test APK, so the first test starts with no endpoint at all. Another class may start
+ * the renderer first; that holds as long as the app is installed fresh, as a Gradle device run does. The test APK's manifest
  * switches telemetry on.
  */
 @RunWith(AndroidJUnit4::class)

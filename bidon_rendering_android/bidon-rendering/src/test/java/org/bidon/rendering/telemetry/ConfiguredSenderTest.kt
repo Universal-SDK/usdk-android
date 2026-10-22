@@ -336,4 +336,18 @@ class ConfiguredSenderTest {
         assertEquals(TelemetrySettings(firstEndpoint, firstConfig).view(), settingsFile.read().view())
         assertEquals(1, made.size)
     }
+
+    @Test
+    fun `settings with nothing in them leave the file as it is`() {
+        stored(TelemetrySettings(firstEndpoint, firstConfig))
+        val sender = configured()
+        sender.load()
+        sender.attach(store)
+        val file = File(directory, SettingsFile.FILE_NAME)
+        file.writeText("left by someone else")
+
+        sender.apply(TelemetrySettings.NONE)
+
+        assertEquals("left by someone else", file.readText())
+    }
 }

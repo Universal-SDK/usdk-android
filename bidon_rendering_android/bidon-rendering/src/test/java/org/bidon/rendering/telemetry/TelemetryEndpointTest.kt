@@ -1,6 +1,7 @@
 package org.bidon.rendering.telemetry
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -49,5 +50,21 @@ class TelemetryEndpointTest {
         for (version in listOf("1.0\r\nX-Injected: 1", "1.0\n", "1.0\u0000", "версія")) {
             assertNull(version, of(sdkVersion = version))
         }
+    }
+
+    @Test
+    fun `endpoints are equal exactly when every value is, the url compared as text`() {
+        fun endpoint(url: String = "https://a.example.com/v2/telemetry", appKey: String = "key", bundle: String = "com.example", version: String = "1.0") =
+            TelemetryEndpoint.of(url, appKey, bundle, version)!!
+        val base = endpoint()
+
+        assertEquals(base, endpoint())
+        assertEquals(base.hashCode(), endpoint().hashCode())
+        listOf(
+            endpoint(url = "https://b.example.com/v2/telemetry"),
+            endpoint(appKey = "other"),
+            endpoint(bundle = "com.other"),
+            endpoint(version = "2.0"),
+        ).forEach { assertNotEquals(base, it) }
     }
 }

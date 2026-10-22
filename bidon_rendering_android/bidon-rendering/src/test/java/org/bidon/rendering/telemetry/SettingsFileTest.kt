@@ -265,4 +265,18 @@ class SettingsFileTest {
             assertEquals(settings.view(), settingsFile.read().view())
         }
     }
+
+    @Test
+    fun `a stored endpoint without its bundle or sdk version reads back with no endpoint`() {
+        val full = JSONObject()
+            .put("url", "https://ingest.example.com/v2/telemetry")
+            .put("app_key", "key")
+            .put("bundle", "com.example")
+            .put("sdk_version", "1.0")
+        listOf("bundle", "sdk_version").forEach { missing ->
+            path.writeText(JSONObject(full.toString()).apply { remove(missing) }.toString())
+
+            assertNull("without $missing", settingsFile.read().endpoint)
+        }
+    }
 }

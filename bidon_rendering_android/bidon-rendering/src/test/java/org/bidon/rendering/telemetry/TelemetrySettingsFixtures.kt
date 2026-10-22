@@ -1,9 +1,6 @@
 package org.bidon.rendering.telemetry
 
-/**
- * [TelemetryEndpoint] has no `equals` (comparing its [java.net.URL] would resolve the host name), so tests compare the
- * values it carries.
- */
+/** The values a [TelemetryEndpoint] carries, so a failed comparison prints which one differs. */
 internal data class EndpointView(val url: String, val appKey: String, val bundle: String, val sdkVersion: String)
 
 internal data class SettingsView(val endpoint: EndpointView?, val config: TelemetryConfig?)

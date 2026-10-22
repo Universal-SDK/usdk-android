@@ -71,8 +71,8 @@ internal object TelemetryBlock {
 
     private val SWITCHES = listOf("enabled", "sample_rate", "event_rates", "event_names")
 
-    /** A rate as a fraction in [0, 1], or `null` for anything else, an infinite number included. */
-    private fun rate(value: Any): Double? = (value as? Number)?.toDouble()?.takeIf { it.isFinite() && it in 0.0..1.0 }
+    /** A rate as a fraction in [0, 1], or `null` for anything else. An infinite number or NaN is outside the range. */
+    private fun rate(value: Any): Double? = (value as? Number)?.toDouble()?.takeIf { it in 0.0..1.0 }
 
     /** An object of rates, or `null` when it is not an object or holds anything but rates. */
     private fun rates(value: Any): Map<String, Double>? {
