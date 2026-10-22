@@ -1,6 +1,8 @@
 package org.bidon.rendering.telemetry
 
 import android.app.Service
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
@@ -15,6 +17,7 @@ import kotlinx.coroutines.launch
 import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.RendererTelemetry
 import org.bidon.rendering.TelemetryDirectory
+import org.json.JSONObject
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -25,6 +28,12 @@ import kotlin.system.exitProcess
  * Every crash command starts from an empty telemetry directory, installs [HostCrashReporter] the way a host app
  * installs its crash reporter, before the SDK, then initialises the renderer and crashes. [READ] starts the renderer
  * in the next process and reports what reached its error queue.
+ *
+ * [CONFIGURE_THEN_CRASH] does the same, but also gives the renderer a telemetry block that sends to [URL] as
+ * [APP_KEY], and waits until the telemetry thread has stored it before it replies. [START] trusts the test ingest's
+ * [CERTIFICATE] and only initialises the renderer, with no telemetry block, as an app's next launch does before its
+ * config arrives. [CONFIGURE] gives the renderer a telemetry block before and after `init`, with the manifest flag
+ * on when `arg1` is 1 and off otherwise, and reports whether the settings were stored.
  *
  * The process ends only once the test has unbound and the service is destroyed: the crash, or after [READ] a plain
  * exit. A bound service whose process dies is scheduled for a restart, with a delay that grows with each death, and
@@ -55,6 +64,36 @@ class CrashVictimService : Service() {
                 reply.data = Bundle().apply { putString(SESSION, RendererTelemetry.sessionId.value) }
             }
             READ -> reply.data = read()
+            CONFIGURE_THEN_CRASH -> {
+                directory.deleteRecursively()
+                hostReport.delete()
+                HostCrashReporter.install(hostReport)
+                BidonRenderer.init(this)
+                val block = JSONObject()
+                    .put("url", message.data.getString(URL))
+                    .put("app_key", message.data.getString(APP_KEY))
+                BidonRenderer.configureTelemetry(block, packageName, SDK_VERSION, fallbackAppKey = null)
+                awaitFile(File(directory, SettingsFile.FILE_NAME))
+                reply.data = Bundle().apply { putString(SESSION, RendererTelemetry.sessionId.value) }
+            }
+            CONFIGURE -> {
+                directory.deleteRecursively()
+                val block = JSONObject().put("url", "https://localhost:1/v2/telemetry").put("app_key", "key")
+                BidonRenderer.configureTelemetry(block, packageName, SDK_VERSION, fallbackAppKey = null)
+                BidonRenderer.init(if (message.arg1 == 1) this else WithoutTelemetryFlag(this))
+                BidonRenderer.configureTelemetry(block.put("sample_rate", 0.5), packageName, SDK_VERSION, null)
+                // Long enough for the telemetry thread, had it been started, to store what it was given.
+                Thread.sleep(1_000)
+                reply.data = Bundle().apply {
+                    putBoolean(STORED, File(directory, SettingsFile.FILE_NAME).exists())
+                    putBoolean(DIRECTORY_CREATED, directory.exists())
+                }
+            }
+            START -> {
+                FakeIngest.trustInThisProcess(message.data.getString(CERTIFICATE)!!)
+                BidonRenderer.init(this)
+                reply.data = Bundle().apply { putString(SESSION, RendererTelemetry.sessionId.value) }
+            }
         }
         ending = message.what
         message.replyTo.send(reply)
@@ -64,14 +103,14 @@ class CrashVictimService : Service() {
         super.onDestroy()
         when (val how = ending) {
             null -> Unit
-            READ -> Process.killProcess(Process.myPid())
+            READ, START, CONFIGURE -> Process.killProcess(Process.myPid())
             else -> crash(how)
         }
     }
 
     private fun crash(how: Int) {
         when (how) {
-            CRASH_IN_OUR_THREAD -> Thread({ throw IllegalStateException("ours") }, "renderer-work").start()
+            CRASH_IN_OUR_THREAD, CONFIGURE_THEN_CRASH -> Thread({ throw IllegalStateException("ours") }, "renderer-work").start()
             CRASH_IN_HOST_CODE -> Thread({ throw hostException() }, "game-loop").start()
             CRASH_IN_OUR_COROUTINE -> CoroutineScope(Dispatchers.Main).launch { throw IllegalStateException("ours") }
         }
@@ -98,6 +137,24 @@ class CrashVictimService : Service() {
             putString(HOST_REPORT, hostReport.takeIf { it.exists() }?.readText())
             putString(SESSION, RendererTelemetry.sessionId.value)
         }
+    }
+
+    private fun awaitFile(file: File) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!file.exists()) {
+            check(System.currentTimeMillis() < deadline) { "$file was never written" }
+            Thread.sleep(10)
+        }
+    }
+
+    /**
+     * This service with the manifest of the system package, which has no telemetry flag; the test app's own manifest
+     * switches telemetry on. It is its own application context, so the renderer, which keeps the application
+     * context, reads the flag through it too.
+     */
+    private class WithoutTelemetryFlag(base: Context) : ContextWrapper(base) {
+        override fun getPackageName(): String = "android"
+        override fun getApplicationContext(): Context = this
     }
 
     /** An exception thrown from the host app's code: nothing of ours in its stack. */
@@ -132,9 +189,20 @@ class CrashVictimService : Service() {
         const val CRASH_IN_HOST_CODE = 2
         const val CRASH_IN_OUR_COROUTINE = 3
         const val READ = 4
+        const val CONFIGURE_THEN_CRASH = 5
+        const val START = 6
+        const val CONFIGURE = 7
 
         const val ERRORS = "errors"
         const val HOST_REPORT = "host_report"
         const val SESSION = "session"
+        const val URL = "url"
+        const val APP_KEY = "app_key"
+        const val CERTIFICATE = "certificate"
+        const val STORED = "stored"
+        const val DIRECTORY_CREATED = "directory_created"
+
+        /** The SDK version the configured process sends with its batches. */
+        const val SDK_VERSION = "9.9.9-test"
     }
 }

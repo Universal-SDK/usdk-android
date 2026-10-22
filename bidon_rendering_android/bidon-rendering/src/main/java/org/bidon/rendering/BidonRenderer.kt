@@ -3,12 +3,15 @@ package org.bidon.rendering
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.webkit.WebView
+import org.json.JSONObject
 import org.bidon.rendering.html.HtmlRenderer
 import android.view.View
 import android.view.ViewGroup
 import android.app.Activity
 import org.bidon.rendering.mraid.MraidRenderer
 import org.bidon.rendering.telemetry.Telemetry
+import org.bidon.rendering.telemetry.TelemetryBlock
+import org.bidon.rendering.telemetry.TelemetrySettings
 import org.bidon.rendering.vast.VastRenderer
 
 object BidonRenderer {
@@ -16,6 +19,9 @@ object BidonRenderer {
     private var isInitialized = false
     private lateinit var appContext: Context
     private var config: RendererConfig? = null
+
+    /** Telemetry settings that arrived before [init], applied by it. */
+    private var pendingSettings = TelemetrySettings.NONE
 
     /** Where the renderer reports telemetry events. Safe to call from any thread, the ad path included. */
     @Volatile
@@ -39,8 +45,22 @@ object BidonRenderer {
 
         applyConfig(config)
         telemetry = RendererTelemetry.start(appContext)
+        telemetry.applySettings(pendingSettings)
+        pendingSettings = TelemetrySettings.NONE
 
         isInitialized = true
+    }
+
+    /**
+     * Gives the renderer the `telemetry` block of the adapter's `/v2/config` section: where to send events, as whom, and
+     * the server's switches. [bundle] is the host app's package name and [sdkVersion] the version sent with every
+     * batch; [fallbackAppKey] is used when the block has no app key. Call it as often as config arrives, before or
+     * after [init], from any thread. Returns at once; telemetry the manifest left off ignores it.
+     */
+    @Synchronized
+    fun configureTelemetry(block: JSONObject?, bundle: String, sdkVersion: String, fallbackAppKey: String?) {
+        val settings = TelemetryBlock.parse(block, bundle, sdkVersion, fallbackAppKey)
+        if (isInitialized) telemetry.applySettings(settings) else pendingSettings = settings.over(pendingSettings)
     }
 
     /**

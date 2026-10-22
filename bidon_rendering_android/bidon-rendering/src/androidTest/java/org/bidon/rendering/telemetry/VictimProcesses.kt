@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
@@ -45,13 +46,16 @@ internal fun <T> withService(context: Context, intent: Intent, block: Messenger.
     }
 }
 
-/** Sends command [what] and waits for the reply. */
-internal fun Messenger.request(what: Int, arg1: Int = 0): Message {
+/** Sends command [what], with [data] when given, and waits for the reply. */
+internal fun Messenger.request(what: Int, arg1: Int = 0, data: Bundle? = null): Message {
     val replies = LinkedBlockingQueue<Message>()
     val thread = HandlerThread("victim-replies").apply { start() }
     try {
         val replyTo = Messenger(Handler(thread.looper) { replies.add(Message.obtain(it)); true })
-        send(Message.obtain(null, what, arg1, 0).apply { this.replyTo = replyTo })
+        send(Message.obtain(null, what, arg1, 0).apply {
+            this.replyTo = replyTo
+            if (data != null) this.data = data
+        })
         return replies.poll(30, TimeUnit.SECONDS) ?: throw AssertionError("no reply to command $what")
     } finally {
         thread.quitSafely()
