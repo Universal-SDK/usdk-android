@@ -142,6 +142,46 @@ class BackgroundTelemetryGateTest {
     }
 
     @Test
+    fun `counted events over twenty a minute are all captured and stored, and none is counted as rate limited`() {
+        val telemetry = start()
+        val captures = AtomicInteger()
+
+        repeat(25) { index ->
+            telemetry.emit("ad_impression", EventClass.COUNTED) {
+                captures.incrementAndGet()
+                countedEvent("impression $index")
+            }
+        }
+        telemetry.sync()
+
+        awaitUntil { store.syncs.get() >= 1 && store.payloads.size == 25 }
+        assertEquals(25, captures.get())
+        assertEquals(List(25) { EventClass.COUNTED }, store.classes)
+        assertTrue(store.dropped.isEmpty())
+    }
+
+    @Test
+    fun `a counted event is stored at rate 1 when diagnostics are sampled out`() {
+        gate.config = TelemetryConfig(samplingRate = 0.5)
+        val telemetry = start()
+        val rates = CopyOnWriteArrayList<SamplingRate>()
+
+        telemetry.emit("ad_impression", EventClass.COUNTED) { rate ->
+            rates += rate
+            countedEvent("impression")
+        }
+        telemetry.emit("load", EventClass.DIAGNOSTIC) { rate ->
+            rates += rate
+            event("load")
+        }
+
+        awaitUntil { store.payloads.isNotEmpty() }
+        assertEquals(listOf(1.0), rates.map { it.fraction })
+        assertEquals(listOf("impression"), store.payloads)
+        assertEquals(listOf(EventClass.COUNTED), store.classes)
+    }
+
+    @Test
     fun `a capture that throws does not escape emit, stores nothing and leaves telemetry on`() {
         val telemetry = start()
 
@@ -281,6 +321,11 @@ class BackgroundTelemetryGateTest {
     private fun errorEvent(text: String) = object : TelemetryEvent {
         override fun encode() = text.encodeToByteArray()
         override val eventClass = EventClass.ERROR
+    }
+
+    private fun countedEvent(text: String) = object : TelemetryEvent {
+        override fun encode() = text.encodeToByteArray()
+        override val eventClass = EventClass.COUNTED
     }
 
     /** Waits for [condition]; a failure on the telemetry thread ends the wait at once and is reported as it is. */
