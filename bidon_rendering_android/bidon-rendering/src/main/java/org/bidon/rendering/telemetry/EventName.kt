@@ -5,7 +5,7 @@ package org.bidon.rendering.telemetry
  * server's catalogue, so a new event starts here.
  */
 internal enum class EventName(val wireName: String) {
-    CREATIVE_RENDERED("creative_rendered"),
+    AD_IMPRESSION("ad_impression"),
     CREATIVE_LOAD_FAILED("creative_load_failed"),
     RENDER_PROCESS_GONE("render_process_gone"),
     RENDER_CRASHED("render_crashed"),

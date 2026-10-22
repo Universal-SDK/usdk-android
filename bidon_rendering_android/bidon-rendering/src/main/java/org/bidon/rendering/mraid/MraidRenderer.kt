@@ -143,7 +143,6 @@ internal class MraidRenderer(
         probe = null
         if (hasContent) {
             isLoaded = true
-            events?.loaded()
             listener?.onLoaded()
             return
         }
@@ -163,6 +162,8 @@ internal class MraidRenderer(
         val wv = webView ?: return
         if (isDestroyed) return
 
+        // Before the view is added: in a container that is already in a window the impression fires inside addView.
+        events?.viewRequested()
         (wv.parent as? ViewGroup)?.removeView(wv)
         container.addView(wv)
 
@@ -171,6 +172,7 @@ internal class MraidRenderer(
     }
 
     override fun showFullscreen(activity: Activity) {
+        events?.showRequested()
         if (webView == null || isDestroyed) {
             listener?.onError(IllegalStateException("MRAID not loaded"))
             return
@@ -212,7 +214,7 @@ internal class MraidRenderer(
         )
     }
 
-    override fun getView(): View? = webView
+    override fun getView(): View? = webView?.also { events?.viewRequested() }
 
     /**
      * The WebView's renderer process died, and [ClickHandler] has already destroyed the WebView. An ad that was never
