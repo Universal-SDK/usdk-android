@@ -21,7 +21,7 @@ import java.io.File
 import java.io.IOException
 
 /**
- * [SettingsFile] against BID-139 acceptance criteria 15 (a corrupt or missing file reads as nothing and never throws)
+ * [SettingsFile] against the acceptance criteria 15 (a corrupt or missing file reads as nothing and never throws)
  * and 18 (the written keys are exactly the allowed ones), plus the round trip and the temp-and-rename write.
  */
 class SettingsFileTest {
@@ -31,7 +31,7 @@ class SettingsFileTest {
 
     private val directory: File by lazy { temporary.newFolder() }
     private val path: File get() = File(directory, SettingsFile.FILE_NAME)
-    private val settingsFile: SettingsFile get() = SettingsFile(path)
+    private val settingsFile: SettingsFile get() = SettingsFile { path }
 
     private val endpointKeys = setOf("url", "app_key", "bundle", "sdk_version")
     private val switchKeys = setOf("enabled", "sample_rate", "event_rates", "event_names")
@@ -49,7 +49,7 @@ class SettingsFileTest {
     fun `a round trip works in a new instance, as in the next process`() {
         settingsFile.write(fullSettings())
 
-        assertEquals(fullSettings().view(), SettingsFile(path).read().view())
+        assertEquals(fullSettings().view(), SettingsFile { path }.read().view())
     }
 
     @Test
@@ -225,7 +225,7 @@ class SettingsFileTest {
     @Test
     fun `a failed write throws IOException and leaves the old file whole`() {
         settingsFile.write(fullSettings())
-        val missing = SettingsFile(File(directory, "missing/dir/${SettingsFile.FILE_NAME}"))
+        val missing = SettingsFile { File(directory, "missing/dir/${SettingsFile.FILE_NAME}") }
 
         try {
             missing.write(fullSettings())

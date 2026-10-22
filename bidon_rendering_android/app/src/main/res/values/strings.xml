@@ -47,7 +47,7 @@
     <string name="settings_state_not_initialized">Not initialized</string>
     <string name="settings_not_set">Not set</string>
     <string name="settings_telemetry_url">Telemetry URL</string>
-    <string name="settings_telemetry_url_help">Leave empty to use what the server\'s config says. Set an https ingest URL to send the renderer\'s telemetry there, as the app key above. Takes effect on the next app start.</string>
+    <string name="settings_telemetry_url_help">An https ingest URL to send the renderer\'s telemetry to, as the app key above, until the server\'s config sends one; a URL from the server replaces it. The renderer keeps the last URL it was given, so clearing this field does not stop sending. Takes effect on the next app start.</string>
     <string name="settings_bundle_id_real">%s (real package name)</string>
     <string name="settings_bundle_id_overridden">%s (overridden)</string>
 

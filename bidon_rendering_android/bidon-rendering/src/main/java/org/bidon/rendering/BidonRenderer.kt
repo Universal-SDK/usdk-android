@@ -53,9 +53,14 @@ object BidonRenderer {
 
     /**
      * Gives the renderer the `telemetry` block of the adapter's `/v2/config` section: where to send events, as whom, and
-     * the server's switches. [bundle] is the host app's package name and [sdkVersion] the version sent with every
-     * batch; [fallbackAppKey] is used when the block has no app key. Call it as often as config arrives, before or
-     * after [init], from any thread. Returns at once; telemetry the manifest left off ignores it.
+     * the server's switches. The block's keys are `url` (https only), `app_key`, `enabled`, `sample_rate`,
+     * `event_rates` and `event_names`; unknown keys are ignored. [bundle] is the host app's package name and
+     * [sdkVersion] the version sent with every batch; [fallbackAppKey] is used when the block has no app key.
+     *
+     * The endpoint and the switches are judged apart, and a part that is missing or malformed keeps the one in force,
+     * including what an earlier run stored; a `null` block changes nothing. The block is read during the call and not
+     * kept. Call it as often as config arrives, before or after [init], from any thread. Returns at once; telemetry
+     * the manifest left off ignores it.
      */
     @Synchronized
     fun configureTelemetry(block: JSONObject?, bundle: String, sdkVersion: String, fallbackAppKey: String?) {

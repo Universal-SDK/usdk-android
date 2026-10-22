@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * [BackgroundTelemetry.applySettings] and the stored-settings load, against BID-139 acceptance criteria 4
+ * [BackgroundTelemetry.applySettings] and the stored-settings load, against the acceptance criteria 4
  * (`malformedBlockKeepsStoredOff`), 10 (the switches take effect through the entry point), 11 (errors ignore server
  * rates), 19 (fresh values beat a late store load) and 20 (a stored "off" applies to the first events).
  *
@@ -214,7 +214,7 @@ class BackgroundTelemetrySettingsTest {
     @Test
     fun `settings reach the target on the telemetry thread, in order`() {
         val target = FakeTarget(stored = null)
-        val telemetry = start(settledGate(), target)
+        val telemetry = start(unsettledGate(), target)
         val delivered = listOf(
             TelemetrySettings(testEndpoint(), null),
             TelemetrySettings(null, TelemetryConfig(samplingRate = 0.1)),
@@ -233,7 +233,7 @@ class BackgroundTelemetrySettingsTest {
     fun `settings are not lost when the handoff is full, and still arrive in order`() {
         val target = FakeTarget(stored = null)
         store.blockAppends(release)
-        val telemetry = start(settledGate(), target, capacity = 1)
+        val telemetry = start(unsettledGate(), target, capacity = 1)
         telemetry.emit("load", EventClass.DIAGNOSTIC) { event("first") }
         store.awaitAppendStarted()
         telemetry.emit("load", EventClass.DIAGNOSTIC) { event("fills the handoff") }
@@ -249,7 +249,7 @@ class BackgroundTelemetrySettingsTest {
 
     @Test
     fun `settings with switches replace the gate's at once, on the caller's thread`() {
-        val gate = settledGate()
+        val gate = unsettledGate()
         val telemetry = start(gate, FakeTarget(stored = null))
         val config = TelemetryConfig(samplingRate = 0.4)
 
@@ -286,7 +286,8 @@ class BackgroundTelemetrySettingsTest {
 
     @Test
     fun malformedBlockKeepsStoredOff() {
-        val file = SettingsFile(File(temporary.newFolder(), SettingsFile.FILE_NAME))
+        val folder = temporary.newFolder()
+        val file = SettingsFile { File(folder, SettingsFile.FILE_NAME) }
         file.write(TelemetrySettings(null, TelemetryConfig(enabled = false)))
         val configured = ConfiguredSender(file) { _, _ -> EventSender.None }
         val gate = unsettledGate()
@@ -470,5 +471,20 @@ class BackgroundTelemetrySettingsTest {
         }
 
         override val size: Int get() = stored.size
+    }
+
+    @Test
+    fun `a gate that is settled already cannot be paired with stored settings`() {
+        val settled = TelemetryGate(SessionId.of("abc")!!, RateLimiter(MonotonicClock { 0L }))
+        val target = object : SettingsTarget {
+            override fun load(): TelemetryConfig? = null
+            override fun apply(settings: TelemetrySettings) = Unit
+        }
+
+        val refused = runCatching {
+            BackgroundTelemetry.start(openStore = { error("never opened") }, onFailure = {}, gate = settled, settings = target)
+        }
+
+        assertTrue("started with a settled gate", refused.exceptionOrNull() is IllegalArgumentException)
     }
 }

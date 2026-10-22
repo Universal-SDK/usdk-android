@@ -32,7 +32,7 @@ internal class BackgroundTelemetry private constructor(
     capacity: Int,
 ) : Telemetry {
 
-    private val handoff = ArrayBlockingQueue<TelemetryEvent>(capacity)
+    private val handoff = ArrayBlockingQueue<Item>(capacity)
     private val overflow = AtomicLong()
 
     /** Settings waiting for the thread. A queue of its own, so a full handoff cannot lose them. */
@@ -47,10 +47,12 @@ internal class BackgroundTelemetry private constructor(
     override fun emit(eventName: String, eventClass: EventClass, capture: (SamplingRate) -> TelemetryEvent) {
         if (!running) return
         // Until the stored settings are known, the event waits for them, so a stored "off" applies from the start.
-        val event = if (gate.isSettled) admitAndCapture(eventName, eventClass, capture) ?: return else {
+        val item = if (gate.isSettled) {
+            Ready(admitAndCapture(eventName, eventClass, capture) ?: return)
+        } else {
             Held(eventName, eventClass, capture)
         }
-        if (!handoff.offer(event)) overflow.incrementAndGet()
+        if (!handoff.offer(item)) overflow.incrementAndGet()
     }
 
     /** [capture]d at the rate the gate admits [eventName] with, or `null` when it is not admitted or capture failed. */
@@ -71,30 +73,22 @@ internal class BackgroundTelemetry private constructor(
     }
 
     /**
-     * The switches of [settings] replace the gate's at once, as [configure] does; the whole of [settings] goes to the
-     * [SettingsTarget] on the telemetry thread. Never lost to a full handoff.
+     * The switches of [settings] replace the gate's at once; the whole of [settings] goes to the [SettingsTarget] on
+     * the telemetry thread, through a queue a full handoff cannot lose. Wakes the thread so it acts on them at once.
      */
     override fun applySettings(settings: TelemetrySettings) {
         if (!running) return
         settings.config?.let { gate.config = it }
-        if (this.settings == null) return
-        delivered.add(settings)
-        handoff.offer(WAKE_UP)
-    }
-
-    /** Replaces the settings that decide which events are captured, and wakes the thread so it acts on them at once. */
-    fun configure(config: TelemetryConfig) {
-        gate.config = config
-        if (!running) return
-        // If the handoff is full the thread is busy and reads the new config before it next waits.
-        handoff.offer(WAKE_UP)
+        if (this.settings != null) delivered.add(settings)
+        // If the handoff is full the thread is busy and reads the new settings before it next waits.
+        handoff.offer(WakeUp)
     }
 
     override fun sync() {
         if (!running) return
         syncRequested.set(true)
         // Wakes the thread if it is waiting. If the handoff is full the thread is busy and sees the flag anyway.
-        handoff.offer(WAKE_UP)
+        handoff.offer(WakeUp)
     }
 
     private fun run() {
@@ -108,12 +102,15 @@ internal class BackgroundTelemetry private constructor(
                 val sending = gate.config.enabled
                 if (sending) sender.runIfDue()
                 // Waits for the next event, or until the sender is due, whichever comes first. Switched off, it waits
-                // only for an event, a sync or [configure].
+                // only for an event, a sync or new settings.
                 val wait = if (sending) sender.millisUntilDue() else null
-                val event = if (wait == null) handoff.take() else handoff.poll(wait, TimeUnit.MILLISECONDS)
-                val stored = if (event is Held) admitAndCapture(event.name, event.eventClass, event.capture) else event
-                if (stored != null && stored !== WAKE_UP) {
-                    store.append(stored.encode(), stored.eventClass)
+                val event = when (val item = if (wait == null) handoff.take() else handoff.poll(wait, TimeUnit.MILLISECONDS)) {
+                    is Ready -> item.event
+                    is Held -> admitAndCapture(item.name, item.eventClass, item.capture)
+                    WakeUp, null -> null
+                }
+                if (event != null) {
+                    store.append(event.encode(), event.eventClass)
                     sender.afterAppend()
                 }
                 val syncing = syncRequested.getAndSet(false)
@@ -145,7 +142,7 @@ internal class BackgroundTelemetry private constructor(
     /** Hands the settings delivered since the last pass to the [SettingsTarget], oldest first. */
     private fun applyDelivered() {
         val target = settings ?: return
-        while (true) target.apply(delivered.poll() ?: return)
+        generateSequence(delivered::poll).forEach(target::apply)
     }
 
     companion object {
@@ -153,17 +150,21 @@ internal class BackgroundTelemetry private constructor(
         /** How many events can wait for the telemetry thread before new ones are dropped. */
         const val HANDOFF_CAPACITY = 256
 
+        /** What the handoff carries to the telemetry thread. */
+        private sealed interface Item
+
+        /** An event captured on the caller's thread, ready to store. */
+        private class Ready(val event: TelemetryEvent) : Item
+
         /** An event emitted before the gate settled, admitted and captured on the telemetry thread once it has. */
         private class Held(
             val name: String,
-            override val eventClass: EventClass,
+            val eventClass: EventClass,
             val capture: (SamplingRate) -> TelemetryEvent,
-        ) : TelemetryEvent {
-            override fun encode(): ByteArray = error("a held event is captured before it is stored")
-        }
+        ) : Item
 
-        /** Wakes the thread for a sync or a new config. Never stored. */
-        private val WAKE_UP = TelemetryEvent { ByteArray(0) }
+        /** Wakes the thread for a sync or new settings. */
+        private object WakeUp : Item
 
         /**
          * Java priority 4, which Android maps to its background thread priority: telemetry never competes with the
@@ -175,6 +176,8 @@ internal class BackgroundTelemetry private constructor(
          * Starts the telemetry thread and returns at once. [openStore] and [openSender] run on that thread, so the
          * disk work of opening and restoring the store never happens on the caller's. [gate] has no default: its
          * session id must be the one the events and batches carry, or sampling decides on a session nobody sees.
+         * With [settings], [gate] must start unsettled, so events wait for the stored settings instead of passing
+         * under the defaults.
          */
         fun start(
             openStore: () -> EventStore,
@@ -184,6 +187,7 @@ internal class BackgroundTelemetry private constructor(
             gate: TelemetryGate,
             settings: SettingsTarget? = null,
         ): BackgroundTelemetry {
+            require(settings == null || !gate.isSettled) { "a gate with stored settings to load must start unsettled" }
             val telemetry = BackgroundTelemetry(openStore, openSender, onFailure, gate, settings, capacity)
             Thread(telemetry::run, "bidon-telemetry").apply {
                 isDaemon = true

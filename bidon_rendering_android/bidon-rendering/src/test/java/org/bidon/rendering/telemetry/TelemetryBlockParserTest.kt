@@ -18,7 +18,7 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * [TelemetryBlock.parse] against BID-139 acceptance criteria 1 to 6: the endpoint part and the switches part are
+ * [TelemetryBlock.parse] against the acceptance criteria 1 to 6: the endpoint part and the switches part are
  * judged alone, a malformed switch rejects the switches part whole, only https is accepted, and the app key falls back
  * when the block has none. Endpoints are compared by their values, since [TelemetryEndpoint] has no `equals`.
  */

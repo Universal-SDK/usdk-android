@@ -7,7 +7,8 @@ import java.io.IOException
  *
  * Until it has an endpoint it sends nothing, like [EventSender.None]. When an endpoint arrives, from the file at start
  * or through [apply] later, it builds a sender for it with [makeSender] and tells that sender the store has just
- * opened, so events stored before the endpoint was known are sent too.
+ * opened, so events stored before the endpoint was known are sent too. An endpoint equal to the one in force keeps
+ * the sender it has.
  *
  * Used only on the telemetry thread.
  */
@@ -41,10 +42,12 @@ internal class ConfiguredSender(
      */
     override fun apply(settings: TelemetrySettings) {
         if (settings == TelemetrySettings.NONE) return
+        val previous = current.endpoint
         current = settings.over(current)
         val endpoint = settings.endpoint
         val store = store
-        if (endpoint != null && store != null) {
+        // The same endpoint again keeps its sender, so a wait the server asked for is not cut short.
+        if (endpoint != null && endpoint != previous && store != null) {
             sender = makeSender(store, endpoint).also { it.afterStart() }
         }
         try {

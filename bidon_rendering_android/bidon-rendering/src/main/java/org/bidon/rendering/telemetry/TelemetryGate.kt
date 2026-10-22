@@ -90,7 +90,7 @@ internal class TelemetryGate(
     /**
      * The settings in force. A gate made with a `null` initial config is unsettled until [settle] or a set: reading
      * gives [TelemetryConfig.DEFAULT] meanwhile, and [BackgroundTelemetry] holds events instead of admitting them. A
-     * set always wins over a later [settle]. In production it is replaced through [BackgroundTelemetry.configure],
+     * set always wins over a later [settle]. In production it is replaced through [BackgroundTelemetry.applySettings],
      * which also wakes the telemetry thread.
      */
     var config: TelemetryConfig

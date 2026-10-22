@@ -73,6 +73,8 @@ class TelemetryOffTheMainThreadTest {
     @Test
     fun configuringTelemetryRaisesNoViolationOnTheMainThread() {
         val stored = File(TelemetryDirectory.forCurrentProcess(context), SettingsFile.FILE_NAME)
+        // What an earlier run wrote must not pass for what this one writes.
+        stored.delete()
 
         val violations = violationsOnMainThread {
             BidonRenderer.configureTelemetry(block(sampleRate = 0.5), context.packageName, "1.0.0", null)

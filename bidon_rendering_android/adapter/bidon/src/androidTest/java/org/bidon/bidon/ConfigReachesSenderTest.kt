@@ -17,6 +17,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.BeforeClass
 import org.junit.FixMethodOrder
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,6 +49,17 @@ class ConfigReachesSenderTest {
     fun setUp() {
         restoreTrust = FakeIngest.trustInThisProcess()
         BidonRenderer.init(context)
+    }
+
+    companion object {
+        /** Settings a run installed from an IDE left behind would otherwise reach the first test before its own. */
+        @JvmStatic
+        @BeforeClass
+        fun forgetStoredSettings() {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            File(File(File(context.noBackupFilesDir, "bidon_telemetry"), Application.getProcessName()), "telemetry_config")
+                .delete()
+        }
     }
 
     @After

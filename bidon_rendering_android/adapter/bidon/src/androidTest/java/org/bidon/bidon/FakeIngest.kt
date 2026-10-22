@@ -15,6 +15,8 @@ import javax.net.ssl.SSLSocketFactory
 /**
  * A telemetry ingest on this device, over https with a certificate made for the test, that accepts every batch and
  * keeps its body. The renderer takes only `https` endpoints from config, so a plain-http fake would never be called.
+ *
+ * A twin lives in `bidon-rendering/src/androidTest/java/org/bidon/rendering/telemetry/FakeIngest.kt`: the two test APKs cannot share a source set, so a change to one belongs in both.
  */
 internal class FakeIngest : Closeable {
 

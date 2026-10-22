@@ -29,8 +29,8 @@ import kotlin.system.exitProcess
  * installs its crash reporter, before the SDK, then initialises the renderer and crashes. [READ] starts the renderer
  * in the next process and reports what reached its error queue.
  *
- * [CONFIGURE_THEN_CRASH] does the same, but also gives the renderer a telemetry block that sends to [URL] as
- * [APP_KEY], and waits until the telemetry thread has stored it before it replies. [START] trusts the test ingest's
+ * [CONFIGURE_THEN_CRASH] does the same, but first gives the renderer, before `init`, a telemetry block that sends to
+ * [URL] as [APP_KEY], and waits until the telemetry thread has stored it before it replies. [START] trusts the test ingest's
  * [CERTIFICATE] and only initialises the renderer, with no telemetry block, as an app's next launch does before its
  * config arrives. [CONFIGURE] gives the renderer a telemetry block before and after `init`, with the manifest flag
  * on when `arg1` is 1 and off otherwise, and reports whether the settings were stored.
@@ -68,11 +68,12 @@ class CrashVictimService : Service() {
                 directory.deleteRecursively()
                 hostReport.delete()
                 HostCrashReporter.install(hostReport)
-                BidonRenderer.init(this)
                 val block = JSONObject()
                     .put("url", message.data.getString(URL))
                     .put("app_key", message.data.getString(APP_KEY))
+                // Before init, as when the adapter's config arrives first: the renderer keeps it until it starts.
                 BidonRenderer.configureTelemetry(block, packageName, SDK_VERSION, fallbackAppKey = null)
+                BidonRenderer.init(this)
                 awaitFile(File(directory, SettingsFile.FILE_NAME))
                 reply.data = Bundle().apply { putString(SESSION, RendererTelemetry.sessionId.value) }
             }

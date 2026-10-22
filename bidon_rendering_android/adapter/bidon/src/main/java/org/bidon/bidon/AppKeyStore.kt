@@ -4,7 +4,7 @@ import android.content.Context
 
 /**
  * The publisher's app key as the mediation SDK stored it at `initialize()`, for when the server's telemetry block has
- * none (D-033). The mediation SDK writes it before it requests config, so it is there by the time adapters start.
+ * none. The mediation SDK writes it before it requests config, so it is there by the time adapters start.
  */
 internal fun interface AppKeyStore {
 

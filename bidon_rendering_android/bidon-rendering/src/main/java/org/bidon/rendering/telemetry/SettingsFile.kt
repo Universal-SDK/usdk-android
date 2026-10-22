@@ -13,13 +13,12 @@ import java.io.IOException
  * The file is one flat JSON object with only these keys, each written when its part is present: `url`, `app_key`,
  * `bundle`, `sdk_version`, `enabled`, `sample_rate`, `event_rates`, `event_names`. No advertising id, consent string or
  * event content. Reading applies the same rules as [TelemetryBlock], so a hand-edited or corrupt file gives
- * [TelemetrySettings.NONE] rather than an error.
+ * [TelemetrySettings.NONE] rather than an error. The stored `bundle` and `sdk_version` are the ones of the process that
+ * wrote them: after an app update, batches carry the previous SDK version until the adapter's config arrives.
  *
  * Used only on the telemetry thread.
  */
 internal class SettingsFile(private val locate: () -> File) {
-
-    constructor(file: File) : this({ file })
 
     /** The stored settings; [TelemetrySettings.NONE] when there is no file or it cannot be read. Never throws. */
     fun read(): TelemetrySettings = try {

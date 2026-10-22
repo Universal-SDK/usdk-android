@@ -10,7 +10,7 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 
 /**
- * [ConfiguredSender] against BID-139 acceptance criteria 5 (a refused endpoint leaves the stored one), 8 (an endpoint
+ * [ConfiguredSender] against the acceptance criteria 5 (a refused endpoint leaves the stored one), 8 (an endpoint
  * that arrives after start sends what was stored), 14 (a later section without a block keeps the stored values, a
  * later full block replaces them) and 15 (a corrupt file is overwritten by the next good config).
  */
@@ -20,7 +20,7 @@ class ConfiguredSenderTest {
     val temporary = TemporaryFolder()
 
     private val directory: File by lazy { temporary.newFolder() }
-    private val settingsFile: SettingsFile get() = SettingsFile(File(directory, SettingsFile.FILE_NAME))
+    private val settingsFile: SettingsFile get() = SettingsFile { File(directory, SettingsFile.FILE_NAME) }
 
     private val store = object : EventStore {
         override fun append(payload: ByteArray, eventClass: EventClass) = Unit
@@ -199,6 +199,21 @@ class ConfiguredSenderTest {
     }
 
     @Test
+    fun `the same endpoint again keeps the sender, so its retry wait holds`() {
+        stored(TelemetrySettings(firstEndpoint, firstConfig))
+        val sender = configured()
+        sender.load()
+        sender.attach(store)
+        sender.afterStart()
+
+        sender.apply(TelemetrySettings(testEndpoint(url = "https://first.example.com/v2/telemetry", appKey = "first-key"), secondConfig))
+
+        assertEquals(1, made.size)
+        assertEquals(1, made.single().starts)
+        assertEquals(secondConfig, settingsFile.read().config)
+    }
+
+    @Test
     fun `applied settings are written to the file`() {
         val sender = configured()
         sender.load()
@@ -295,7 +310,7 @@ class ConfiguredSenderTest {
 
     @Test
     fun `a failed write does not throw and the settings stay in force for this process`() {
-        val unwritable = SettingsFile(File(directory, "missing/dir/${SettingsFile.FILE_NAME}"))
+        val unwritable = SettingsFile { File(directory, "missing/dir/${SettingsFile.FILE_NAME}") }
         val sender = configured(unwritable)
         sender.load()
         sender.attach(store)
