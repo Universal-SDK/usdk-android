@@ -19,11 +19,12 @@ import org.bidon.rendering.telemetry.CrashReport
 import org.bidon.rendering.telemetry.CrashSlot
 import org.bidon.rendering.telemetry.Creative
 import org.bidon.rendering.telemetry.DiskEventStore
-import org.bidon.rendering.telemetry.EventSender
+import org.bidon.rendering.telemetry.ConfiguredSender
 import org.bidon.rendering.telemetry.HttpTelemetryClient
 import org.bidon.rendering.telemetry.MonotonicClock
 import org.bidon.rendering.telemetry.RateLimiter
 import org.bidon.rendering.telemetry.SessionId
+import org.bidon.rendering.telemetry.SettingsFile
 import org.bidon.rendering.telemetry.Telemetry
 import org.bidon.rendering.telemetry.TelemetryEndpoint
 import org.bidon.rendering.telemetry.TelemetryGate
@@ -38,10 +39,10 @@ import java.io.File
  * <meta-data android:name="org.bidon.rendering.telemetry" android:value="true" />
  * ```
  *
- * Events are sent only when there is a [TelemetryEndpoint]. Production has none until the server gives the adapter the
- * app key the ingest endpoint requires (D-025), so an enabled library only stores events for now. A remote switch
- * replaces the flag once events are sent. Crash capture follows the same switch: with telemetry off, no handler is
- * installed.
+ * Events are sent once there is a [TelemetryEndpoint]: from the settings the server sends through
+ * [BidonRenderer.configureTelemetry], or from the ones an earlier process stored. Until then an enabled library only
+ * stores events. The server's switches decide what is captured and whether it is sent; whether telemetry runs at all
+ * stays with the flag. Crash capture follows the flag too: with telemetry off, no handler is installed.
  */
 internal object RendererTelemetry {
 
@@ -66,9 +67,9 @@ internal object RendererTelemetry {
      * when the system service dies, and starting a thread fails when the process has run out of them. Either way the
      * renderer carries on without telemetry.
      */
-    fun start(context: Context, endpoint: TelemetryEndpoint? = null): Telemetry =
+    fun start(context: Context): Telemetry =
         try {
-            if (isEnabled(context)) startThread(context, endpoint) else Telemetry.Disabled
+            if (isEnabled(context)) startThread(context) else Telemetry.Disabled
         } catch (failure: Throwable) {
             reportFailure(failure)
             Telemetry.Disabled
@@ -76,24 +77,23 @@ internal object RendererTelemetry {
 
     /**
      * Starts the telemetry thread and the crash capture. Opening the store also moves in the crash the previous
-     * process left, if it left one. Events are sent to [endpoint] when there is one.
+     * process left, if it left one. The settings an earlier process stored are read first, on the telemetry thread,
+     * and events wait for them.
      */
-    private fun startThread(context: Context, endpoint: TelemetryEndpoint?): Telemetry {
+    private fun startThread(context: Context): Telemetry {
         val directory = { TelemetryDirectory.forCurrentProcess(context) }
+        val sender = ConfiguredSender(SettingsFile { File(directory(), SettingsFile.FILE_NAME) }) { store, to ->
+            BatchSender(store, HttpTelemetryClient(to), BatchBody(to, sessionId))
+        }
         val telemetry = BackgroundTelemetry.start(
             openStore = {
                 val storeDirectory = directory()
                 DiskEventStore.open(storeDirectory).also { CrashSlot(storeDirectory).moveInto(it) }
             },
             onFailure = ::reportFailure,
-            openSender = { store ->
-                if (endpoint == null) {
-                    EventSender.None
-                } else {
-                    BatchSender(store, HttpTelemetryClient(endpoint), BatchBody(endpoint, sessionId))
-                }
-            },
-            gate = TelemetryGate(sessionId, RateLimiter(MonotonicClock.System)),
+            openSender = { store -> sender.also { it.attach(store) } },
+            gate = TelemetryGate(sessionId, RateLimiter(MonotonicClock.System), initial = null),
+            settings = sender,
         )
         context.registerComponentCallbacks(SyncInBackground(telemetry))
         installCrashCapture(directory)

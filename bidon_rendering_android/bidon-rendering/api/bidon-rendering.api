@@ -49,6 +49,7 @@ public final class org/bidon/rendering/AdType : java/lang/Enum {
 
 public final class org/bidon/rendering/BidonRenderer {
 	public static final field INSTANCE Lorg/bidon/rendering/BidonRenderer;
+	public final fun configureTelemetry (Lorg/json/JSONObject;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
 	public final fun createHtmlRenderer (Lorg/bidon/rendering/AdRenderingConfig;)Lorg/bidon/rendering/AdRenderer;
 	public static synthetic fun createHtmlRenderer$default (Lorg/bidon/rendering/BidonRenderer;Lorg/bidon/rendering/AdRenderingConfig;ILjava/lang/Object;)Lorg/bidon/rendering/AdRenderer;
 	public final fun createMraidRenderer (Lorg/bidon/rendering/AdRenderingConfig;)Lorg/bidon/rendering/AdRenderer;

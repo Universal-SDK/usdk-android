@@ -20,6 +20,13 @@ internal class TelemetryEndpoint private constructor(
     val sdkVersion: String,
 ) {
 
+    /** Equal when every value is, the URL compared as text: [URL.equals] would resolve the host. */
+    override fun equals(other: Any?): Boolean = other is TelemetryEndpoint &&
+        url.toString() == other.url.toString() && appKey == other.appKey && bundle == other.bundle &&
+        sdkVersion == other.sdkVersion
+
+    override fun hashCode(): Int = listOf(url.toString(), appKey, bundle, sdkVersion).hashCode()
+
     companion object {
 
         /** Longer values are not identifiers, and would crowd events out of a batch. */

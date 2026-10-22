@@ -191,7 +191,7 @@ class BackgroundTelemetryGateTest {
         assertEquals(0, sender.runs.get())
         assertEquals("sender calls while off", calls, sender.calls())
 
-        telemetry.configure(TelemetryConfig.DEFAULT)
+        telemetry.applySettings(TelemetrySettings(endpoint = null, config = TelemetryConfig.DEFAULT))
         awaitUntil { sender.runs.get() > 0 }
     }
 
@@ -201,7 +201,7 @@ class BackgroundTelemetryGateTest {
         val telemetry = start(openSender = { sender })
         awaitUntil { sender.runs.get() > 0 }
 
-        telemetry.configure(TelemetryConfig(enabled = false))
+        telemetry.applySettings(TelemetrySettings(endpoint = null, config = TelemetryConfig(enabled = false)))
         awaitSenderStill(sender)
         val runs = sender.runs.get()
         val calls = sender.calls()
@@ -211,7 +211,7 @@ class BackgroundTelemetryGateTest {
         assertEquals("sender calls while off", calls, sender.calls())
 
         // No emit and no sync: switching back on alone resumes sending.
-        telemetry.configure(TelemetryConfig.DEFAULT)
+        telemetry.applySettings(TelemetrySettings(endpoint = null, config = TelemetryConfig.DEFAULT))
         awaitUntil { sender.runs.get() > runs }
     }
 
@@ -220,7 +220,7 @@ class BackgroundTelemetryGateTest {
         val sender = ControlledSender(store, due = true)
         val telemetry = start(openSender = { sender })
         awaitUntil { sender.runs.get() > 0 }
-        telemetry.configure(TelemetryConfig(enabled = false))
+        telemetry.applySettings(TelemetrySettings(endpoint = null, config = TelemetryConfig(enabled = false)))
         awaitSenderStill(sender)
         val runs = sender.runs.get()
 
@@ -242,7 +242,7 @@ class BackgroundTelemetryGateTest {
         awaitSenderStill(sender)
         val runs = sender.runs.get()
 
-        telemetry.configure(TelemetryConfig(enabled = false))
+        telemetry.applySettings(TelemetrySettings(endpoint = null, config = TelemetryConfig(enabled = false)))
         // Were it run now, this sender would take everything out of the store. The sync wakes the thread after it
         // has seen the switch, so it has every chance to send.
         sender.due = true

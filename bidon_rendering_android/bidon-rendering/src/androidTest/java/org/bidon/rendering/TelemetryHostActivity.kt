@@ -8,6 +8,7 @@ import org.bidon.rendering.telemetry.EventClass
 import org.bidon.rendering.telemetry.EventEnvelope
 import org.bidon.rendering.telemetry.TelemetryEndpoint
 import org.bidon.rendering.telemetry.TelemetryEvent
+import org.bidon.rendering.telemetry.TelemetrySettings
 import java.io.File
 
 /**
@@ -25,7 +26,8 @@ class TelemetryHostActivity : Activity() {
         val endpoint = TelemetryEndpoint.of(intent.getStringExtra(EXTRA_URL)!!, "app_key", packageName, "0.14.0")!!
         // Whatever an earlier run of this process left would otherwise travel in the first batch.
         TelemetryDirectory.forCurrentProcess(this).deleteRecursively()
-        val telemetry = RendererTelemetry.start(applicationContext, endpoint)
+        val telemetry = RendererTelemetry.start(applicationContext)
+        telemetry.applySettings(TelemetrySettings(endpoint, config = null))
         val session = RendererTelemetry.sessionId
         repeat(3) { index ->
             telemetry.emit("event_$index", EventClass.DIAGNOSTIC) { rate ->

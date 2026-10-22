@@ -20,6 +20,7 @@ import org.bidon.app.settings.SettingsFragment
 import org.bidon.bidon.BidonAdapter
 import org.bidon.rendering.BidonRenderer
 import org.bidon.sdk.BidonSdk
+import org.json.JSONObject
 
 /**
  * Holds the bottom navigation and initializes both SDKs. All ad work lives in the fragments:
@@ -83,9 +84,20 @@ class MainActivity : AppCompatActivity() {
 
     private fun initBidonSdk() {
         val settings = SdkSettings.load(this)
+        val adapter = BidonAdapter()
+
+        // Until the server's config carries a telemetry block, a URL set in Settings stands in for it.
+        settings.telemetryUrl?.let { url ->
+            BidonRenderer.configureTelemetry(
+                block = JSONObject().put("url", url),
+                bundle = settings.bundleId ?: packageName,
+                sdkVersion = adapter.adapterInfo.sdkVersion,
+                fallbackAppKey = settings.appKey,
+            )
+        }
 
         BidonSdk
-            .registerAdapters(BidonAdapter())
+            .registerAdapters(adapter)
             .setLoggerLevel(settings.logLevel)
             .setTestMode(settings.testMode)
             .setBaseUrl(settings.baseUrl)

@@ -30,6 +30,12 @@
             app:title="@string/settings_bundle_id"
             app:useSimpleSummaryProvider="true" />
 
+        <EditTextPreference
+            app:dialogMessage="@string/settings_telemetry_url_help"
+            app:key="@string/pref_telemetry_url"
+            app:title="@string/settings_telemetry_url"
+            app:useSimpleSummaryProvider="true" />
+
         <SwitchPreferenceCompat
             app:defaultValue="@bool/pref_test_mode_default"
             app:key="@string/pref_test_mode"

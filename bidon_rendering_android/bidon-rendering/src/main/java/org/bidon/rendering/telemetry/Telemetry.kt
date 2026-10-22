@@ -21,6 +21,12 @@ internal interface Telemetry {
      */
     fun sync()
 
+    /**
+     * Applies settings the server sent: the switches at once, the endpoint and the stored copy on the telemetry
+     * thread. Returns at once and does no disk or network work on the caller's thread.
+     */
+    fun applySettings(settings: TelemetrySettings) = Unit
+
     /** Telemetry that is switched off. */
     object Disabled : Telemetry {
         override fun emit(eventName: String, eventClass: EventClass, capture: (SamplingRate) -> TelemetryEvent) = Unit

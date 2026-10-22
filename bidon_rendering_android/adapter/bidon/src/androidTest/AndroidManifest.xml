@@ -5,6 +5,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Cleartext for the local test server on 127.0.0.1, whatever the test APK's target SDK. -->
-    <application android:usesCleartextTraffic="true" />
+    <application android:usesCleartextTraffic="true">
+        <!-- Telemetry is off unless the host app switches it on; tests of it need it on. -->
+        <meta-data
+            android:name="org.bidon.rendering.telemetry"
+            android:value="true" />
+    </application>
 
 </manifest>
