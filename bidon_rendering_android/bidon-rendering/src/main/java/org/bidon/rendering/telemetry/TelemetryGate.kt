@@ -3,6 +3,7 @@ package org.bidon.rendering.telemetry
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * The settings that decide which events are captured, as one value that is replaced whole (D-031). Until the server
@@ -16,7 +17,7 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * A rate outside (0, 1] switches off the diagnostic events it applies to; errors still pass.
  */
-internal class TelemetryConfig(
+internal data class TelemetryConfig(
     val enabled: Boolean = true,
     val samplingRate: Double = 1.0,
     val eventRates: Map<String, Double> = emptyMap(),
@@ -84,10 +85,31 @@ internal class RateLimiter(
 internal class TelemetryGate(
     sessionId: SessionId,
     private val limiter: RateLimiter,
+    initial: TelemetryConfig? = TelemetryConfig.DEFAULT,
 ) {
-    /** In production it is replaced through [BackgroundTelemetry.configure], which also wakes the telemetry thread. */
-    @Volatile
-    var config: TelemetryConfig = TelemetryConfig.DEFAULT
+    /**
+     * The settings in force. A gate made with a `null` initial config is unsettled until [settle] or a set: reading
+     * gives [TelemetryConfig.DEFAULT] meanwhile, and [BackgroundTelemetry] holds events instead of admitting them. A
+     * set always wins over a later [settle]. In production it is replaced through [BackgroundTelemetry.configure],
+     * which also wakes the telemetry thread.
+     */
+    var config: TelemetryConfig
+        get() = state.get() ?: TelemetryConfig.DEFAULT
+        set(value) = state.set(value)
+
+    /** Null until settled. */
+    private val state = AtomicReference(initial)
+
+    /** Whether the gate has settings to decide with: a set has happened, or [settle] has. */
+    val isSettled: Boolean get() = state.get() != null
+
+    /**
+     * Settles the gate with the settings an earlier process stored, [TelemetryConfig.DEFAULT] when there are none,
+     * unless a set got there first.
+     */
+    fun settle(stored: TelemetryConfig?) {
+        state.compareAndSet(null, stored ?: TelemetryConfig.DEFAULT)
+    }
 
     private val position = sessionId.samplingPosition()
 
