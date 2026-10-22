@@ -44,7 +44,16 @@ class BidonAdapter :
             context = context,
             config = configParams.toRendererConfig()
         )
+        BidonRenderer.configureTelemetry(
+            block = configParams.telemetry,
+            bundle = context.packageName,
+            sdkVersion = adapterInfo.sdkVersion,
+            fallbackAppKey = appKeys(context).appKey(),
+        )
     }
+
+    /** Where the app key the mediation SDK stored is read from; tests replace it. */
+    internal var appKeys: (Context) -> AppKeyStore = AppKeyStore::fromPreferences
 
     override suspend fun getToken(adTypeParam: AdTypeParam): String? = sdkInstanceId
 
@@ -61,8 +70,7 @@ class BidonAdapter :
         val obj = JSONObject(json)
         return BidonInitParameters(
             sdkInstanceId = obj.optString("sdk_instance_id").ifBlank { null },
-            endpoint = obj.optString("endpoint").ifBlank { null },
-            apiKey = obj.optString("api_key").ifBlank { null },
+            telemetry = obj.optJSONObject("telemetry"),
             debug = obj.optBoolean("debug", false),
             timeoutMs = obj.optLong("timeout_ms", 5000L)
         )
