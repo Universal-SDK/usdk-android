@@ -77,7 +77,7 @@ internal class AdEvents(
     fun rendered() {
         if (!renderReported.compareAndSet(false, true)) return
         val loadMillis = loadMillis()
-        emit(CREATIVE_RENDERED, EventClass.DIAGNOSTIC) {
+        emit(EventName.CREATIVE_RENDERED, EventClass.DIAGNOSTIC) {
             if (loadMillis != null) put("load_ms", loadMillis)
         }
     }
@@ -88,7 +88,7 @@ internal class AdEvents(
      */
     fun loadFailed(reason: LoadFailure, code: Int? = null) {
         if (!loadFailureReported.compareAndSet(false, true)) return
-        emit(CREATIVE_LOAD_FAILED, EventClass.ERROR) {
+        emit(EventName.CREATIVE_LOAD_FAILED, EventClass.ERROR) {
             put("reason", reason.wireName)
             if (code != null) put("code", code)
         }
@@ -103,7 +103,7 @@ internal class AdEvents(
         val wasShown = renderReported.get()
         loadFailureReported.set(true)
         if (!processGoneReported.compareAndSet(false, true)) return
-        emit(RENDER_PROCESS_GONE, EventClass.ERROR) {
+        emit(EventName.RENDER_PROCESS_GONE, EventClass.ERROR) {
             put("did_crash", didCrash)
             put("was_shown", wasShown)
         }
@@ -129,11 +129,11 @@ internal class AdEvents(
         return millis.takeIf { it >= 0 }
     }
 
-    /** Emits [eventName], its envelope captured when telemetry keeps it, with the fields [fields] adds. */
-    private fun emit(eventName: String, eventClass: EventClass, fields: JSONObject.() -> Unit) {
-        telemetry.emit(eventName, eventClass) { rate ->
+    /** Emits [name], its envelope captured when telemetry keeps it, with the fields [fields] adds. */
+    private fun emit(name: EventName, eventClass: EventClass, fields: JSONObject.() -> Unit) {
+        telemetry.emit(name.wireName, eventClass) { rate ->
             val envelope = EventEnvelope.capture(
-                eventName,
+                name,
                 sessionId,
                 clock,
                 auctionId = auctionId?.takeIf { it.isNotBlank() },
@@ -153,11 +153,5 @@ internal class AdEvents(
 
     private class AdEvent(private val json: JSONObject, override val eventClass: EventClass) : TelemetryEvent {
         override fun encode(): ByteArray = json.toString().toByteArray(Charsets.UTF_8)
-    }
-
-    private companion object {
-        const val CREATIVE_RENDERED = "creative_rendered"
-        const val CREATIVE_LOAD_FAILED = "creative_load_failed"
-        const val RENDER_PROCESS_GONE = "render_process_gone"
     }
 }

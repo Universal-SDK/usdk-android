@@ -1,0 +1,5 @@
+repo=bidon-io/bidon-backend
+branch=bac-73-poc-sdk-batched-telemetry-ingest
+commit=61b3304
+path=schemas/proto/org/bidon/telemetry/v1/events.proto
+sha256=469743f0d31e2bc6079c4614bbd5cb97691029ea7d54f8ef25b1e68f988be5d8

@@ -54,7 +54,21 @@ internal class EventEnvelope private constructor(
 
     companion object {
 
-        /** Captures an event named [eventName] as of now on [clock]. */
+        /** Captures the event [name] as of now on [clock]. */
+        fun capture(
+            name: EventName,
+            sessionId: SessionId,
+            clock: Clock,
+            auctionId: String? = null,
+            adType: AdType? = null,
+            adFormat: String? = null,
+            samplingRate: SamplingRate,
+        ) = capture(name.wireName, sessionId, clock, auctionId, adType, adFormat, samplingRate)
+
+        /**
+         * Captures an event named [eventName] as of now on [clock]. Production code calls the [EventName] overload,
+         * which delegates here; tests call this one for names the SDK never emits.
+         */
         fun capture(
             eventName: String,
             sessionId: SessionId,
