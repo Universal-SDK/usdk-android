@@ -1,5 +1,10 @@
 package org.bidon.rendering.vast
 
+import io.kotest.property.Arb
+import io.kotest.property.arbitrary.filter
+import io.kotest.property.arbitrary.int
+import io.kotest.property.checkAll
+import kotlinx.coroutines.runBlocking
 import org.bidon.rendering.telemetry.ErrorCode
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -39,6 +44,30 @@ class VastLoadFailureTest {
     }
 
     @Test
+    fun `a wrapper fetch the server answered with a status is 8002 with that status`() {
+        assertEquals(
+            VastLoadFailure(ErrorCode.VAST_WRAPPER_HTTP_STATUS, "404"),
+            VastLoadFailure.classify(parsing(301, VastWrapperHttpException(404))),
+        )
+        assertEquals(
+            VastLoadFailure(ErrorCode.VAST_WRAPPER_HTTP_STATUS, "500"),
+            VastLoadFailure.classify(parsing(301, VastWrapperHttpException(500))),
+        )
+    }
+
+    @Test
+    fun `any status is passed on as it came`() {
+        runBlocking {
+            checkAll(Arb.int().filter { it != NOT_HTTP }) { status ->
+                assertEquals(
+                    VastLoadFailure(ErrorCode.VAST_WRAPPER_HTTP_STATUS, status.toString()),
+                    VastLoadFailure.classify(parsing(301, VastWrapperHttpException(status))),
+                )
+            }
+        }
+    }
+
+    @Test
     fun `a wrapper fetch nothing answered is 8001 with the VAST code 301`() {
         listOf<Throwable?>(ConnectException("refused"), SocketTimeoutException("slow"), IOException("reset"), null).forEach { cause ->
             assertEquals(
@@ -50,10 +79,38 @@ class VastLoadFailureTest {
     }
 
     @Test
+    fun `an answer that was not HTTP is a fetch that got no answer`() {
+        assertEquals(
+            VastLoadFailure(ErrorCode.VAST_WRAPPER_NO_ANSWER, vast(301)),
+            VastLoadFailure.classify(parsing(301, VastWrapperHttpException(NOT_HTTP))),
+        )
+    }
+
+    @Test
+    fun `a wrapper fetch the app's cleartext policy refused is 6015 with the VAST code 301`() {
+        assertEquals(
+            VastLoadFailure(ErrorCode.VAST_WRAPPER_CLEARTEXT_BLOCKED, vast(301)),
+            VastLoadFailure.classify(parsing(301, VastWrapperCleartextException())),
+        )
+    }
+
+    @Test
     fun `a fetch that found no protocol both sides accept is a fetch that got no answer, not a cleartext refusal`() {
         assertEquals(
             VastLoadFailure(ErrorCode.VAST_WRAPPER_NO_ANSWER, vast(301)),
             VastLoadFailure.classify(parsing(301, UnknownServiceException("Unable to find acceptable protocols. isFallback=false"))),
+        )
+    }
+
+    @Test
+    fun `a status cause counts only on a failed fetch`() {
+        assertEquals(
+            VastLoadFailure(ErrorCode.VAST_INVALID, vast(100)),
+            VastLoadFailure.classify(parsing(100, VastWrapperHttpException(404))),
+        )
+        assertEquals(
+            VastLoadFailure(ErrorCode.VAST_WRAPPER_TOO_DEEP, vast(302)),
+            VastLoadFailure.classify(parsing(302, VastWrapperHttpException(404))),
         )
     }
 
@@ -70,12 +127,17 @@ class VastLoadFailureTest {
 
     @Test
     fun `an exception that is not a parsing failure is an invalid document`() {
-        listOf<Throwable>(IllegalStateException("x"), IOException("y"), RuntimeException()).forEach {
+        listOf<Throwable>(IllegalStateException("x"), IOException("y"), VastWrapperHttpException(404), RuntimeException()).forEach {
             assertEquals(
                 it.toString(),
                 VastLoadFailure(ErrorCode.VAST_INVALID, vast(100)),
                 VastLoadFailure.classify(it),
             )
         }
+    }
+
+    private companion object {
+        /** What `HttpURLConnection.getResponseCode()` gives for an answer that is not valid HTTP. */
+        const val NOT_HTTP = -1
     }
 }

@@ -13,8 +13,8 @@ import kotlin.concurrent.thread
 /**
  * A minimal HTTP server on the device's loopback interface, for tests that need the renderer's real
  * connections: a wrapped VAST document, a video, a tracking pixel. It serves canned bodies by path,
- * can leave a path hanging, can redirect a path elsewhere, answers 404 for anything else, and records the
- * path and query of every request.
+ * can leave a path hanging, can redirect a path elsewhere, can answer a path with a given status,
+ * answers 404 for anything else, and records the path and query of every request.
  */
 class LocalHttpServer : Closeable {
 
@@ -31,6 +31,7 @@ class LocalHttpServer : Closeable {
     private val posted = Collections.synchronizedList(mutableListOf<Pair<String, String>>())
     private val stalled = ConcurrentHashMap.newKeySet<String>()
     private val redirects = ConcurrentHashMap<String, String>()
+    private val statuses = ConcurrentHashMap<String, Int>()
     private val closed = CountDownLatch(1)
 
     init {
@@ -61,6 +62,11 @@ class LocalHttpServer : Closeable {
     /** Answers requests for [path] with a redirect to [location], as a click tracker does. */
     fun redirect(path: String, location: String) {
         redirects[path] = location
+    }
+
+    /** Answers requests for [path] with an empty response of [status], whatever the status is. */
+    fun respondWith(path: String, status: Int) {
+        statuses[path] = status
     }
 
     /** The path and query of every request for [path], whatever its query. */
@@ -114,7 +120,10 @@ class LocalHttpServer : Closeable {
 
                 val body = bodies[pathAndQuery.substringBefore("?")]
                 val location = redirects[pathAndQuery.substringBefore("?")]
-                val head = if (location != null) {
+                val status = statuses[pathAndQuery.substringBefore("?")]
+                val head = if (status != null) {
+                    "HTTP/1.1 $status Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                } else if (location != null) {
                     "HTTP/1.1 302 Found\r\nLocation: $location\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                 } else if (body == null) {
                     "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"

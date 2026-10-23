@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cleartext for the local test server on 127.0.0.1; refused for localhost, so a test can meet the refusal an app's
+     policy gives. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

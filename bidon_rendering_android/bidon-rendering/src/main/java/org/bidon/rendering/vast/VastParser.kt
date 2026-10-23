@@ -1,9 +1,12 @@
 package org.bidon.rendering.vast
 
+import android.security.NetworkSecurityPolicy
 import android.util.Xml
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.xmlpull.v1.XmlPullParser
+import java.io.IOException
 import java.io.StringReader
 import java.net.HttpURLConnection
 import java.net.URL
@@ -194,19 +197,29 @@ internal class VastParser {
                     )
                 }
 
-                if (wrapperUrl.isNullOrBlank()) {
+                val wrapperAddress = wrapperUrl?.let(::wrapperUrlOrNull)
+                    ?: return@withContext Result.failure(
+                        VastParsingException(
+                            VastError(
+                                300,
+                                "Wrapper URL missing or not http(s)"
+                            )
+                        )
+                    )
 
+                val wrappedXml = try {
+                    fetchWrapper(wrapperAddress)
+                } catch (e: IOException) {
                     return@withContext Result.failure(
                         VastParsingException(
                             VastError(
                                 301,
-                                "Wrapper URL missing"
-                            )
+                                "Wrapper fetch failed"
+                            ),
+                            e
                         )
                     )
                 }
-
-                val wrappedXml = fetchWrapper(wrapperUrl)
 
                 return@withContext parseInternal(
                     xml = wrappedXml,
@@ -240,13 +253,17 @@ internal class VastParser {
 
         } catch (e: Exception) {
 
+            // A cancelled load, from a destroyed renderer, stops here; anything else is a parsing failure, a stray
+            // CancellationException while the load is still active included.
+            ensureActive()
             Result.failure(
                 VastParsingException(
                     VastError(
                         code = 100,
                         description = e.message
                             ?: "VAST parsing error"
-                    )
+                    ),
+                    e
                 )
             )
         }
@@ -475,12 +492,20 @@ internal class VastParser {
         }
     }
 
+    /**
+     * The wrapped document at [url]; throws [VastWrapperCleartextException] for an `http` address the app's network
+     * security policy refuses, and [VastWrapperHttpException] for a status outside 200 to 299.
+     */
     private fun fetchWrapper(
-        url: String
+        url: URL
     ): String {
 
+        if (url.protocol == "http" && !NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(url.host)) {
+            throw VastWrapperCleartextException()
+        }
+
         val connection =
-            URL(url).openConnection() as HttpURLConnection
+            url.openConnection() as HttpURLConnection
 
         return try {
 
@@ -491,6 +516,9 @@ internal class VastParser {
             connection.requestMethod = "GET"
 
             connection.connect()
+
+            val status = connection.responseCode
+            if (status !in 200..299) throw VastWrapperHttpException(status)
 
             connection.inputStream
                 .bufferedReader()
@@ -506,3 +534,15 @@ internal class VastParsingException(
     val vastError: VastError,
     cause: Throwable? = null
 ) : Exception(vastError.description, cause)
+
+/** A wrapper's server answered with [status], outside 200 to 299. */
+internal class VastWrapperHttpException(val status: Int) : IOException("HTTP $status")
+
+/** The app's network security policy does not permit cleartext traffic to a wrapper's `http` address. */
+internal class VastWrapperCleartextException : IOException("Cleartext traffic to the wrapper's host is not permitted")
+
+/** A wrapper's [address] as a URL when it is an absolute http or https one with a host, else `null`. */
+internal fun wrapperUrlOrNull(address: String): URL? =
+    runCatching { URL(address) }
+        .getOrNull()
+        ?.takeIf { (it.protocol == "http" || it.protocol == "https") && it.host.isNotEmpty() }

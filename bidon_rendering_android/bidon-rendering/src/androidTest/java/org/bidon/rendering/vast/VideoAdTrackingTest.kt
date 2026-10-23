@@ -34,6 +34,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.net.InetAddress
+import java.net.ServerSocket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -204,26 +206,135 @@ class VideoAdTrackingTest {
         }
     }
 
-    /** A wrapper with nowhere to go fails the load, and the event carries the VAST error code and nothing of the ad. */
+    /** A wrapper with no address to fetch fails the load as the creative's, and the event carries nothing of the ad. */
     @Test
-    fun aVastDocumentThatCannotBeParsedReportsItsErrorCode() {
+    fun aWrapperWithoutAnAddressReportsAMissingUri() {
+        val failed = loadFailure("<VAST version=\"4.2\"><Ad id=\"1\"><Wrapper><AdSystem>test</AdSystem></Wrapper></Ad></VAST>")
+
+        assertEquals("6006", failed.json.getString("error_code"))
+        assertEquals("creative", failed.json.getString("error_domain"))
+        assertEquals("parse", failed.json.getString("failed_stage"))
+        assertEquals("vast", failed.json.getString("external_error_source"))
+        assertEquals("300", failed.json.getString("external_error_code"))
+        assertEquals(VastParsingException::class.java.name, failed.json.getString("exception_class"))
+        assertTrue("no load time", failed.json.getLong("duration_ms") >= 0)
+    }
+
+    @Test
+    fun aDocumentThatIsNotVastReportsAnInvalidDocument() {
+        val failed = loadFailure("this is not a VAST document")
+
+        assertEquals("6004", failed.json.getString("error_code"))
+        assertEquals("creative", failed.json.getString("error_domain"))
+        assertEquals("parse", failed.json.getString("failed_stage"))
+        assertEquals("vast", failed.json.getString("external_error_source"))
+        assertEquals("100", failed.json.getString("external_error_code"))
+    }
+
+    /** The wrapper's server answers with an error: the buyer's failure, with the status it sent. */
+    @Test
+    fun aWrapperTheServerRefusesReportsTheStatus() {
+        listOf(404, 500).forEach { status ->
+            server.respondWith("/wrapped-$status.xml", status)
+
+            val failed = loadFailure(wrapperTo(server.url("/wrapped-$status.xml")))
+
+            assertEquals("$status", "8002", failed.json.getString("error_code"))
+            assertEquals("$status", "dsp", failed.json.getString("error_domain"))
+            assertEquals("$status", "asset_fetch", failed.json.getString("failed_stage"))
+            assertEquals("$status", "http", failed.json.getString("external_error_source"))
+            assertEquals("$status", status.toString(), failed.json.getString("external_error_code"))
+            assertEquals("$status", VastParsingException::class.java.name, failed.json.getString("exception_class"))
+            assertEquals("$status", VastWrapperHttpException::class.java.name, failed.json.getString("exception_cause_class"))
+            assertEquals("$status", 1, server.requestCount("/wrapped-$status.xml"))
+        }
+    }
+
+    /** Nothing listens at the wrapper's address: the network's failure, with the VAST code for a fetch that got no answer. */
+    @Test
+    fun aWrapperNothingAnswersReportsNoAnswer() {
+        val failed = loadFailure(wrapperTo("http://127.0.0.1:${closedPort()}/wrapped.xml"))
+
+        assertEquals("8001", failed.json.getString("error_code"))
+        assertEquals("network", failed.json.getString("error_domain"))
+        assertEquals("asset_fetch", failed.json.getString("failed_stage"))
+        assertEquals("vast", failed.json.getString("external_error_source"))
+        assertEquals("301", failed.json.getString("external_error_code"))
+        assertEquals(VastParsingException::class.java.name, failed.json.getString("exception_class"))
+        assertEquals("java.net.ConnectException", failed.json.getString("exception_cause_class"))
+        assertTrue("no load time", failed.json.getLong("duration_ms") >= 0)
+    }
+
+    /** The test manifest refuses cleartext to `localhost`: the creative's failure, not the network's. */
+    @Test
+    fun aWrapperTheCleartextPolicyRefusesReports6015() {
+        server.serve("/wrapped.xml", "application/xml", wrapperTo(server.url("/elsewhere.xml")).toByteArray())
+
+        val failed = loadFailure(wrapperTo(server.url("/wrapped.xml").replace("127.0.0.1", "localhost")))
+
+        assertEquals("6015", failed.json.getString("error_code"))
+        assertEquals("creative", failed.json.getString("error_domain"))
+        assertEquals("asset_fetch", failed.json.getString("failed_stage"))
+        assertEquals("vast", failed.json.getString("external_error_source"))
+        assertEquals("301", failed.json.getString("external_error_code"))
+        assertEquals(VastParsingException::class.java.name, failed.json.getString("exception_class"))
+        assertEquals(VastWrapperCleartextException::class.java.name, failed.json.getString("exception_cause_class"))
+        assertEquals("nothing reached the server", 0, server.requestCount("/wrapped.xml"))
+    }
+
+    /** A wrapper that leads back to itself fails once the chain is deeper than the renderer follows. */
+    @Test
+    fun aWrapperChainTooDeepReportsItsDepth() {
+        server.serve("/loop.xml", "application/xml", wrapperTo(server.url("/loop.xml")).toByteArray())
+
+        val failed = loadFailure(wrapperTo(server.url("/loop.xml")))
+
+        assertEquals("6005", failed.json.getString("error_code"))
+        assertEquals("creative", failed.json.getString("error_domain"))
+        assertEquals("parse", failed.json.getString("failed_stage"))
+        assertEquals("vast", failed.json.getString("external_error_source"))
+        assertEquals("302", failed.json.getString("external_error_code"))
+    }
+
+    /** A wrapper whose response has no ad fails as a wrapped response with no ad that may play. */
+    @Test
+    fun aWrapperLeadingToNoAdReportsAWrappedResponseWithNoAd() {
+        server.serve("/empty.xml", "application/xml", "<VAST version=\"4.2\"></VAST>".toByteArray())
+
+        val failed = loadFailure(wrapperTo(server.url("/empty.xml")))
+
+        assertEquals("6014", failed.json.getString("error_code"))
+        assertEquals("creative", failed.json.getString("error_domain"))
+        assertEquals("parse", failed.json.getString("failed_stage"))
+        assertEquals("vast", failed.json.getString("external_error_source"))
+        assertEquals("303", failed.json.getString("external_error_code"))
+    }
+
+    /** Loads [vast] into a renderer that is destroyed afterwards, and returns the one failure it reported. */
+    private fun loadFailure(vast: String): QueuedEvents.Stored {
         val events = Events()
         val renderer = VastRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Creative.VAST))
         try {
-            instrumentation.runOnMainSync {
-                renderer.load("<VAST version=\"4.2\"><Ad id=\"1\"><Wrapper><AdSystem>test</AdSystem></Wrapper></Ad></VAST>", events)
-            }
-            assertTrue("the load did not fail", events.failed.await(10, TimeUnit.SECONDS))
+            instrumentation.runOnMainSync { renderer.load(vast, events) }
+            assertTrue("the load did not fail", events.failed.await(20, TimeUnit.SECONDS))
 
             val failed = queued.next()
             queued.assertAdEvent(failed, "ad_load_failed", EventClass.ERROR, null)
-            assertEquals("vast_error", failed.json.getString("reason"))
-            assertEquals(301, failed.json.getInt("code"))
             queued.assertNoMore()
+            return failed
         } finally {
             onMain { renderer.destroy() }
         }
     }
+
+    private fun wrapperTo(address: String) = """
+        <VAST version="4.2"><Ad id="1"><Wrapper><AdSystem>test</AdSystem>
+        <VASTAdTagURI><![CDATA[$address]]></VASTAdTagURI>
+        </Wrapper></Ad></VAST>
+    """.trimIndent()
+
+    /** A local port nothing listens on, from a socket that was bound and then closed. */
+    private fun closedPort(): Int = ServerSocket(0, 0, InetAddress.getByName("127.0.0.1")).use { it.localPort }
 
     /**
      * A renderer destroyed while its VAST is still loading has nothing to report: the cancelled load is not a failure.
@@ -260,8 +371,14 @@ class VideoAdTrackingTest {
 
             val failed = queued.next()
             queued.assertAdEvent(failed, "ad_load_failed", EventClass.ERROR, null)
-            assertEquals("no_media_file", failed.json.getString("reason"))
-            assertFalse(failed.json.has("code"))
+            assertEquals("7001", failed.json.getString("error_code"))
+            assertEquals("creative", failed.json.getString("error_domain"))
+            assertFalse(failed.json.has("failed_stage"))
+            assertFalse("a show failure has no load time", failed.json.has("duration_ms"))
+            assertEquals("vast", failed.json.getString("external_error_source"))
+            assertEquals("403", failed.json.getString("external_error_code"))
+            // The class of what the media file selection failed with.
+            assertEquals("java.lang.IllegalStateException", failed.json.getString("exception_class"))
             queued.assertNoMore()
             assertTrue(videoScreens().isEmpty())
         }
@@ -279,8 +396,14 @@ class VideoAdTrackingTest {
             assertEquals(0, events.impressions.get())
             val failed = queued.next()
             queued.assertAdEvent(failed, "ad_load_failed", EventClass.ERROR, null)
-            assertEquals("playback_error", failed.json.getString("reason"))
-            assertTrue("no player error code", failed.json.getInt("code") > 0)
+            assertEquals("7002", failed.json.getString("error_code"))
+            assertEquals("creative", failed.json.getString("error_domain"))
+            assertFalse(failed.json.has("failed_stage"))
+            assertFalse("a show failure has no load time", failed.json.has("duration_ms"))
+            assertEquals("media3", failed.json.getString("external_error_source"))
+            assertTrue("no player error code", failed.json.getString("external_error_code").toInt() > 0)
+            val exceptionClass = failed.json.getString("exception_class")
+            assertTrue("not the player's exception: $exceptionClass", exceptionClass.startsWith("androidx.media3."))
             queued.assertNoMore()
             assertEquals(0, server.requestCount("/impression/dsp"))
             assertEquals(0, server.requestCount("/impression/verifier"))
