@@ -2,7 +2,10 @@ package org.bidon.rendering.telemetry
 
 import io.kotest.property.Arb
 import io.kotest.property.arbitrary.Codepoint
+import io.kotest.property.arbitrary.alphanumeric
 import io.kotest.property.arbitrary.ascii
+import io.kotest.property.arbitrary.az
+import io.kotest.property.arbitrary.bind
 import io.kotest.property.arbitrary.boolean
 import io.kotest.property.arbitrary.choice
 import io.kotest.property.arbitrary.cyrillic
@@ -10,18 +13,24 @@ import io.kotest.property.arbitrary.egyptianHieroglyphs
 import io.kotest.property.arbitrary.element
 import io.kotest.property.arbitrary.enum
 import io.kotest.property.arbitrary.int
+import io.kotest.property.arbitrary.list
 import io.kotest.property.arbitrary.long
 import io.kotest.property.arbitrary.orNull
 import io.kotest.property.arbitrary.string
 import io.kotest.property.checkAll
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.json.JSONObject
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
+import java.net.ConnectException
+import java.net.UnknownHostException
 
 /**
  * The rules of the BID-74 spec that hold for every value: the auction id (rule 5), the render duration (rule 10) and the
- * failure code (rule 11).
+ * failure code (rule 11), and, for BID-136, that no exception message leaves the device (AC 5).
  */
 class AdEventsPropertyTest {
 
@@ -54,7 +63,7 @@ class AdEventsPropertyTest {
                 val events = adEvents(telemetry, auctionId)
 
                 events.rendered()
-                events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+                events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
                 events.processGone(didCrash = true)
 
                 assertEquals(3, telemetry.emitted.size)
@@ -139,24 +148,84 @@ class AdEventsPropertyTest {
         }
     }
 
-    // rule 11
+    // rule 11, BID-136 AC 1 and AC 2
 
     @Test
-    fun `any code is written as that integer, and no code is left out`() {
+    fun `any error code goes out as its number in a string with its domain, and an external code as the text it was`() {
         runBlocking {
-            checkAll(Arb.enum<LoadFailure>(), Arb.int().orNull()) { reason, code ->
+            checkAll(Arb.enum<ErrorCode>(), Arb.int().orNull()) { code, externalCode ->
                 val telemetry = RecordingTelemetry()
+                adEvents(telemetry).loadFailed(code, externalCode?.toString())
 
-                adEvents(telemetry).loadFailed(reason, code)
-
-                val json = telemetry.single("creative_load_failed")
-                assertEquals(reason.wireName, json.getString("reason"))
-                if (code != null) {
-                    assertJsonInteger(code.toLong(), json, "code")
+                val json = telemetry.single("ad_load_failed")
+                assertEquals(code.number.toString(), json.get("error_code"))
+                assertEquals(code.domain.wireName, json.getString("error_domain"))
+                if (externalCode != null && code.externalSource != null) {
+                    assertEquals(externalCode.toString(), json.get("external_error_code"))
+                    assertEquals(code.externalSource.wireName, json.getString("external_error_source"))
                 } else {
-                    assertFalse(json.has("code"))
+                    assertFalse(json.has("external_error_code"))
+                    assertFalse(json.has("external_error_source"))
                 }
             }
         }
+    }
+
+    // BID-136 AC 5: what an exception says never leaves the device
+
+    @Test
+    fun `no message, URL or host of an exception chain is written, and its class names are`() {
+        runBlocking {
+            checkAll(Arb.list(Arb.enum<Failure>(), 1..5), Arb.list(leak, 5..5), Arb.enum<ErrorCode>()) { kinds, leaks, code ->
+                val telemetry = RecordingTelemetry()
+                val chain = kinds.foldRightIndexed<Failure, Throwable?>(null) { index, kind, cause ->
+                    kind.create(leaks[index].message, cause)
+                }!!
+
+                adEvents(telemetry).loadFailed(code, cause = chain)
+
+                val text = telemetry.emitted.single().event!!.encode().toString(Charsets.UTF_8)
+                kinds.indices.forEach { index ->
+                    val leaked = leaks[index]
+                    listOf(
+                        leaked.url, JSONObject.quote(leaked.url).trim('"'), leaked.host, leaked.host.take(4), leaked.text,
+                        leaked.message, MESSAGE_PREFIX,
+                    ).forEach { assertFalse("<$it> in $text", it in text) }
+                }
+                assertTrue(text, kinds.first().className in text)
+                assertTrue(text, kinds.last().className in text)
+            }
+        }
+    }
+
+    /**
+     * The text an exception message can hold, with markers no class name or field name contains: `qx` leads every
+     * host and `zq9` every text.
+     */
+    private class Leak(val url: String, val host: String, val text: String) {
+        val message: String get() = "$MESSAGE_PREFIX $url on $host: $text"
+    }
+
+    private val leak: Arb<Leak> = Arb.bind(
+        Arb.string(3..12, Codepoint.az()),
+        Arb.string(1..30, Codepoint.alphanumeric()),
+        Arb.string(1..30, Codepoint.alphanumeric()),
+        Arb.string(0..10, Codepoint.cyrillic()),
+    ) { domain, path, text, nonAscii ->
+        Leak(url = "https://qx$domain.example/$path?token=$text", host = "qx$domain.example", text = "zq9$text$nonAscii")
+    }
+
+    private enum class Failure(val className: String, private val make: (String, Throwable?) -> Throwable) {
+        STATE("java.lang.IllegalStateException", { message, cause -> IllegalStateException(message, cause) }),
+        ARGUMENT("java.lang.IllegalArgumentException", { message, cause -> IllegalArgumentException(message, cause) }),
+        IO("java.io.IOException", { message, cause -> IOException(message, cause) }),
+        CONNECT("java.net.ConnectException", { message, cause -> ConnectException(message).apply { initCause(cause) } }),
+        HOST("java.net.UnknownHostException", { message, cause -> UnknownHostException(message).apply { initCause(cause) } });
+
+        fun create(message: String, cause: Throwable?): Throwable = make(message, cause)
+    }
+
+    private companion object {
+        const val MESSAGE_PREFIX = "failed to load"
     }
 }

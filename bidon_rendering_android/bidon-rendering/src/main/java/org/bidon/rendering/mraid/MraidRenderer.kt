@@ -11,11 +11,12 @@ import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.html.ContentProbe
+import org.bidon.rendering.html.forWebViewError
 import org.bidon.rendering.ui.AdWindow
 import androidx.core.view.doOnAttach
 import org.bidon.rendering.mraid.ui.MraidAdActivity
 import org.bidon.rendering.telemetry.AdEvents
-import org.bidon.rendering.telemetry.LoadFailure
+import org.bidon.rendering.telemetry.ErrorCode
 
 internal class MraidRenderer(
     private val context: Context,
@@ -94,7 +95,7 @@ internal class MraidRenderer(
                         cancelProbe()
                         controller = null
                         webView = null
-                        events?.loadFailed(LoadFailure.WEBVIEW_ERROR, errorCode)
+                        events?.loadFailed(ErrorCode.forWebViewError(errorCode), errorCode.toString())
                     }
                     listener.onError(Exception(description))
                     if (failsTheLoad) dropView(ctrl, wv)
@@ -121,7 +122,7 @@ internal class MraidRenderer(
         } catch (e: Exception) {
             controller = null
             webView = null
-            events?.loadFailed(LoadFailure.MARKUP_REJECTED)
+            events?.loadFailed(ErrorCode.MARKUP_REJECTED, cause = e)
             listener.onError(e)
             dropView(ctrl, wv)
         }
@@ -148,7 +149,7 @@ internal class MraidRenderer(
         }
         controller = null
         webView = null
-        events?.loadFailed(LoadFailure.BLANK_CREATIVE)
+        events?.loadFailed(ErrorCode.BLANK_CREATIVE)
         listener?.onError(ContentProbe.blankCreative())
         dropView(ctrl, wv)
     }

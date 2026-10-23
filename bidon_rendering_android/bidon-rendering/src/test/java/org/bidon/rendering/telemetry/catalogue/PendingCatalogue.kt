@@ -12,11 +12,6 @@ internal object PendingCatalogue {
 
     val entries = listOf(
         Entry(
-            "creative_load_failed", "envelope.event_name", Rule.UNKNOWN_EVENT,
-            removedBy = "Telemetry: a load failure arrives as `ad_load_failed` with a stable code, owner, stage and " +
-                "exception class",
-        ),
-        Entry(
             "render_process_gone", "envelope.event_name", Rule.UNKNOWN_EVENT,
             removedBy = "Telemetry: a dying WebView arrives as `render_crashed`, telling a crash from a system kill",
         ),
@@ -27,6 +22,22 @@ internal object PendingCatalogue {
         Entry(
             "render_crashed", "exceptions", Rule.UNKNOWN_FIELD,
             removedBy = "Telemetry: a crash in our code arrives as `sdk_crashed`, including crashes inside our coroutines",
+        ),
+        Entry(
+            "ad_load_failed", "external_error_code", Rule.UNKNOWN_FIELD,
+            removedBy = "Telemetry: crash, drop and exception-class data survive ingest on staging",
+        ),
+        Entry(
+            "ad_load_failed", "external_error_source", Rule.UNKNOWN_FIELD,
+            removedBy = "Telemetry: crash, drop and exception-class data survive ingest on staging",
+        ),
+        Entry(
+            "ad_load_failed", "exception_class", Rule.UNKNOWN_FIELD,
+            removedBy = "Telemetry: crash, drop and exception-class data survive ingest on staging",
+        ),
+        Entry(
+            "ad_load_failed", "exception_cause_class", Rule.UNKNOWN_FIELD,
+            removedBy = "Telemetry: crash, drop and exception-class data survive ingest on staging",
         ),
     )
 }

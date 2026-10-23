@@ -10,7 +10,7 @@ import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.telemetry.AdEvents
-import org.bidon.rendering.telemetry.LoadFailure
+import org.bidon.rendering.telemetry.ErrorCode
 import org.bidon.rendering.ui.AdWindow
 import androidx.core.view.doOnAttach
 import org.bidon.rendering.ui.FullscreenAdActivity
@@ -75,7 +75,7 @@ internal class HtmlRenderer(
                         if (failsTheLoad) {
                             cancelProbe()
                             webView = null
-                            events?.loadFailed(LoadFailure.WEBVIEW_ERROR, errorCode)
+                            events?.loadFailed(ErrorCode.forWebViewError(errorCode), errorCode.toString())
                         }
                         this@HtmlRenderer.listener?.onError(Exception(description))
                         if (failsTheLoad) runCatching { this@apply.destroy() }
@@ -103,7 +103,7 @@ internal class HtmlRenderer(
             // A view that failed to take its markup is never handed out, so it cannot be shown either. It is torn
             // down last: whatever made the load throw can make this throw too, and the failure is reported first.
             webView = null
-            events?.loadFailed(LoadFailure.MARKUP_REJECTED)
+            events?.loadFailed(ErrorCode.MARKUP_REJECTED, cause = e)
             listener.onError(e)
             runCatching { view.destroy() }
         }
@@ -118,7 +118,7 @@ internal class HtmlRenderer(
             return
         }
         webView = null
-        events?.loadFailed(LoadFailure.BLANK_CREATIVE)
+        events?.loadFailed(ErrorCode.BLANK_CREATIVE)
         listener?.onError(ContentProbe.blankCreative())
         runCatching { view.destroy() }
     }

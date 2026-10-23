@@ -12,7 +12,7 @@ import androidx.annotation.OptIn
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
-import org.bidon.rendering.telemetry.LoadFailure
+import org.bidon.rendering.telemetry.ErrorCode
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.vast.RewardedController
 import org.bidon.rendering.vast.SkipOffset
@@ -231,7 +231,8 @@ internal class VideoAdActivity : AppCompatActivity() {
             }
 
             override fun onError(error: Throwable) {
-                presentation?.events?.loadFailed(LoadFailure.PLAYBACK_ERROR, (error as? PlaybackException)?.errorCode)
+                val playerCode = (error as? PlaybackException)?.errorCode
+                presentation?.events?.loadFailed(ErrorCode.PLAYER_ERROR, playerCode?.toString(), error)
                 finish()
             }
         })
