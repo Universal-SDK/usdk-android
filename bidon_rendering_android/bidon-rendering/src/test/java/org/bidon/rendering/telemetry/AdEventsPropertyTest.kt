@@ -20,7 +20,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /**
- * The rules of the BID-74 spec that hold for every value: the auction id (rule 5), the load time (rule 10) and the
+ * The rules of the BID-74 spec that hold for every value: the auction id (rule 5), the render duration (rule 10) and the
  * failure code (rule 11).
  */
 class AdEventsPropertyTest {
@@ -73,56 +73,67 @@ class AdEventsPropertyTest {
     // rule 10
 
     @Test
-    fun `the load time is the first end minus the first start, when the end is not earlier`() {
+    fun `the render duration is the render minus the first mark, the show mark before the view mark, when the render is not earlier`() {
         runBlocking {
-            checkAll(reading, reading, reading, reading) { start, laterStart, end, laterEnd ->
+            checkAll(reading, reading, reading, reading, reading, Arb.boolean(), Arb.boolean()) {
+                first, second, third, fourth, render, hasShow, hasView ->
                 var now = 0L
                 val telemetry = RecordingTelemetry()
                 val events = adEvents(telemetry, monotonicClock = { now })
 
-                now = start
-                events.loadStarted()
-                now = laterStart
-                events.loadStarted()
-                now = end
-                events.loaded()
-                now = laterEnd
-                events.loaded()
+                if (hasShow) {
+                    now = first
+                    events.showRequested()
+                    now = second
+                    events.showRequested()
+                }
+                if (hasView) {
+                    now = third
+                    events.viewRequested()
+                    now = fourth
+                    events.viewRequested()
+                }
+                now = render
                 events.rendered()
 
-                val json = telemetry.single("creative_rendered")
-                if (end >= start) {
-                    assertJsonInteger(end - start, json, "load_ms")
+                val json = telemetry.single("ad_impression")
+                val mark = if (hasShow) first else if (hasView) third else null
+                if (mark != null && render >= mark) {
+                    assertJsonInteger(render - mark, json, "render_duration_ms")
                 } else {
-                    assertFalse("$start..$end", json.has("load_ms"))
+                    assertFalse("mark=$mark render=$render", json.has("render_duration_ms"))
                 }
             }
         }
     }
 
     @Test
-    fun `there is a load time only when both ends of the load were seen in order before the render`() {
+    fun `there is a render duration only when a mark was made before the render`() {
         runBlocking {
-            checkAll(Arb.boolean(), Arb.boolean(), Arb.boolean(), Arb.long(0L, 1L shl 40)) { started, ended, endFirst, gap ->
+            checkAll(Arb.boolean(), Arb.boolean(), Arb.boolean(), Arb.long(0L, 1L shl 40)) { show, view, markFirst, gap ->
                 var now = 0L
                 val telemetry = RecordingTelemetry()
                 val events = adEvents(telemetry, monotonicClock = { now })
 
-                val calls = listOfNotNull(
-                    events::loadStarted.takeIf { started },
-                    events::loaded.takeIf { ended },
-                ).let { if (endFirst) it.reversed() else it }
-                calls.forEach { call ->
-                    call()
+                val marks = listOfNotNull(
+                    events::showRequested.takeIf { show },
+                    events::viewRequested.takeIf { view },
+                )
+                if (markFirst) {
+                    marks.forEach { it() }
                     now += gap
-                }
-                events.rendered()
-
-                val json = telemetry.single("creative_rendered")
-                if (started && ended && !endFirst) {
-                    assertJsonInteger(gap, json, "load_ms")
+                    events.rendered()
                 } else {
-                    assertFalse("started=$started ended=$ended endFirst=$endFirst", json.has("load_ms"))
+                    events.rendered()
+                    now += gap
+                    marks.forEach { it() }
+                }
+
+                val json = telemetry.single("ad_impression")
+                if ((show || view) && markFirst) {
+                    assertJsonInteger(gap, json, "render_duration_ms")
+                } else {
+                    assertFalse("show=$show view=$view markFirst=$markFirst", json.has("render_duration_ms"))
                 }
             }
         }

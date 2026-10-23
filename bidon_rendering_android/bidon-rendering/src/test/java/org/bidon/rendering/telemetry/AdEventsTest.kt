@@ -52,10 +52,10 @@ class AdEventsTest {
     // rule 1
 
     @Test
-    fun `rendered emits one creative_rendered as a diagnostic`() {
+    fun `rendered emits one ad_impression as a counted event`() {
         adEvents().rendered()
 
-        assertEquals(listOf("creative_rendered" to EventClass.DIAGNOSTIC), telemetry.calls())
+        assertEquals(listOf("ad_impression" to EventClass.COUNTED), telemetry.calls())
         assertEquals(0, telemetry.syncs)
     }
 
@@ -78,12 +78,11 @@ class AdEventsTest {
     // rule 1, rule 21
 
     @Test
-    fun `starting and finishing a load emit nothing and touch nothing else on telemetry`() {
+    fun `starting a load emits nothing and touches nothing else on telemetry`() {
         val events = adEvents()
 
         repeat(3) {
             events.loadStarted()
-            events.loaded()
         }
 
         assertEquals(emptyList<Pair<String, EventClass>>(), telemetry.calls())
@@ -102,7 +101,7 @@ class AdEventsTest {
         assertEquals(3, telemetry.captures)
         assertEquals(
             listOf(
-                "creative_rendered" to EventClass.DIAGNOSTIC,
+                "ad_impression" to EventClass.COUNTED,
                 "creative_load_failed" to EventClass.ERROR,
                 "render_process_gone" to EventClass.ERROR,
             ),
@@ -124,7 +123,7 @@ class AdEventsTest {
             assertEquals(emit.name, emit.eventClass, emit.event!!.eventClass)
         }
         assertEquals(
-            listOf(EventClass.DIAGNOSTIC, EventClass.ERROR, EventClass.ERROR),
+            listOf(EventClass.COUNTED, EventClass.ERROR, EventClass.ERROR),
             telemetry.emitted.map { it.event!!.eventClass },
         )
     }
@@ -132,32 +131,36 @@ class AdEventsTest {
     // rule 3, rule 8, rule 9, rule 10
 
     @Test
-    fun `creative_rendered is the envelope plus the creative type and the load time, and nothing else`() {
-        telemetry.rate = SamplingRate.of(0.25)!!
+    fun `ad_impression is the envelope plus the render duration and the OM flag, and nothing else`() {
         val events = adEvents(creative = Creative.MRAID)
-        elapsed = 1_000
-        events.loadStarted()
-        elapsed = 1_250
-        events.loaded()
+        elapsed = 5_000
+        events.showRequested()
+        elapsed = 6_234
 
         events.rendered()
 
-        val json = telemetry.single("creative_rendered")
-        assertEquals(setOf("envelope", "creative_type", "load_ms"), json.keySet())
-        assertEnvelope(json.envelope, "creative_rendered", rate = 0.25)
-        assertEquals("mraid", json.getString("creative_type"))
-        assertJsonInteger(250L, json, "load_ms")
+        val json = telemetry.single("ad_impression")
+        assertEquals(setOf("envelope", "render_duration_ms", "om_enabled"), json.keySet())
+        assertEnvelope(json.envelope, "ad_impression", rate = 1.0)
+        assertJsonInteger(1_234L, json, "render_duration_ms")
+        assertEquals(false, json.get("om_enabled"))
     }
 
     @Test
     fun `an event's own fields sit next to the envelope, not inside it`() {
         val events = adEvents(creative = Creative.MRAID)
+        events.showRequested()
 
         events.rendered()
+        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
 
-        val json = telemetry.single("creative_rendered")
-        assertEquals("mraid", json.getString("creative_type"))
-        assertFalse(json.envelope.has("creative_type"))
+        val impression = telemetry.single("ad_impression")
+        assertTrue(impression.has("render_duration_ms"))
+        assertFalse(impression.envelope.has("render_duration_ms"))
+        assertFalse(impression.envelope.has("om_enabled"))
+        val failed = telemetry.single("creative_load_failed")
+        assertEquals("mraid", failed.getString("creative_type"))
+        assertFalse(failed.envelope.has("creative_type"))
     }
 
     @Test
@@ -166,7 +169,6 @@ class AdEventsTest {
         val events = adEvents(creative = Creative.VAST)
         events.loadStarted()
         elapsed += 30
-        events.loaded()
 
         events.loadFailed(LoadFailure.NO_MEDIA_FILE, 403)
 
@@ -184,7 +186,6 @@ class AdEventsTest {
         val events = adEvents(creative = Creative.HTML)
         events.loadStarted()
         elapsed += 30
-        events.loaded()
 
         events.processGone(didCrash = true)
 
@@ -257,7 +258,7 @@ class AdEventsTest {
         telemetry.beforeCapture = { now += 7 }
 
         events.rendered()
-        assertEquals(2_000_000_000_007L, telemetry.single("creative_rendered").envelope.getLong("event_ts"))
+        assertEquals(2_000_000_000_007L, telemetry.single("ad_impression").envelope.getLong("event_ts"))
 
         now = 2_100_000_000_000L
         events.loadFailed(LoadFailure.WEBVIEW_ERROR)
@@ -275,7 +276,7 @@ class AdEventsTest {
 
         events.rendered()
 
-        assertEquals(5L, telemetry.single("creative_rendered").envelope.getLong("event_ts"))
+        assertEquals(5L, telemetry.single("ad_impression").envelope.getLong("event_ts"))
     }
 
     // rule 5, rule 25 (blank is Kotlin's isBlank)
@@ -381,7 +382,7 @@ class AdEventsTest {
     // rule 9
 
     @Test
-    fun `every event carries the creative type in its wire spelling`() {
+    fun `the failure events carry the creative type in its wire spelling and the impression carries none`() {
         Creative.entries.forEach { creative ->
             val recording = RecordingTelemetry()
             val events = adEvents(creative = creative, telemetry = recording)
@@ -391,8 +392,9 @@ class AdEventsTest {
             events.processGone(didCrash = true)
 
             assertEquals(3, recording.emitted.size)
-            recording.emitted.forEach { emit ->
-                assertEquals("${emit.name} $creative", creative.wireName, emit.json().getString("creative_type"))
+            assertFalse("$creative", recording.single("ad_impression").has("creative_type"))
+            listOf("creative_load_failed", "render_process_gone").forEach { name ->
+                assertEquals("$name $creative", creative.wireName, recording.single(name).getString("creative_type"))
             }
         }
         assertEquals(listOf("html", "mraid", "vast"), Creative.entries.map { it.wireName })
@@ -401,284 +403,320 @@ class AdEventsTest {
     // rule 10
 
     @Test
-    fun `the load time runs from the first load start, not a later one`() {
+    fun `the render duration runs from the first show request, not a later one`() {
         val events = adEvents()
         elapsed = 100
-        events.loadStarted()
+        events.showRequested()
         elapsed = 200
-        events.loadStarted()
+        events.showRequested()
         elapsed = 350
-        events.loaded()
 
         events.rendered()
 
-        assertJsonInteger(250L, telemetry.single("creative_rendered"), "load_ms")
+        assertJsonInteger(250L, telemetry.single("ad_impression"), "render_duration_ms")
     }
 
     @Test
-    fun `the load time runs to the first load end, not a later one`() {
+    fun `the render duration runs from the first view request, not a later one`() {
         val events = adEvents()
         elapsed = 100
-        events.loadStarted()
+        events.viewRequested()
+        elapsed = 200
+        events.viewRequested()
         elapsed = 350
-        events.loaded()
+
+        events.rendered()
+
+        assertJsonInteger(250L, telemetry.single("ad_impression"), "render_duration_ms")
+    }
+
+    @Test
+    fun `the render duration runs to the first render, not a later one`() {
+        val events = adEvents()
+        elapsed = 100
+        events.showRequested()
+        elapsed = 350
+        events.rendered()
         elapsed = 900
-        events.loaded()
-        elapsed = 1_500
 
         events.rendered()
 
-        assertJsonInteger(250L, telemetry.single("creative_rendered"), "load_ms")
+        assertEquals(1, telemetry.emitted.size)
+        assertJsonInteger(250L, telemetry.single("ad_impression"), "render_duration_ms")
     }
 
     @Test
-    fun `the load time is read from the monotonic clock, not the wall clock`() {
+    fun `the render duration is read from the monotonic clock, not the wall clock`() {
         val events = adEvents()
-        elapsed = 100
+        elapsed = 1_000
         now = 9_000_000
-        events.loadStarted()
-        elapsed = 140
+        events.showRequested()
+        elapsed = 2_234
         now = 1_000
-        events.loaded()
 
         events.rendered()
 
-        assertJsonInteger(40L, telemetry.single("creative_rendered"), "load_ms")
+        assertJsonInteger(1_234L, telemetry.single("ad_impression"), "render_duration_ms")
     }
 
     @Test
-    fun `a load that took no measurable time is written as zero`() {
+    fun `a render that took no measurable time is written as zero`() {
         val events = adEvents()
         elapsed = 777
-        events.loadStarted()
-        events.loaded()
+        events.showRequested()
 
         events.rendered()
 
-        assertJsonInteger(0L, telemetry.single("creative_rendered"), "load_ms")
+        assertJsonInteger(0L, telemetry.single("ad_impression"), "render_duration_ms")
     }
 
     @Test
-    fun `a load that took longer than an Int holds keeps its full length`() {
+    fun `a render that took longer than an Int holds keeps its full length`() {
         val events = adEvents()
         elapsed = 0
-        events.loadStarted()
+        events.viewRequested()
         elapsed = 3_000_000_000L
-        events.loaded()
 
         events.rendered()
 
-        assertJsonInteger(3_000_000_000L, telemetry.single("creative_rendered"), "load_ms")
+        assertJsonInteger(3_000_000_000L, telemetry.single("ad_impression"), "render_duration_ms")
     }
 
     @Test
-    fun `there is no load time without a load start`() {
+    fun `a view request alone is enough to measure the render`() {
         val events = adEvents()
-        events.loaded()
+        elapsed = 100
+        events.viewRequested()
+        elapsed = 160
 
         events.rendered()
 
-        assertEquals(setOf("envelope", "creative_type"), telemetry.single("creative_rendered").keySet())
+        assertJsonInteger(60L, telemetry.single("ad_impression"), "render_duration_ms")
     }
 
     @Test
-    fun `there is no load time without a load end`() {
+    fun `the show request beats the view request, whichever came first`() {
+        listOf(true, false).forEach { viewFirst ->
+            val recording = RecordingTelemetry()
+            val events = adEvents(telemetry = recording)
+            elapsed = 100
+            if (viewFirst) events.viewRequested() else events.showRequested()
+            elapsed = 400
+            if (viewFirst) events.showRequested() else events.viewRequested()
+            elapsed = 500
+
+            events.rendered()
+
+            val fromShow = if (viewFirst) 100L else 400L
+            assertJsonInteger(fromShow, recording.single("ad_impression"), "render_duration_ms")
+        }
+    }
+
+    @Test
+    fun `a show request later than the render leaves the duration out instead of falling back to the view request`() {
         val events = adEvents()
+        elapsed = 100
+        events.viewRequested()
+        elapsed = 900
+        events.showRequested()
+        elapsed = 500
+
+        events.rendered()
+
+        assertFalse(telemetry.single("ad_impression").has("render_duration_ms"))
+    }
+
+    @Test
+    fun `the start of the load is not a mark for the render`() {
+        val events = adEvents()
+        elapsed = 100
         events.loadStarted()
-        elapsed += 50
+        elapsed = 500
 
         events.rendered()
 
-        assertEquals(setOf("envelope", "creative_type"), telemetry.single("creative_rendered").keySet())
+        assertFalse(telemetry.single("ad_impression").has("render_duration_ms"))
     }
 
     @Test
-    fun `there is no load time when neither end of the load was seen`() {
+    fun `there is no render duration without a mark`() {
         adEvents().rendered()
 
-        assertEquals(setOf("envelope", "creative_type"), telemetry.single("creative_rendered").keySet())
+        assertEquals(setOf("envelope", "om_enabled"), telemetry.single("ad_impression").keySet())
     }
 
     @Test
-    fun `there is no load time when the load ended before it started`() {
+    fun `there is no render duration when the render came before the first mark`() {
         val events = adEvents()
         elapsed = 100
-        events.loaded()
-        elapsed = 200
-        events.loadStarted()
-
         events.rendered()
+        elapsed = 200
+        events.showRequested()
 
-        assertFalse(telemetry.single("creative_rendered").has("load_ms"))
+        assertFalse(telemetry.single("ad_impression").has("render_duration_ms"))
     }
 
-    // rule 25: the first loaded() is the first call ever
+    // rule 25: calls after the first rendered() change nothing
 
     @Test
-    fun `a load end before the first start spoils the load time even when another end follows`() {
+    fun `a mark made after the render does not change what was emitted, however often the render is called again`() {
         val events = adEvents()
-        elapsed = 100
-        events.loaded()
-        elapsed = 200
-        events.loadStarted()
-        elapsed = 300
-        events.loaded()
 
         events.rendered()
+        elapsed += 400
+        events.showRequested()
+        events.viewRequested()
+        events.rendered()
 
-        assertFalse(telemetry.single("creative_rendered").has("load_ms"))
+        assertFalse(telemetry.single("ad_impression").has("render_duration_ms"))
+        assertEquals(1, telemetry.emitted.size)
     }
 
     @Test
-    fun `there is no load time when the clock reads earlier at the end than at the start`() {
+    fun `there is no render duration when the clock reads earlier at the render than at the mark`() {
         val events = adEvents()
         elapsed = 500
-        events.loadStarted()
+        events.showRequested()
         elapsed = 300
-        events.loaded()
 
         events.rendered()
 
-        assertFalse(telemetry.single("creative_rendered").has("load_ms"))
+        assertFalse(telemetry.single("ad_impression").has("render_duration_ms"))
     }
 
     // rule 26
 
     @Test
-    fun `a load end before the start leaves the load time out even when both read the same instant`() {
+    fun `a render before the mark leaves the duration out even when both read the same instant`() {
         val events = adEvents()
         elapsed = 500
-        events.loaded()
-        events.loadStarted()
-
         events.rendered()
+        events.showRequested()
+        events.viewRequested()
 
-        assertFalse(telemetry.single("creative_rendered").has("load_ms"))
+        assertFalse(telemetry.single("ad_impression").has("render_duration_ms"))
     }
 
     // rule 27
 
     @Test
-    fun `a whole load that lands between the render and the capture adds no load time`() {
+    fun `marks that land between the render and the capture add no render duration`() {
         val events = adEvents()
         telemetry.beforeCapture = {
             elapsed = 100
-            events.loadStarted()
-            elapsed = 150
-            events.loaded()
+            events.showRequested()
+            events.viewRequested()
         }
 
         events.rendered()
 
-        assertFalse(telemetry.single("creative_rendered").has("load_ms"))
+        assertFalse(telemetry.single("ad_impression").has("render_duration_ms"))
     }
 
     @Test
-    fun `a load end that lands between the render and the capture adds no load time`() {
+    fun `a show request that lands between the render and the capture does not replace the view request`() {
         val events = adEvents()
         elapsed = 100
-        events.loadStarted()
-        telemetry.beforeCapture = {
-            elapsed = 150
-            events.loaded()
-        }
-
-        events.rendered()
-
-        assertFalse(telemetry.single("creative_rendered").has("load_ms"))
-    }
-
-    @Test
-    fun `a load start or end that lands between the render and the capture leaves the load time as it was`() {
-        val events = adEvents()
-        elapsed = 100
-        events.loadStarted()
+        events.viewRequested()
         elapsed = 250
-        events.loaded()
         telemetry.beforeCapture = {
             elapsed = 900
-            events.loadStarted()
-            events.loaded()
+            events.showRequested()
         }
 
         events.rendered()
 
-        assertJsonInteger(150L, telemetry.single("creative_rendered"), "load_ms")
+        assertJsonInteger(150L, telemetry.single("ad_impression"), "render_duration_ms")
+    }
+
+    @Test
+    fun `marks that land between the render and the capture leave the render duration as it was`() {
+        val events = adEvents()
+        elapsed = 100
+        events.showRequested()
+        elapsed = 250
+        telemetry.beforeCapture = {
+            elapsed = 900
+            events.showRequested()
+            events.viewRequested()
+        }
+
+        events.rendered()
+
+        assertJsonInteger(150L, telemetry.single("ad_impression"), "render_duration_ms")
     }
 
     // rule 22
 
     @Test
-    fun `there is no load time when the difference overflows from the top of the clock to the bottom`() {
+    fun `there is no render duration when the difference overflows from the top of the clock to the bottom`() {
         val events = adEvents()
         elapsed = Long.MAX_VALUE
-        events.loadStarted()
+        events.showRequested()
         elapsed = Long.MIN_VALUE
-        events.loaded()
 
         events.rendered()
 
-        assertFalse(telemetry.single("creative_rendered").has("load_ms"))
+        assertFalse(telemetry.single("ad_impression").has("render_duration_ms"))
     }
 
     @Test
-    fun `there is no load time when the difference overflows from the bottom of the clock to the top`() {
+    fun `there is no render duration when the difference overflows from the bottom of the clock to the top`() {
         listOf(Long.MIN_VALUE to Long.MAX_VALUE, -1L to Long.MAX_VALUE, Long.MIN_VALUE to 1L).forEach { (start, end) ->
             val recording = RecordingTelemetry()
             val events = adEvents(telemetry = recording)
             elapsed = start
-            events.loadStarted()
+            events.viewRequested()
             elapsed = end
-            events.loaded()
 
             events.rendered()
 
-            assertFalse("$start..$end", recording.single("creative_rendered").has("load_ms"))
+            assertFalse("$start..$end", recording.single("ad_impression").has("render_duration_ms"))
         }
     }
 
     @Test
-    fun `the widest load time that fits in a Long is still written`() {
+    fun `the widest render duration that fits in a Long is still written`() {
         val events = adEvents()
         elapsed = 0
-        events.loadStarted()
+        events.showRequested()
         elapsed = Long.MAX_VALUE
-        events.loaded()
 
         events.rendered()
 
-        assertJsonInteger(Long.MAX_VALUE, telemetry.single("creative_rendered"), "load_ms")
+        assertJsonInteger(Long.MAX_VALUE, telemetry.single("ad_impression"), "render_duration_ms")
     }
 
     // rule 10, rule 25
 
     @Test
-    fun `a load start or end after the render does not change what was emitted`() {
+    fun `only ad_impression carries the render duration and the OM flag`() {
         val events = adEvents()
-        elapsed = 100
-        events.loadStarted()
-
-        events.rendered()
-        elapsed = 400
-        events.loaded()
-        events.rendered()
-
-        assertFalse(telemetry.single("creative_rendered").has("load_ms"))
-        assertEquals(1, telemetry.emitted.size)
-    }
-
-    @Test
-    fun `only creative_rendered carries the load time`() {
-        val events = adEvents()
-        events.loadStarted()
+        events.showRequested()
         elapsed += 20
-        events.loaded()
 
         events.loadFailed(LoadFailure.WEBVIEW_ERROR)
         events.processGone(didCrash = true)
 
-        assertFalse(telemetry.single("creative_load_failed").has("load_ms"))
-        assertFalse(telemetry.single("render_process_gone").has("load_ms"))
+        listOf("creative_load_failed", "render_process_gone").forEach { name ->
+            val json = telemetry.single(name)
+            assertFalse(name, json.has("render_duration_ms"))
+            assertFalse(name, json.has("om_enabled"))
+        }
+    }
+
+    @Test
+    fun `the marks emit nothing and touch nothing else on telemetry`() {
+        val events = adEvents()
+
+        repeat(3) {
+            events.showRequested()
+            events.viewRequested()
+        }
+
+        assertEquals(emptyList<Pair<String, EventClass>>(), telemetry.calls())
+        assertEquals(0, telemetry.syncs)
+        assertEquals(0, telemetry.captures)
     }
 
     // rule 11, rule 25 (integers are JSON integers)
@@ -740,12 +778,11 @@ class AdEventsTest {
     }
 
     @Test
-    fun `a process death before any render was not shown`() {
+    fun `a process death before any impression says was_shown false`() {
         listOf(false, true).forEach { didCrash ->
             val recording = RecordingTelemetry()
             val events = adEvents(telemetry = recording)
             events.loadStarted()
-            events.loaded()
             events.loadFailed(LoadFailure.WEBVIEW_ERROR)
 
             events.processGone(didCrash = didCrash)
@@ -755,7 +792,7 @@ class AdEventsTest {
     }
 
     @Test
-    fun `a process death after a render was shown`() {
+    fun `a process death after an impression says was_shown true`() {
         listOf(false, true).forEach { didCrash ->
             val recording = RecordingTelemetry()
             val events = adEvents(telemetry = recording)
@@ -770,7 +807,7 @@ class AdEventsTest {
     }
 
     @Test
-    fun `a render that telemetry did not keep still counts as shown`() {
+    fun `an impression that telemetry did not keep still makes was_shown true`() {
         val events = adEvents()
         telemetry.rate = null
         events.rendered()
@@ -782,7 +819,7 @@ class AdEventsTest {
     }
 
     @Test
-    fun `a render after the process death was reported does not make it shown`() {
+    fun `an impression after the process death was reported does not make was_shown true`() {
         val events = adEvents()
 
         events.processGone(didCrash = false)
@@ -794,7 +831,7 @@ class AdEventsTest {
     // rule 30
 
     @Test
-    fun `a render that lands while the process death is being emitted does not make it shown`() {
+    fun `an impression that lands while the process death is being emitted does not make was_shown true`() {
         val events = adEvents()
         telemetry.beforeCapture = { events.rendered() }
 
@@ -802,7 +839,7 @@ class AdEventsTest {
 
         assertEquals(false, telemetry.single("render_process_gone").get("was_shown"))
         assertEquals(
-            setOf("render_process_gone" to EventClass.ERROR, "creative_rendered" to EventClass.DIAGNOSTIC),
+            setOf("render_process_gone" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
             telemetry.calls().toSet(),
         )
     }
@@ -815,23 +852,22 @@ class AdEventsTest {
 
         repeat(5) { events.rendered() }
 
-        assertEquals(listOf("creative_rendered" to EventClass.DIAGNOSTIC), telemetry.calls())
+        assertEquals(listOf("ad_impression" to EventClass.COUNTED), telemetry.calls())
     }
 
     // rule 13, rule 25: calls after the first rendered() change nothing
 
     @Test
-    fun `a later render with a load time does not emit either`() {
+    fun `a later render after a mark does not emit either`() {
         val events = adEvents()
         events.rendered()
-        events.loadStarted()
+        events.showRequested()
         elapsed += 10
-        events.loaded()
 
         events.rendered()
 
         assertEquals(1, telemetry.emitted.size)
-        assertFalse(telemetry.single("creative_rendered").has("load_ms"))
+        assertFalse(telemetry.single("ad_impression").has("render_duration_ms"))
     }
 
     // rule 14
@@ -928,7 +964,7 @@ class AdEventsTest {
         events.loadFailed(LoadFailure.PLAYBACK_ERROR, 2)
 
         assertEquals(
-            listOf("creative_rendered" to EventClass.DIAGNOSTIC, "creative_load_failed" to EventClass.ERROR),
+            listOf("ad_impression" to EventClass.COUNTED, "creative_load_failed" to EventClass.ERROR),
             telemetry.calls(),
         )
     }
@@ -941,7 +977,7 @@ class AdEventsTest {
         events.rendered()
 
         assertEquals(
-            listOf("creative_load_failed" to EventClass.ERROR, "creative_rendered" to EventClass.DIAGNOSTIC),
+            listOf("creative_load_failed" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
             telemetry.calls(),
         )
     }
@@ -956,7 +992,7 @@ class AdEventsTest {
         events.rendered()
 
         assertEquals(
-            listOf("render_process_gone" to EventClass.ERROR, "creative_rendered" to EventClass.DIAGNOSTIC),
+            listOf("render_process_gone" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
             telemetry.calls(),
         )
     }
@@ -969,7 +1005,7 @@ class AdEventsTest {
         events.processGone(didCrash = true)
 
         assertEquals(
-            listOf("creative_rendered" to EventClass.DIAGNOSTIC, "render_process_gone" to EventClass.ERROR),
+            listOf("ad_impression" to EventClass.COUNTED, "render_process_gone" to EventClass.ERROR),
             telemetry.calls(),
         )
     }
@@ -985,7 +1021,7 @@ class AdEventsTest {
 
         events.rendered()
 
-        assertEquals(listOf("creative_rendered" to EventClass.DIAGNOSTIC), telemetry.calls())
+        assertEquals(listOf("ad_impression" to EventClass.COUNTED), telemetry.calls())
         assertEquals(0, telemetry.captures)
     }
 
@@ -1030,7 +1066,7 @@ class AdEventsTest {
 
         assertEquals(
             listOf(
-                "creative_rendered" to EventClass.DIAGNOSTIC,
+                "ad_impression" to EventClass.COUNTED,
                 "creative_load_failed" to EventClass.ERROR,
                 "render_process_gone" to EventClass.ERROR,
             ),
@@ -1044,7 +1080,7 @@ class AdEventsTest {
     @Test
     fun `renders racing on many threads emit once`() {
         race(rounds = ROUNDS) { events, _ -> events.rendered() }
-            .forEach { calls -> assertEquals(listOf("creative_rendered" to EventClass.DIAGNOSTIC), calls) }
+            .forEach { calls -> assertEquals(listOf("ad_impression" to EventClass.COUNTED), calls) }
     }
 
     @Test
@@ -1076,17 +1112,18 @@ class AdEventsTest {
     @Test
     fun `every kind of call racing on many threads emits each event at most once`() {
         val outcomes = race(rounds = ROUNDS) { events, index ->
-            when (index % 5) {
+            when (index % 6) {
                 0 -> events.rendered()
                 1 -> events.loadFailed(LoadFailure.PLAYBACK_ERROR)
                 2 -> events.processGone(didCrash = false)
                 3 -> events.loadStarted()
-                else -> events.loaded()
+                4 -> events.showRequested()
+                else -> events.viewRequested()
             }
         }
 
         outcomes.forEach { calls ->
-            assertEquals(calls.toString(), 1, calls.count { it.first == "creative_rendered" })
+            assertEquals(calls.toString(), 1, calls.count { it.first == "ad_impression" })
             assertEquals(calls.toString(), 1, calls.count { it.first == "render_process_gone" })
             assertTrue(calls.toString(), calls.count { it.first == "creative_load_failed" } <= 1)
         }
@@ -1101,7 +1138,7 @@ class AdEventsTest {
 
         events.rendered()
 
-        assertEquals(listOf("creative_rendered" to EventClass.DIAGNOSTIC), telemetry.calls())
+        assertEquals(listOf("ad_impression" to EventClass.COUNTED), telemetry.calls())
     }
 
     @Test
@@ -1157,24 +1194,25 @@ class AdEventsTest {
         events.loadFailed(LoadFailure.PLAYBACK_ERROR)
 
         assertEquals(
-            setOf("creative_load_failed" to EventClass.ERROR, "creative_rendered" to EventClass.DIAGNOSTIC),
+            setOf("creative_load_failed" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
             telemetry.calls().toSet(),
         )
     }
 
     @Test
-    fun `a load start or end made while an event is being emitted does not wait for it`() {
+    fun `a load start or a mark made while an event is being emitted does not wait for it`() {
         val events = adEvents()
         telemetry.whileEmitting = {
             onAnotherThread {
                 events.loadStarted()
-                events.loaded()
+                events.showRequested()
+                events.viewRequested()
             }
         }
 
         events.rendered()
 
-        assertEquals(listOf("creative_rendered" to EventClass.DIAGNOSTIC), telemetry.calls())
+        assertEquals(listOf("ad_impression" to EventClass.COUNTED), telemetry.calls())
     }
 
     // rule 28
@@ -1199,7 +1237,7 @@ class AdEventsTest {
         events.closed()
 
         assertEquals(
-            listOf("creative_rendered" to EventClass.DIAGNOSTIC, "creative_load_failed" to EventClass.ERROR),
+            listOf("ad_impression" to EventClass.COUNTED, "creative_load_failed" to EventClass.ERROR),
             telemetry.calls(),
         )
     }
@@ -1213,7 +1251,7 @@ class AdEventsTest {
         events.processGone(didCrash = true)
         events.processGone(didCrash = false)
 
-        assertEquals(listOf("creative_rendered" to EventClass.DIAGNOSTIC), telemetry.calls())
+        assertEquals(listOf("ad_impression" to EventClass.COUNTED), telemetry.calls())
     }
 
     @Test
@@ -1248,7 +1286,7 @@ class AdEventsTest {
         events.loadFailed(LoadFailure.VAST_ERROR, 3)
 
         assertEquals(
-            listOf("creative_rendered" to EventClass.DIAGNOSTIC, "creative_load_failed" to EventClass.ERROR),
+            listOf("ad_impression" to EventClass.COUNTED, "creative_load_failed" to EventClass.ERROR),
             telemetry.calls(),
         )
     }
@@ -1265,7 +1303,7 @@ class AdEventsTest {
         events.loadFailed(LoadFailure.PLAYBACK_ERROR)
 
         assertEquals(
-            listOf("creative_load_failed" to EventClass.ERROR, "creative_rendered" to EventClass.DIAGNOSTIC),
+            listOf("creative_load_failed" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
             telemetry.calls(),
         )
     }
@@ -1289,7 +1327,7 @@ class AdEventsTest {
 
         events.rendered()
 
-        assertEquals(listOf("creative_rendered" to EventClass.DIAGNOSTIC), telemetry.calls())
+        assertEquals(listOf("ad_impression" to EventClass.COUNTED), telemetry.calls())
     }
 
     @Test
@@ -1327,7 +1365,8 @@ class AdEventsTest {
     fun `no call throws with telemetry switched off, in any order`() {
         val calls: List<(AdEvents) -> Unit> = listOf(
             { it.loadStarted() },
-            { it.loaded() },
+            { it.showRequested() },
+            { it.viewRequested() },
             { it.rendered() },
             { it.loadFailed(LoadFailure.WEBVIEW_ERROR, Int.MIN_VALUE) },
             { it.processGone(didCrash = true) },
@@ -1342,7 +1381,7 @@ class AdEventsTest {
     // rule 20, rule 22
 
     @Test
-    fun `capturing and encoding never throw for extreme clock readings, and an overflowing load time is left out`() {
+    fun `capturing and encoding never throw for extreme clock readings, and an overflowing render duration is left out`() {
         val readings = listOf(Long.MIN_VALUE, -1L, 0L, 1L, Long.MAX_VALUE)
         readings.forEach { wall ->
             readings.forEach { start ->
@@ -1351,9 +1390,8 @@ class AdEventsTest {
                     now = wall
                     val events = adEvents(telemetry = recording)
                     elapsed = start
-                    events.loadStarted()
+                    events.showRequested()
                     elapsed = end
-                    events.loaded()
 
                     events.rendered()
                     events.loadFailed(LoadFailure.WEBVIEW_ERROR, Int.MAX_VALUE)
@@ -1362,11 +1400,11 @@ class AdEventsTest {
                     assertEquals(3, recording.emitted.size)
                     recording.emitted.forEach { emit -> assertEquals(wall, emit.json().envelope.getLong("event_ts")) }
                     val expected = runCatching { Math.subtractExact(end, start) }.getOrNull()?.takeIf { it >= 0 }
-                    val rendered = recording.single("creative_rendered")
+                    val rendered = recording.single("ad_impression")
                     if (expected != null) {
-                        assertJsonInteger(expected, rendered, "load_ms")
+                        assertJsonInteger(expected, rendered, "render_duration_ms")
                     } else {
-                        assertFalse("$start..$end", rendered.has("load_ms"))
+                        assertFalse("$start..$end", rendered.has("render_duration_ms"))
                     }
                 }
             }

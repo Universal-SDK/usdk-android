@@ -168,7 +168,7 @@ internal class BatchSender(
         when {
             retryAfterMillis != null && retryAfterMillis > MAX_RETRY_AFTER_MILLIS -> {
                 // Anything longer than a day outlives every event it could hold back.
-                notBefore = now + minOf(retryAfterMillis, EventClass.ERROR.ttlMillis)
+                notBefore = now + minOf(retryAfterMillis, EventClass.entries.maxOf { it.ttlMillis })
                 retrying = Retrying.GAVE_UP
                 schedule(now + TIMER_MILLIS)
             }

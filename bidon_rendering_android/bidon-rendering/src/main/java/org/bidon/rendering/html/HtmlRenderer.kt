@@ -114,7 +114,6 @@ internal class HtmlRenderer(
         probe = null
         if (hasContent) {
             isLoaded = true
-            events?.loaded()
             listener?.onLoaded()
             return
         }
@@ -129,12 +128,14 @@ internal class HtmlRenderer(
         probe = null
     }
 
-    override fun getView(): View? = webView
+    override fun getView(): View? = webView?.also { events?.viewRequested() }
 
     override fun attach(container: ViewGroup) {
         val view = webView ?: return
         if (isDestroyed) return
 
+        // Before the view is added: in a container that is already in a window the impression fires inside addView.
+        events?.viewRequested()
         if (view.parent != null) {
             (view.parent as ViewGroup).removeView(view)
         }
@@ -143,6 +144,7 @@ internal class HtmlRenderer(
     }
 
     override fun showFullscreen(activity: Activity) {
+        events?.showRequested()
         if (webView == null || isDestroyed) {
             listener?.onError(IllegalStateException("Ad not loaded"))
             return

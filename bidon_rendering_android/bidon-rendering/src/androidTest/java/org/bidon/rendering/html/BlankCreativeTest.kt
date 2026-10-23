@@ -319,7 +319,7 @@ class BlankCreativeTest {
 
             assertEquals("stateChange:default,ready", heard(renderer, "stateOrReady"))
         }
-        queued.assertAdEvent(queued.next(), "creative_rendered", EventClass.DIAGNOSTIC, Creative.MRAID)
+        queued.assertImpression(queued.next())
         queued.assertNoMore()
     }
 

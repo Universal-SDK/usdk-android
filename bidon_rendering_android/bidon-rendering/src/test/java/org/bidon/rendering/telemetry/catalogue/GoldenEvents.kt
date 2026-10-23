@@ -23,10 +23,9 @@ internal object GoldenEvents {
 
     /** The encoded text of [name], as the encoder wrote it. */
     fun encode(name: EventName): String = when (name) {
-        EventName.CREATIVE_RENDERED -> adEvent(name) { advance ->
-            loadStarted()
-            advance(LOAD_MILLIS)
-            loaded()
+        EventName.AD_IMPRESSION -> adEvent(name) { advance ->
+            showRequested()
+            advance(RENDER_MILLIS)
             rendered()
         }
         EventName.CREATIVE_LOAD_FAILED -> adEvent(name) { loadFailed(LoadFailure.WEBVIEW_ERROR, code = -2) }
@@ -46,7 +45,7 @@ internal object GoldenEvents {
     private val SESSION = SessionId.of("550e8400-e29b-41d4-a716-446655440000")!!
     private const val AUCTION = "8b0f3c2e-5d4a-4e1b-9c7f-2a6d8e1b3f50"
     private const val NOW = 1_790_326_698_635L
-    private const val LOAD_MILLIS = 420L
+    private const val RENDER_MILLIS = 420L
     private val CLOCK = Clock { NOW }
 
     /**

@@ -21,9 +21,9 @@ internal interface EventStore {
     fun countDropped(reason: DropReason, count: Long)
 
     /**
-     * The next events to send: errors before diagnostics, oldest first within each class, at most [maxEvents] of them
-     * and [maxPayloadBytes] of payload. They stay stored until they are passed to [remove]. Empty when nothing is
-     * stored, or when nothing can be read.
+     * The next events to send: counted events, then errors, then diagnostics, oldest first within each class, at most
+     * [maxEvents] of them and [maxPayloadBytes] of payload. They stay stored until they are passed to [remove]. Empty
+     * when nothing is stored, or when nothing can be read.
      */
     fun peek(maxEvents: Int, maxPayloadBytes: Int): List<StoredEvent>
 
@@ -42,9 +42,10 @@ internal class StoredEvent(val eventClass: EventClass, internal val queued: Even
 /**
  * The durable store: one [EventQueue] per [EventClass] and their shared [DroppedEvents], side by side in one directory.
  *
- * Each class has its own file and its own share of the disk, so a burst of diagnostics can only evict diagnostics.
- * Diagnostics keep the file name the single queue had before classes existed, so records written then are restored as
- * diagnostics without any change to the record format.
+ * Each class has its own file and its own share of the disk, so a burst of one class can only evict that class. The
+ * three shares, [COUNTED_BYTES] + [DIAGNOSTICS_BYTES] + [ERRORS_BYTES], are the 512 KiB of D-019. Diagnostics keep the
+ * file name the single queue had before classes existed, so records written then are restored as diagnostics without
+ * any change to the record format. Counted events have a new file, `counted`, which starts empty.
  */
 internal class DiskEventStore private constructor(
     private val queues: Map<EventClass, EventQueue>,
@@ -104,33 +105,54 @@ internal class DiskEventStore private constructor(
 
     companion object {
 
-        /** The diagnostics' share of the disk. Together with [ERRORS_BYTES] it is the 512 KiB of D-019. */
-        const val DIAGNOSTICS_BYTES = 448 * 1024
+        /** The counted events' share of the disk. */
+        const val COUNTED_BYTES = 192 * 1024
+
+        /** The diagnostics' share of the disk. */
+        const val DIAGNOSTICS_BYTES = 256 * 1024
 
         /** The errors' share of the disk. */
         const val ERRORS_BYTES = 64 * 1024
 
-        /** Errors go first, so a batch cut short by its limits leaves diagnostics behind rather than errors. */
-        private val SEND_ORDER = listOf(EventClass.ERROR, EventClass.DIAGNOSTIC)
+        /**
+         * Counted events go first, then errors, so a batch cut short by its limits leaves diagnostics behind rather
+         * than either of them.
+         */
+        private val SEND_ORDER = listOf(EventClass.COUNTED, EventClass.ERROR, EventClass.DIAGNOSTIC)
 
-        /** Opens the store in [directory], creating it if needed and restoring whatever an earlier process left. */
+        /**
+         * Opens the store in [directory], creating it if needed and restoring whatever an earlier process left. A file
+         * written under a larger share of the disk is compacted to its current share.
+         */
         @Throws(IOException::class)
         fun open(directory: File, clock: Clock = Clock.System): DiskEventStore {
             val dropped = DroppedEvents.open(File(directory, "dropped"))
-            val diagnostics = EventQueue.open(
-                File(directory, "queue"),
-                dropped,
-                EventQueue.Limits(maxFileBytes = DIAGNOSTICS_BYTES),
-                clock,
-            )
-            val errors = try {
-                EventQueue.open(File(directory, "errors"), dropped, EventQueue.Limits(maxFileBytes = ERRORS_BYTES), clock)
+            val queues = HashMap<EventClass, EventQueue>()
+            try {
+                for (eventClass in EventClass.entries) {
+                    val limits = EventQueue.Limits(maxFileBytes = eventClass.maxFileBytes)
+                    queues[eventClass] = EventQueue.open(File(directory, eventClass.fileName), dropped, limits, clock)
+                }
             } catch (e: IOException) {
-                diagnostics.closeQuietly()
+                queues.values.forEach { it.closeQuietly() }
                 throw e
             }
-            return DiskEventStore(mapOf(EventClass.DIAGNOSTIC to diagnostics, EventClass.ERROR to errors), dropped)
+            return DiskEventStore(queues, dropped)
         }
+
+        private val EventClass.fileName: String
+            get() = when (this) {
+                EventClass.COUNTED -> "counted"
+                EventClass.ERROR -> "errors"
+                EventClass.DIAGNOSTIC -> "queue"
+            }
+
+        private val EventClass.maxFileBytes: Int
+            get() = when (this) {
+                EventClass.COUNTED -> COUNTED_BYTES
+                EventClass.ERROR -> ERRORS_BYTES
+                EventClass.DIAGNOSTIC -> DIAGNOSTICS_BYTES
+            }
 
         private fun EventQueue.closeQuietly() {
             try {

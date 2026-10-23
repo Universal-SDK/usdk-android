@@ -9,8 +9,8 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * Errors and diagnostics live in separate files with their own TTL and their own share of the disk (D-024), so a
- * diagnostic can never push an error out, and an error can wait longer than a diagnostic.
+ * Counted events, errors and diagnostics live in separate files with their own TTL and their own share of the disk
+ * (D-024), so a diagnostic can never push an error or an impression out, and the two can wait longer than a diagnostic.
  */
 class DiskEventStoreTest {
 
@@ -26,6 +26,7 @@ class DiskEventStoreTest {
     fun `a flood of diagnostics evicts diagnostics only`() {
         val store = open()
         store.append("error".encodeToByteArray(), EventClass.ERROR)
+        store.append("counted".encodeToByteArray(), EventClass.COUNTED)
 
         // Twice the whole budget, so the diagnostics file is evicted several times over.
         val largest = largestSize(DIAGNOSTICS_FILE, appends = 1_024) {
@@ -33,8 +34,52 @@ class DiskEventStoreTest {
         }
 
         assertEquals(listOf("error"), restored(ERRORS_FILE))
+        assertEquals(listOf("counted"), restored(COUNTED_FILE))
         assertTrue(dropped().getValue(DropReason.EVICTED) > 0)
-        assertFilledUpTo(448 * 1_024L, largest)
+        assertFilledUpTo(256 * 1_024L, largest)
+    }
+
+    @Test
+    fun `a flood of counted events evicts counted events only`() {
+        val store = open()
+        store.append("error".encodeToByteArray(), EventClass.ERROR)
+        store.append("diagnostic".encodeToByteArray(), EventClass.DIAGNOSTIC)
+
+        val largest = largestSize(COUNTED_FILE, appends = 1_024) {
+            store.append(ByteArray(1_024), EventClass.COUNTED)
+        }
+
+        assertEquals(listOf("error"), restored(ERRORS_FILE))
+        assertEquals(listOf("diagnostic"), restored(DIAGNOSTICS_FILE))
+        assertTrue(dropped().getValue(DropReason.EVICTED) > 0)
+        assertFilledUpTo(192 * 1_024L, largest)
+    }
+
+    @Test
+    fun `a flood of errors evicts errors only`() {
+        val store = open()
+        store.append("counted".encodeToByteArray(), EventClass.COUNTED)
+        store.append("diagnostic".encodeToByteArray(), EventClass.DIAGNOSTIC)
+
+        val largest = largestSize(ERRORS_FILE, appends = 200) {
+            store.append(ByteArray(1_024), EventClass.ERROR)
+        }
+
+        assertEquals(listOf("counted"), restored(COUNTED_FILE))
+        assertEquals(listOf("diagnostic"), restored(DIAGNOSTICS_FILE))
+        assertTrue(dropped().getValue(DropReason.EVICTED) > 0)
+        assertFilledUpTo(64 * 1_024L, largest)
+    }
+
+    @Test
+    fun `counted events go to a file of their own`() {
+        val store = open()
+
+        store.append("counted".encodeToByteArray(), EventClass.COUNTED)
+
+        assertEquals(listOf("counted"), restored(COUNTED_FILE))
+        assertEquals(emptyList<String>(), restored(DIAGNOSTICS_FILE))
+        assertEquals(emptyList<String>(), restored(ERRORS_FILE))
     }
 
     @Test
@@ -50,6 +95,37 @@ class DiskEventStoreTest {
         assertEquals("e199", kept.last().trim())
         assertTrue(kept.size < 200)
         assertEquals(0L, File(directory, DIAGNOSTICS_FILE).length() - HEADER_BYTES)
+        assertEquals(0L, File(directory, COUNTED_FILE).length() - HEADER_BYTES)
+    }
+
+    @Test
+    fun `a counted event survives a restart, and a day later it is gone`() {
+        open().append("counted".encodeToByteArray(), EventClass.COUNTED)
+
+        clock.now += TimeUnit.HOURS.toMillis(23)
+        val reopened = open()
+        assertEquals(listOf("counted"), restored(COUNTED_FILE))
+        assertEquals(listOf("counted"), reopened.peek(maxEvents = 10, maxPayloadBytes = 1_024 * 1_024).map { it.payload.decodeToString() })
+        assertEquals(emptyMap<DropReason, Long>(), dropped())
+
+        clock.now += TimeUnit.HOURS.toMillis(1) + 1
+        open()
+        assertEquals(emptyList<String>(), restored(COUNTED_FILE))
+        assertEquals(1L, dropped().getValue(DropReason.EXPIRED))
+    }
+
+    @Test
+    fun `a counted event outlives the diagnostic TTL`() {
+        open().apply {
+            append("counted".encodeToByteArray(), EventClass.COUNTED)
+            append("diagnostic".encodeToByteArray(), EventClass.DIAGNOSTIC)
+        }
+
+        clock.now += EventClass.DIAGNOSTIC.ttlMillis + 1
+        open()
+
+        assertEquals(listOf("counted"), restored(COUNTED_FILE))
+        assertEquals(emptyList<String>(), restored(DIAGNOSTICS_FILE))
     }
 
     @Test
@@ -71,7 +147,8 @@ class DiskEventStoreTest {
     }
 
     @Test
-    fun `the TTLs are 24 hours for errors and 15 minutes for diagnostics`() {
+    fun `the TTLs are 24 hours for counted events and errors and 15 minutes for diagnostics`() {
+        assertEquals(TimeUnit.HOURS.toMillis(24), EventClass.COUNTED.ttlMillis)
         assertEquals(TimeUnit.HOURS.toMillis(24), EventClass.ERROR.ttlMillis)
         assertEquals(TimeUnit.MINUTES.toMillis(15), EventClass.DIAGNOSTIC.ttlMillis)
     }
@@ -91,8 +168,33 @@ class DiskEventStoreTest {
     }
 
     @Test
-    fun `the two files together stay within the budget of the single queue they replace`() {
-        assertEquals(512 * 1024, DiskEventStore.DIAGNOSTICS_BYTES + DiskEventStore.ERRORS_BYTES)
+    fun `the three files together stay within the budget of the single queue they replace`() {
+        assertEquals(192 * 1024, DiskEventStore.COUNTED_BYTES)
+        assertEquals(256 * 1024, DiskEventStore.DIAGNOSTICS_BYTES)
+        assertEquals(64 * 1024, DiskEventStore.ERRORS_BYTES)
+        assertEquals(
+            512 * 1024,
+            DiskEventStore.COUNTED_BYTES + DiskEventStore.DIAGNOSTICS_BYTES + DiskEventStore.ERRORS_BYTES,
+        )
+    }
+
+    @Test
+    fun `a diagnostics file filled to the old 448 KiB cap is compacted to the new cap when the store opens`() {
+        val dropped = DroppedEvents.open(File(directory, "dropped"))
+        EventQueue.open(File(directory, DIAGNOSTICS_FILE), dropped, EventQueue.Limits(maxFileBytes = 448 * 1024), clock).apply {
+            repeat(420) { append("d$it".padEnd(1_024).encodeToByteArray(), EventClass.DIAGNOSTIC.ttlMillis) }
+            close()
+        }
+        assertTrue(File(directory, DIAGNOSTICS_FILE).length() > 256 * 1_024L)
+
+        open()
+
+        val length = File(directory, DIAGNOSTICS_FILE).length()
+        assertTrue("still $length bytes", length <= 256 * 1_024L)
+        assertTrue("only $length bytes are left", length > 128 * 1_024L)
+        val kept = restored(DIAGNOSTICS_FILE)
+        assertEquals("d419", kept.last().trim())
+        assertEquals((420 - kept.size).toLong(), dropped().getValue(DropReason.EVICTED))
     }
 
     /** What a later process would restore from [name], read through a copy so the store's own files stay untouched. */
@@ -122,6 +224,7 @@ class DiskEventStoreTest {
     private fun dropped(): Map<DropReason, Long> = DroppedEvents.open(File(directory, "dropped")).snapshot()
 
     private companion object {
+        const val COUNTED_FILE = "counted"
         const val DIAGNOSTICS_FILE = "queue"
         const val ERRORS_FILE = "errors"
         const val HEADER_BYTES = 4L

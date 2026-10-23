@@ -33,7 +33,8 @@ class RendererTelemetryAdEventsTest {
         for ((creative, creativeWire) in creatives) {
             for ((adType, adTypeWire) in adTypes) {
                 val telemetry = Captured()
-                RendererTelemetry.adEvents(telemetry, creative, AdInfo("auction-$creativeWire", adType))!!.rendered()
+                RendererTelemetry.adEvents(telemetry, creative, AdInfo("auction-$creativeWire", adType))!!
+                    .processGone(didCrash = false)
 
                 val event = telemetry.events.single()
                 assertEquals(creativeWire, event.getString("creative_type"))

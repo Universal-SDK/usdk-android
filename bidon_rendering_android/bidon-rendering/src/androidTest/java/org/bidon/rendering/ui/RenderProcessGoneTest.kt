@@ -236,7 +236,7 @@ class RenderProcessGoneTest {
 
         assertTrue("no error", events.failed.await(RENDERER_GONE_SECONDS, TimeUnit.SECONDS))
         assertNull(onMain { renderer.getView() })
-        assertProcessGone(kind, how, wasShown = false)
+        assertProcessGone(kind, how, afterImpression = false)
 
         // Showing it now fails the usual way for an ad that is not loaded, and starts no screen.
         ActivityScenario.launch(BlankActivity::class.java).use { scenario ->
@@ -268,8 +268,8 @@ class RenderProcessGoneTest {
             assertEquals(0, onMain { container.childCount })
         }
         onMain { renderer.destroy() }
-        assertRendered(kind)
-        assertProcessGone(kind, how, wasShown = true)
+        assertImpressionCounted()
+        assertProcessGone(kind, how, afterImpression = true)
         queued.assertNoMore()
     }
 
@@ -293,7 +293,7 @@ class RenderProcessGoneTest {
             assertEquals(0, events.errors.get())
         }
         onMain { renderer.destroy() }
-        assertRendered(kind)
+        assertImpressionCounted()
         // The ad was closed: the death of the shared render process is not reported for it.
         queued.assertNoMore()
     }
@@ -455,8 +455,8 @@ class RenderProcessGoneTest {
             assertEquals("reported as an error after it was shown", 0, events.errors.get())
         }
         onMain { renderer.destroy() }
-        assertRendered(kind)
-        assertProcessGone(kind, how, wasShown = true)
+        assertImpressionCounted()
+        assertProcessGone(kind, how, afterImpression = true)
         queued.assertNoMore()
     }
 
@@ -479,17 +479,13 @@ class RenderProcessGoneTest {
         Kind.MRAID -> Creative.MRAID
     }
 
-    private fun assertRendered(kind: Kind) {
-        val event = queued.next()
-        queued.assertAdEvent(event, "creative_rendered", EventClass.DIAGNOSTIC, creative(kind))
-        assertTrue("no load time", event.json.getLong("load_ms") >= 0)
-    }
+    private fun assertImpressionCounted() = queued.assertImpression(queued.next())
 
-    private fun assertProcessGone(kind: Kind, how: String, wasShown: Boolean) {
+    private fun assertProcessGone(kind: Kind, how: String, afterImpression: Boolean) {
         val event = queued.next(RENDERER_GONE_SECONDS)
         queued.assertAdEvent(event, "render_process_gone", EventClass.ERROR, creative(kind))
         assertEquals(how == CRASH, event.json.getBoolean("did_crash"))
-        assertEquals(wasShown, event.json.getBoolean("was_shown"))
+        assertEquals(afterImpression, event.json.getBoolean("was_shown"))
     }
 
     /** Ends the process that renders [renderer]'s WebView, the way a crash or the low-memory killer would. */

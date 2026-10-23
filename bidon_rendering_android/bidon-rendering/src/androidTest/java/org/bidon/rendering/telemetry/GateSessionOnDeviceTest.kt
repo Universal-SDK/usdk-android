@@ -5,9 +5,6 @@ import android.content.ContextWrapper
 import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.bidon.rendering.AdInfo
-import org.bidon.rendering.AdType
-import org.bidon.rendering.CreativeType
 import org.bidon.rendering.RendererTelemetry
 import org.json.JSONObject
 import org.junit.After
@@ -20,7 +17,7 @@ import java.io.File
 /**
  * Telemetry as the renderer starts it samples on the session its events and its batches carry.
  *
- * The test sets the rate of `creative_rendered` to exactly this session's sampling position, which drops the event,
+ * The test sets the rate of a diagnostic event to exactly this session's sampling position, which drops the event,
  * and then to the next double above it, which keeps it. A gate sampling on any other session would land on the same
  * side of both rates, so it would keep both events or drop both.
  */
@@ -48,9 +45,9 @@ class GateSessionOnDeviceTest {
         val telemetry = RendererTelemetry.start(WithOwnStorage(context, storage))
 
         telemetry.applySettings(settings(JSONObject().put("url", ingest.url).put("app_key", "key"), rate = position))
-        RendererTelemetry.adEvents(telemetry, CreativeType.HTML, AdInfo(DROPPED, AdType.BANNER))!!.rendered()
+        emitDiagnostic(telemetry, DROPPED)
         telemetry.applySettings(settings(JSONObject(), rate = Math.nextUp(position)))
-        RendererTelemetry.adEvents(telemetry, CreativeType.HTML, AdInfo(KEPT, AdType.BANNER))!!.rendered()
+        emitDiagnostic(telemetry, KEPT)
 
         val batch = ingest.awaitBatch(whileWaiting = telemetry::sync) { batch -> batch.events().any { it.auctionId == KEPT } }
         assertEquals(session.value, batch.getJSONObject("session").getString("id"))
@@ -64,10 +61,26 @@ class GateSessionOnDeviceTest {
         )
     }
 
-    /** [block] with `creative_rendered` sampled at [rate]. */
+    /**
+     * A diagnostic event of the auction [auctionId], emitted directly: no event of the renderer is both sampled and
+     * free of other gates, since impressions are counted events that are never sampled.
+     */
+    private fun emitDiagnostic(telemetry: Telemetry, auctionId: String) {
+        telemetry.emit(EVENT, EventClass.DIAGNOSTIC) { rate ->
+            EventEnvelope.capture(
+                EVENT,
+                RendererTelemetry.sessionId,
+                Clock.System,
+                auctionId = auctionId,
+                samplingRate = rate,
+            )
+        }
+    }
+
+    /** [block] with the diagnostic event sampled at [rate]. */
     private fun settings(block: JSONObject, rate: Double): TelemetrySettings =
         TelemetryBlock.parse(
-            block.put("event_rates", JSONObject().put("creative_rendered", rate)),
+            block.put("event_rates", JSONObject().put(EVENT, rate)),
             context.packageName,
             "1.0.0",
             fallbackAppKey = null,
@@ -81,6 +94,7 @@ class GateSessionOnDeviceTest {
     }
 
     private companion object {
+        const val EVENT = "gate_session_probe"
         const val DROPPED = "at-the-position"
         const val KEPT = "just-above-the-position"
     }

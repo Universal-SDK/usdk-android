@@ -13,9 +13,10 @@ import java.util.concurrent.atomic.AtomicReference
  * @property samplingRate the share of sessions whose events are kept, in [0, 1].
  * @property eventRates per event name, a rate in [0, 1] that replaces [samplingRate] for that name. Zero switches the
  * name off.
- * @property allowedEvents the only names that may be captured, errors included; `null` allows every name.
+ * @property allowedEvents the only names that may be captured, errors and counted events included; `null` allows every
+ * name.
  *
- * A rate outside (0, 1] switches off the diagnostic events it applies to; errors still pass.
+ * A rate outside (0, 1] switches off the diagnostic events it applies to; errors and counted events still pass.
  */
 internal data class TelemetryConfig(
     val enabled: Boolean = true,
@@ -79,8 +80,8 @@ internal class RateLimiter(
 
 /**
  * Decides on the caller's thread whether an event is captured, and at which rate (D-031). The checks run in this
- * order: the kill switch, the allow-list, sampling, the rate limit. Errors are always kept at rate 1.0 by sampling,
- * but still pass the kill switch, the allow-list and the rate limit.
+ * order: the kill switch, the allow-list, sampling, the rate limit. Errors and counted events are always kept at rate
+ * 1.0 by sampling, and counted events skip the rate limit, but both still pass the kill switch and the allow-list.
  */
 internal class TelemetryGate(
     sessionId: SessionId,
@@ -121,13 +122,13 @@ internal class TelemetryGate(
         val config = config
         if (!config.enabled) return null
         if (config.allowedEvents?.contains(eventName) == false) return null
-        val rate = if (eventClass == EventClass.ERROR) {
-            SamplingRate.ALL
-        } else {
-            SamplingRate.of(config.eventRates[eventName] ?: config.samplingRate)?.takeIf { position < it.fraction }
-                ?: return null
+        val rate = when (eventClass) {
+            EventClass.ERROR, EventClass.COUNTED -> SamplingRate.ALL
+            EventClass.DIAGNOSTIC ->
+                SamplingRate.of(config.eventRates[eventName] ?: config.samplingRate)?.takeIf { position < it.fraction }
+                    ?: return null
         }
-        if (!limiter.tryAcquire(eventName)) {
+        if (eventClass != EventClass.COUNTED && !limiter.tryAcquire(eventName)) {
             rateLimited.incrementAndGet()
             return null
         }

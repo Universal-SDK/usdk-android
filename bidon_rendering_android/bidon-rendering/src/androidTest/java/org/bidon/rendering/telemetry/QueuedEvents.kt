@@ -2,7 +2,9 @@ package org.bidon.rendering.telemetry
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import java.io.File
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -47,12 +49,30 @@ internal class QueuedEvents(directory: File) {
         assertNull("telemetry failed", failures.peek())
     }
 
-    /** Asserts [event] is [name] of [eventClass], for this test's ad of [creative] and [adType]. */
+    /**
+     * Asserts [event] is the impression of this test's ad of [adType]: an `ad_impression` of class COUNTED, kept at
+     * rate 1, without a creative type.
+     */
+    fun assertImpression(event: Stored, adType: AdType = AdType.INTERSTITIAL) {
+        assertAdEvent(event, "ad_impression", EventClass.COUNTED, creative = null, adType)
+        assertEquals(1.0, event.json.getJSONObject("envelope").getDouble("sampling_rate"), 0.0)
+        assertEquals(false, event.json.get("om_enabled"))
+    }
+
+    /** Asserts [event] carries a render duration. */
+    fun assertRenderDuration(event: Stored) {
+        assertTrue("no render duration in ${event.json}", event.json.optLong("render_duration_ms", -1) >= 0)
+    }
+
+    /**
+     * Asserts [event] is [name] of [eventClass], for this test's ad of [adType], whose creative type is [creative], or
+     * which carries none when [creative] is `null`.
+     */
     fun assertAdEvent(
         event: Stored,
         name: String,
         eventClass: EventClass,
-        creative: Creative,
+        creative: Creative?,
         adType: AdType = AdType.INTERSTITIAL,
     ) {
         assertEquals(name, event.name)
@@ -60,7 +80,11 @@ internal class QueuedEvents(directory: File) {
         assertEquals(AUCTION_ID, event.json.getJSONObject("envelope").getString("auction_id"))
         assertEquals(adType.wireName, event.json.getJSONObject("envelope").getString("ad_type"))
         assertEquals(sessionId.value, event.json.getJSONObject("envelope").getString("session_id"))
-        assertEquals(creative.wireName, event.json.getString("creative_type"))
+        if (creative == null) {
+            assertFalse("creative_type on $name", event.json.has("creative_type"))
+        } else {
+            assertEquals(creative.wireName, event.json.getString("creative_type"))
+        }
     }
 
     private inner class Recording(private val store: EventStore) : EventStore by store {

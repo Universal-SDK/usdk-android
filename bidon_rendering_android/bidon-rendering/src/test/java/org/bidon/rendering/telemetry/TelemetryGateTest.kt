@@ -265,6 +265,82 @@ class TelemetryGateTest {
         assertEquals(0, admitted)
     }
 
+    // Counted events: never sampled, never rate limited, but still behind the kill switch and the allow-list.
+
+    @Test
+    fun `a counted event passes at rate 1 whatever the global sampling rate says`() {
+        for (rate in listOf(0.01, 0.5, 0.0, Double.NaN, -0.5, 10.0)) {
+            val gate = TelemetryGate(SessionId.of("abc")!!, RateLimiter(clock))
+            gate.config = TelemetryConfig(samplingRate = rate)
+
+            assertEquals("rate $rate", SamplingRate.ALL, gate.admit("ad_impression", EventClass.COUNTED))
+        }
+    }
+
+    @Test
+    fun `a counted event passes at rate 1 whatever the rate for its name says, a session above that rate included`() {
+        for (rate in listOf(0.01, 0.5, 0.0, Double.NaN, -0.5, 10.0)) {
+            val gate = TelemetryGate(SessionId.of("abc")!!, RateLimiter(clock))
+            gate.config = TelemetryConfig(samplingRate = 1.0, eventRates = mapOf("ad_impression" to rate))
+
+            assertEquals("rate $rate", SamplingRate.ALL, gate.admit("ad_impression", EventClass.COUNTED))
+        }
+    }
+
+    @Test
+    fun `a diagnostic of the same name is still sampled out where a counted event passes`() {
+        gate.config = TelemetryConfig(samplingRate = 0.01, eventRates = mapOf("ad_impression" to 0.01))
+
+        assertEquals(SamplingRate.ALL, gate.admit("ad_impression", EventClass.COUNTED))
+        assertNull(gate.admit("ad_impression", EventClass.DIAGNOSTIC))
+    }
+
+    @Test
+    fun `counted events are not rate limited, not counted as limited and use no place`() {
+        repeat(25) { assertEquals("event ${it + 1}", SamplingRate.ALL, gate.admit("ad_impression", EventClass.COUNTED)) }
+
+        assertEquals(0L, gate.takeRateLimited())
+        assertTwentyPlacesLeft("ad_impression", EventClass.DIAGNOSTIC)
+    }
+
+    @Test
+    fun `a diagnostic is still capped at twenty a minute next to a flood of counted events`() {
+        repeat(25) { gate.admit("ad_impression", EventClass.COUNTED) }
+        repeat(20) { assertEquals(SamplingRate.ALL, gate.admit("load", EventClass.DIAGNOSTIC)) }
+
+        repeat(25) { gate.admit("ad_impression", EventClass.COUNTED) }
+
+        assertNull(gate.admit("load", EventClass.DIAGNOSTIC))
+        assertEquals(1L, gate.takeRateLimited())
+    }
+
+    @Test
+    fun `switched off, a counted event is refused`() {
+        gate.config = TelemetryConfig(enabled = false)
+
+        repeat(30) { assertNull(gate.admit("ad_impression", EventClass.COUNTED)) }
+        assertEquals(0L, gate.takeRateLimited())
+    }
+
+    @Test
+    fun `switched off beats a counted event's own rate`() {
+        gate.config = TelemetryConfig(enabled = false, samplingRate = 1.0, eventRates = mapOf("ad_impression" to 1.0))
+
+        assertNull(gate.admit("ad_impression", EventClass.COUNTED))
+    }
+
+    @Test
+    fun `an allow-list without its name refuses a counted event, and one with it lets it through`() {
+        gate.config = TelemetryConfig(allowedEvents = setOf("load"))
+        assertNull(gate.admit("ad_impression", EventClass.COUNTED))
+
+        gate.config = TelemetryConfig(allowedEvents = emptySet())
+        assertNull(gate.admit("ad_impression", EventClass.COUNTED))
+
+        gate.config = TelemetryConfig(samplingRate = 0.01, allowedEvents = setOf("ad_impression"))
+        assertEquals(SamplingRate.ALL, gate.admit("ad_impression", EventClass.COUNTED))
+    }
+
     /** Exactly 20 more events of [name] pass, and the next one is refused. */
     private fun assertTwentyPlacesLeft(name: String, eventClass: EventClass) = assertTwentyPlacesLeft(gate, name, eventClass)
 

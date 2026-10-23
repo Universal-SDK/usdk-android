@@ -2,6 +2,7 @@ package org.bidon.rendering.ui
 
 import android.os.Build
 import android.os.SystemClock
+import android.view.ViewGroup
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -18,6 +19,8 @@ import org.bidon.rendering.mraid.MraidRenderer
 import org.bidon.rendering.telemetry.Creative
 import org.bidon.rendering.telemetry.EventClass
 import org.bidon.rendering.telemetry.QueuedEvents
+import org.bidon.rendering.waitUntil
+import org.bidon.rendering.whileTheDeviceIsRotated
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -84,7 +87,7 @@ class InlineAdTelemetryTest {
                 it.setContentView(container)
                 renderer.attach(container)
             }
-            queued.assertAdEvent(queued.next(), "creative_rendered", EventClass.DIAGNOSTIC, Creative.HTML)
+            assertCountedWithDuration(queued.next())
             scenario.onActivity { renderer.attach(container) }
             instrumentation.waitForIdleSync()
 
@@ -105,7 +108,7 @@ class InlineAdTelemetryTest {
 
         ActivityScenario.launch(BlankActivity::class.java).use { scenario ->
             scenario.onActivity { it.setContentView(FrameLayout(it).apply { addView(renderer.getView()) }) }
-            assertEquals("creative_rendered", queued.next().name)
+            queued.assertImpression(queued.next())
 
             onMain { (renderer.getView() as WebView).evaluateJavascript("mraid.close()", null) }
             assertTrue("the creative's close was not reported", events.closed.await(5, TimeUnit.SECONDS))
@@ -116,6 +119,22 @@ class InlineAdTelemetryTest {
         }
         instrumentation.runOnMainSync { renderer.destroy() }
     }
+
+    @Test
+    fun anHtmlBannerReAddedAfterTheHostWasRecreatedIsNotCountedAgain() =
+        aBannerReAddedToANewHostScreenIsNotCountedAgain(Kind.HTML, HostGoesAway.RECREATED)
+
+    @Test
+    fun anMraidBannerReAddedAfterTheHostWasRecreatedIsNotCountedAgain() =
+        aBannerReAddedToANewHostScreenIsNotCountedAgain(Kind.MRAID, HostGoesAway.RECREATED)
+
+    @Test
+    fun anHtmlBannerOnAHostTheSystemRotatedIsNotCountedAgain() =
+        aBannerReAddedToANewHostScreenIsNotCountedAgain(Kind.HTML, HostGoesAway.ROTATED)
+
+    @Test
+    fun anMraidBannerOnAHostTheSystemRotatedIsNotCountedAgain() =
+        aBannerReAddedToANewHostScreenIsNotCountedAgain(Kind.MRAID, HostGoesAway.ROTATED)
 
     @Test
     fun anHtmlCreativeWhoseOwnLoadFailsIsReportedWithTheWebViewCode() = aCreativeWhoseOwnLoadFails(Kind.HTML)
@@ -143,9 +162,7 @@ class InlineAdTelemetryTest {
                 it.setContentView(container)
                 container.addView(renderer.getView())
             }
-            val rendered = queued.next()
-            queued.assertAdEvent(rendered, "creative_rendered", EventClass.DIAGNOSTIC, kind.creative)
-            assertTrue("no load time", rendered.json.has("load_ms"))
+            assertCountedWithDuration(queued.next())
 
             // The host moves the banner, for example on a refresh of its own layout.
             scenario.onActivity {
@@ -158,6 +175,58 @@ class InlineAdTelemetryTest {
             queued.assertNoMore()
         }
         instrumentation.runOnMainSync { renderer.destroy() }
+    }
+
+    /** How the host's screen goes away before the host puts the banner it kept on a new one. */
+    private enum class HostGoesAway {
+        /** Recreated by the app, for example on a theme change. */
+        RECREATED,
+
+        /** Recreated by the system, which turned the device. */
+        ROTATED,
+    }
+
+    /** The banner was seen once, so it is counted once, however the host's screen was replaced. */
+    private fun aBannerReAddedToANewHostScreenIsNotCountedAgain(kind: Kind, hostGoesAway: HostGoesAway) {
+        val events = Events()
+        val renderer = renderer(kind)
+        load(renderer, kind, events)
+        assertTrue("the ad did not load", events.loaded.await(10, TimeUnit.SECONDS))
+
+        ActivityScenario.launch(BlankActivity::class.java).use { scenario ->
+            val banner = onMain { renderer.getView()!! }
+            scenario.onActivity { it.setContentView(FrameLayout(it).apply { addView(banner) }) }
+            assertCountedWithDuration(queued.next())
+
+            val reAddAndCheck = {
+                scenario.onActivity { activity ->
+                    (banner.parent as? ViewGroup)?.removeView(banner)
+                    activity.setContentView(FrameLayout(activity).apply { addView(banner) })
+                }
+                instrumentation.waitForIdleSync()
+
+                assertTrue("the banner is not on the new screen", onMain { banner.isAttachedToWindow })
+                assertEquals(1, events.impressions.get())
+                queued.assertNoMore()
+            }
+            when (hostGoesAway) {
+                HostGoesAway.RECREATED -> {
+                    scenario.recreate()
+                    reAddAndCheck()
+                }
+                HostGoesAway.ROTATED -> instrumentation.whileTheDeviceIsRotated {
+                    instrumentation.waitUntil("the host was not recreated") { !banner.isAttachedToWindow }
+                    reAddAndCheck()
+                }
+            }
+        }
+        instrumentation.runOnMainSync { renderer.destroy() }
+    }
+
+    /** The impression of a banner the host asked for, so it is measured from that request. */
+    private fun assertCountedWithDuration(event: QueuedEvents.Stored) {
+        queued.assertImpression(event)
+        queued.assertRenderDuration(event)
     }
 
     private fun aCreativeWhoseOwnLoadFails(kind: Kind) {

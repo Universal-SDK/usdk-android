@@ -12,10 +12,6 @@ internal object PendingCatalogue {
 
     val entries = listOf(
         Entry(
-            "creative_rendered", "envelope.event_name", Rule.UNKNOWN_EVENT,
-            removedBy = "Telemetry: every impression is recorded as `ad_impression`, never sampled, kept a day",
-        ),
-        Entry(
             "creative_load_failed", "envelope.event_name", Rule.UNKNOWN_EVENT,
             removedBy = "Telemetry: a load failure arrives as `ad_load_failed` with a stable code, owner, stage and " +
                 "exception class",

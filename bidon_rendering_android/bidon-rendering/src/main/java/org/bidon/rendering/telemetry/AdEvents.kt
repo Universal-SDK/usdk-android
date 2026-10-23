@@ -33,7 +33,7 @@ internal enum class LoadFailure(val wireName: String) {
 }
 
 /**
- * The renderer's telemetry events of one ad: `creative_rendered`, `creative_load_failed` and `render_process_gone`.
+ * The renderer's telemetry events of one ad: `ad_impression`, `creative_load_failed` and `render_process_gone`.
  *
  * Each event is reported once per ad, whether or not telemetry keeps it, and a death of the render process only while
  * the ad is open. A call takes its place before it emits and holds no lock while it does, so a second call never
@@ -53,8 +53,9 @@ internal class AdEvents(
     private val monotonicClock: MonotonicClock,
 ) {
 
+    private val showStart = AtomicReference<Long?>()
+    private val viewStart = AtomicReference<Long?>()
     private val loadStart = AtomicReference<Long?>()
-    private val loadEnd = AtomicReference<LoadEnd?>()
     private val renderReported = AtomicBoolean()
 
     /** Taken by the first process death, or by [closed], after which a death is not reported. */
@@ -63,22 +64,35 @@ internal class AdEvents(
     /** Taken by the first load failure, or closed by a process death before any load failure. */
     private val loadFailureReported = AtomicBoolean()
 
+    /** The host asked for the ad to be shown on a full screen. Only the first call counts. */
+    fun showRequested() {
+        showStart.compareAndSet(null, monotonicClock.elapsedMillis())
+    }
+
+    /** The host asked for the ad's view. Only the first call counts. */
+    fun viewRequested() {
+        viewStart.compareAndSet(null, monotonicClock.elapsedMillis())
+    }
+
     /** The creative started loading. Only the first call counts. */
     fun loadStarted() {
         loadStart.compareAndSet(null, monotonicClock.elapsedMillis())
     }
 
-    /** The creative finished loading. Only the first call counts, and one before [loadStarted] leaves no load time. */
-    fun loaded() {
-        loadEnd.compareAndSet(null, LoadEnd(monotonicClock.elapsedMillis(), afterStart = loadStart.get() != null))
-    }
-
-    /** The creative showed its first content: emits `creative_rendered`, with the load time when there is one. */
+    /**
+     * The creative showed its first content: emits `ad_impression`, once per ad.
+     *
+     * `render_duration_ms` is the time from the first [showRequested], or the first [viewRequested] when the ad was
+     * never asked to show on a full screen, to this call, on the monotonic clock. It is left out when neither was
+     * called before this one, or the clock gives no sensible difference. `om_enabled` is always `false`: the renderer
+     * does not measure viewability yet.
+     */
     fun rendered() {
         if (!renderReported.compareAndSet(false, true)) return
-        val loadMillis = loadMillis()
-        emit(EventName.CREATIVE_RENDERED, EventClass.DIAGNOSTIC) {
-            if (loadMillis != null) put("load_ms", loadMillis)
+        val renderMillis = elapsedSince(showStart.get() ?: viewStart.get())
+        emit(EventName.AD_IMPRESSION, EventClass.COUNTED) {
+            if (renderMillis != null) put("render_duration_ms", renderMillis)
+            put("om_enabled", false)
         }
     }
 
@@ -89,6 +103,7 @@ internal class AdEvents(
     fun loadFailed(reason: LoadFailure, code: Int? = null) {
         if (!loadFailureReported.compareAndSet(false, true)) return
         emit(EventName.CREATIVE_LOAD_FAILED, EventClass.ERROR) {
+            put("creative_type", creative.wireName)
             put("reason", reason.wireName)
             if (code != null) put("code", code)
         }
@@ -104,6 +119,7 @@ internal class AdEvents(
         loadFailureReported.set(true)
         if (!processGoneReported.compareAndSet(false, true)) return
         emit(EventName.RENDER_PROCESS_GONE, EventClass.ERROR) {
+            put("creative_type", creative.wireName)
             put("did_crash", didCrash)
             put("was_shown", wasShown)
         }
@@ -115,14 +131,13 @@ internal class AdEvents(
     }
 
     /**
-     * The first load end minus the first load start, or `null` when either is missing, they came in the wrong order,
-     * or the clock gives no sensible difference.
+     * The monotonic time from [start] to now, or `null` when there is no start, it reads later than now, or the clock
+     * gives no sensible difference.
      */
-    private fun loadMillis(): Long? {
-        val start = loadStart.get() ?: return null
-        val end = loadEnd.get()?.takeIf { it.afterStart } ?: return null
+    private fun elapsedSince(start: Long?): Long? {
+        if (start == null) return null
         val millis = try {
-            Math.subtractExact(end.elapsedMillis, start)
+            Math.subtractExact(monotonicClock.elapsedMillis(), start)
         } catch (_: ArithmeticException) {
             return null
         }
@@ -140,16 +155,10 @@ internal class AdEvents(
                 adType = adType,
                 samplingRate = rate,
             )
-            val json = envelope.eventJson().apply {
-                put("creative_type", creative.wireName)
-                fields()
-            }
+            val json = envelope.eventJson().apply(fields)
             AdEvent(json, eventClass)
         }
     }
-
-    /** The first load end, and whether a load start came before it. */
-    private class LoadEnd(val elapsedMillis: Long, val afterStart: Boolean)
 
     private class AdEvent(private val json: JSONObject, override val eventClass: EventClass) : TelemetryEvent {
         override fun encode(): ByteArray = json.toString().toByteArray(Charsets.UTF_8)

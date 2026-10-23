@@ -69,7 +69,6 @@ internal class VastRenderer(
             result
                 .onSuccess { ad ->
                     vastAd = ad
-                    events?.loaded()
                     listener.onLoaded()
                 }
                 .onFailure { error ->
@@ -83,6 +82,7 @@ internal class VastRenderer(
     }
 
     override fun showFullscreen(activity: Activity) {
+        events?.showRequested()
         val ad = vastAd
 
         if (ad == null) {
