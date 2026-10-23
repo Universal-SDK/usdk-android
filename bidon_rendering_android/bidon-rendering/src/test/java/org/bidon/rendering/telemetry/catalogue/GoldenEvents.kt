@@ -6,13 +6,14 @@ import org.bidon.rendering.telemetry.Clock
 import org.bidon.rendering.telemetry.CrashReport
 import org.bidon.rendering.telemetry.Creative
 import org.bidon.rendering.telemetry.EventClass
+import org.bidon.rendering.telemetry.ErrorCode
 import org.bidon.rendering.telemetry.EventName
-import org.bidon.rendering.telemetry.LoadFailure
 import org.bidon.rendering.telemetry.MonotonicClock
 import org.bidon.rendering.telemetry.SamplingRate
 import org.bidon.rendering.telemetry.SessionId
 import org.bidon.rendering.telemetry.Telemetry
 import org.bidon.rendering.telemetry.TelemetryEvent
+import java.io.IOException
 
 /**
  * Each event the SDK emits, encoded by its production encoder (`AdEvents`, `CrashReport`) with fixed clocks, a fixed
@@ -28,7 +29,15 @@ internal object GoldenEvents {
             advance(RENDER_MILLIS)
             rendered()
         }
-        EventName.CREATIVE_LOAD_FAILED -> adEvent(name) { loadFailed(LoadFailure.WEBVIEW_ERROR, code = -2) }
+        EventName.AD_LOAD_FAILED -> adEvent(name) { advance ->
+            loadStarted()
+            advance(LOAD_MILLIS)
+            loadFailed(
+                ErrorCode.VAST_WRAPPER_HTTP_STATUS,
+                "404",
+                IllegalStateException("never sent", IOException("never sent")),
+            )
+        }
         EventName.RENDER_PROCESS_GONE -> adEvent(name) {
             rendered()
             processGone(didCrash = true)
@@ -46,6 +55,7 @@ internal object GoldenEvents {
     private const val AUCTION = "8b0f3c2e-5d4a-4e1b-9c7f-2a6d8e1b3f50"
     private const val NOW = 1_790_326_698_635L
     private const val RENDER_MILLIS = 420L
+    private const val LOAD_MILLIS = 420L
     private val CLOCK = Clock { NOW }
 
     /**

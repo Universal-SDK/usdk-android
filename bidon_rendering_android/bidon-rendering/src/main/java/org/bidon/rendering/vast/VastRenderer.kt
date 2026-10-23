@@ -16,7 +16,7 @@ import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.telemetry.AdEvents
-import org.bidon.rendering.telemetry.LoadFailure
+import org.bidon.rendering.telemetry.ErrorCode
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.vast.ui.VideoAdActivity
 import java.util.concurrent.ConcurrentHashMap
@@ -28,6 +28,9 @@ internal class VastRenderer(
 ) : AdRenderer {
 
     companion object {
+        /** The VAST error code for a response with no media file the device can play. */
+        private const val VAST_NO_SUPPORTED_MEDIA = "403"
+
         /**
          * The parsed VAST document for the activity to pick up, under the same key as its
          * presentation handle. Looked up rather than taken, so the activity can find it again if
@@ -72,7 +75,8 @@ internal class VastRenderer(
                     listener.onLoaded()
                 }
                 .onFailure { error ->
-                    events?.loadFailed(LoadFailure.VAST_ERROR, (error as? VastParsingException)?.vastError?.code)
+                    val failure = VastLoadFailure.classify(error)
+                    events?.loadFailed(failure.code, failure.externalCode, error)
                     listener.onError(error)
                 }
         }
@@ -96,7 +100,7 @@ internal class VastRenderer(
                 mediaFiles = ad.mediaFiles
             )
             .getOrElse { error ->
-                events?.loadFailed(LoadFailure.NO_MEDIA_FILE)
+                events?.loadFailed(ErrorCode.NO_PLAYABLE_MEDIA, VAST_NO_SUPPORTED_MEDIA, error)
                 listener?.onError(error)
                 return
             }

@@ -216,7 +216,7 @@ class VideoAdTrackingTest {
             assertTrue("the load did not fail", events.failed.await(10, TimeUnit.SECONDS))
 
             val failed = queued.next()
-            queued.assertAdEvent(failed, "creative_load_failed", EventClass.ERROR, Creative.VAST)
+            queued.assertAdEvent(failed, "ad_load_failed", EventClass.ERROR, null)
             assertEquals("vast_error", failed.json.getString("reason"))
             assertEquals(301, failed.json.getInt("code"))
             queued.assertNoMore()
@@ -259,7 +259,7 @@ class VideoAdTrackingTest {
             assertTrue("the show did not fail", events.failed.await(5, TimeUnit.SECONDS))
 
             val failed = queued.next()
-            queued.assertAdEvent(failed, "creative_load_failed", EventClass.ERROR, Creative.VAST)
+            queued.assertAdEvent(failed, "ad_load_failed", EventClass.ERROR, null)
             assertEquals("no_media_file", failed.json.getString("reason"))
             assertFalse(failed.json.has("code"))
             queued.assertNoMore()
@@ -278,7 +278,7 @@ class VideoAdTrackingTest {
 
             assertEquals(0, events.impressions.get())
             val failed = queued.next()
-            queued.assertAdEvent(failed, "creative_load_failed", EventClass.ERROR, Creative.VAST)
+            queued.assertAdEvent(failed, "ad_load_failed", EventClass.ERROR, null)
             assertEquals("playback_error", failed.json.getString("reason"))
             assertTrue("no player error code", failed.json.getInt("code") > 0)
             queued.assertNoMore()

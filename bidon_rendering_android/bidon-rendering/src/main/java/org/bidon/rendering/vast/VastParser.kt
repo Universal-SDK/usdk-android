@@ -503,5 +503,6 @@ internal class VastParser {
 }
 
 internal class VastParsingException(
-    val vastError: VastError
-) : Exception(vastError.description)
+    val vastError: VastError,
+    cause: Throwable? = null
+) : Exception(vastError.description, cause)

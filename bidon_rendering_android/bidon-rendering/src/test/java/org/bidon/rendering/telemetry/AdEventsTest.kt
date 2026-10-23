@@ -11,6 +11,8 @@ import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.Timeout
+import java.io.IOException
+import java.net.ConnectException
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -60,10 +62,10 @@ class AdEventsTest {
     }
 
     @Test
-    fun `a load failure emits one creative_load_failed as an error`() {
-        adEvents().loadFailed(LoadFailure.WEBVIEW_ERROR, -2)
+    fun `a load failure emits one ad_load_failed as an error`() {
+        adEvents().loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
 
-        assertEquals(listOf("creative_load_failed" to EventClass.ERROR), telemetry.calls())
+        assertEquals(listOf("ad_load_failed" to EventClass.ERROR), telemetry.calls())
         assertEquals(0, telemetry.syncs)
     }
 
@@ -95,14 +97,14 @@ class AdEventsTest {
         val events = adEvents()
 
         events.rendered()
-        events.loadFailed(LoadFailure.VAST_ERROR)
+        events.loadFailed(ErrorCode.VAST_INVALID)
         events.processGone(didCrash = false)
 
         assertEquals(3, telemetry.captures)
         assertEquals(
             listOf(
                 "ad_impression" to EventClass.COUNTED,
-                "creative_load_failed" to EventClass.ERROR,
+                "ad_load_failed" to EventClass.ERROR,
                 "render_process_gone" to EventClass.ERROR,
             ),
             telemetry.calls(),
@@ -116,7 +118,7 @@ class AdEventsTest {
         val events = adEvents()
 
         events.rendered()
-        events.loadFailed(LoadFailure.PLAYBACK_ERROR, 4)
+        events.loadFailed(ErrorCode.PLAYER_ERROR)
         events.processGone(didCrash = true)
 
         telemetry.emitted.forEach { emit ->
@@ -152,32 +154,110 @@ class AdEventsTest {
         events.showRequested()
 
         events.rendered()
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
+        events.processGone(didCrash = true)
 
         val impression = telemetry.single("ad_impression")
         assertTrue(impression.has("render_duration_ms"))
         assertFalse(impression.envelope.has("render_duration_ms"))
         assertFalse(impression.envelope.has("om_enabled"))
-        val failed = telemetry.single("creative_load_failed")
-        assertEquals("mraid", failed.getString("creative_type"))
-        assertFalse(failed.envelope.has("creative_type"))
+        val failed = telemetry.single("ad_load_failed")
+        assertTrue(failed.has("error_code"))
+        assertFalse(failed.envelope.has("error_code"))
+        val gone = telemetry.single("render_process_gone")
+        assertEquals("mraid", gone.getString("creative_type"))
+        assertFalse(gone.envelope.has("creative_type"))
     }
 
     @Test
-    fun `creative_load_failed is the envelope plus the creative type, the reason and the code, and nothing else`() {
+    fun `ad_load_failed with everything it can carry is the envelope plus the code, owner, stage, load time, external pair and exception classes, and nothing else`() {
         telemetry.rate = SamplingRate.of(0.5)!!
         val events = adEvents(creative = Creative.VAST)
         events.loadStarted()
-        elapsed += 30
+        elapsed += 420
 
-        events.loadFailed(LoadFailure.NO_MEDIA_FILE, 403)
+        events.loadFailed(
+            ErrorCode.VAST_WRAPPER_HTTP_STATUS,
+            "404",
+            IllegalStateException("never sent", IOException("never sent either")),
+        )
 
-        val json = telemetry.single("creative_load_failed")
-        assertEquals(setOf("envelope", "creative_type", "reason", "code"), json.keySet())
-        assertEnvelope(json.envelope, "creative_load_failed", rate = 0.5)
-        assertEquals("vast", json.getString("creative_type"))
-        assertEquals("no_media_file", json.getString("reason"))
-        assertJsonInteger(403L, json, "code")
+        val json = telemetry.single("ad_load_failed")
+        assertEquals(
+            setOf(
+                "envelope", "error_code", "error_domain", "failed_stage", "duration_ms", "external_error_code",
+                "external_error_source", "exception_class", "exception_cause_class",
+            ),
+            json.keySet(),
+        )
+        assertEnvelope(json.envelope, "ad_load_failed", rate = 0.5)
+        assertEquals("8002", json.get("error_code"))
+        assertEquals("dsp", json.getString("error_domain"))
+        assertEquals("asset_fetch", json.getString("failed_stage"))
+        assertJsonInteger(420L, json, "duration_ms")
+        assertEquals("404", json.get("external_error_code"))
+        assertEquals("http", json.getString("external_error_source"))
+        assertEquals("java.lang.IllegalStateException", json.getString("exception_class"))
+        assertEquals("java.io.IOException", json.getString("exception_cause_class"))
+    }
+
+    @Test
+    fun `ad_load_failed with only a code is the envelope plus the code, owner and stage`() {
+        val events = adEvents(creative = Creative.HTML)
+
+        events.loadFailed(ErrorCode.BLANK_CREATIVE)
+
+        val json = telemetry.single("ad_load_failed")
+        assertEquals(setOf("envelope", "error_code", "error_domain", "failed_stage"), json.keySet())
+        assertEquals("6003", json.get("error_code"))
+        assertEquals("creative", json.getString("error_domain"))
+        assertEquals("webview_load", json.getString("failed_stage"))
+    }
+
+    @Test
+    fun `a failure after the show stage began has no load stage and no load time`() {
+        val events = adEvents(creative = Creative.VAST)
+        events.loadStarted()
+        elapsed += 60_030
+
+        events.loadFailed(ErrorCode.NO_PLAYABLE_MEDIA, "403")
+
+        val json = telemetry.single("ad_load_failed")
+        assertEquals(
+            setOf("envelope", "error_code", "error_domain", "external_error_code", "external_error_source"),
+            json.keySet(),
+        )
+        assertEquals("7001", json.get("error_code"))
+        assertEquals("creative", json.getString("error_domain"))
+        assertEquals("403", json.get("external_error_code"))
+        assertEquals("vast", json.getString("external_error_source"))
+    }
+
+    @Test
+    fun `ad_load_failed does not carry the creative type, the old reason or the old code`() {
+        val events = adEvents(creative = Creative.MRAID)
+
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR, "-2")
+
+        val json = telemetry.single("ad_load_failed")
+        listOf("creative_type", "reason", "code").forEach { assertFalse(it, json.has(it)) }
+        assertFalse(json.envelope.has("creative_type"))
+    }
+
+    @Test
+    fun `error_code is a JSON string and the numbers around it are JSON integers`() {
+        val events = adEvents()
+        events.loadStarted()
+        elapsed += 7
+
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_NETWORK, "-2")
+
+        val json = telemetry.single("ad_load_failed")
+        assertTrue(json.get("error_code").toString(), json.get("error_code") is String)
+        assertTrue(json.get("external_error_code").toString(), json.get("external_error_code") is String)
+        assertEquals("-2", json.get("external_error_code"))
+        assertEquals("webview", json.getString("external_error_source"))
+        assertJsonInteger(7L, json, "duration_ms")
     }
 
     @Test
@@ -205,7 +285,7 @@ class AdEventsTest {
         val events = adEvents(auctionId = auctionId)
 
         events.rendered()
-        events.loadFailed(LoadFailure.MARKUP_REJECTED)
+        events.loadFailed(ErrorCode.MARKUP_REJECTED)
         events.processGone(didCrash = false)
 
         assertEquals(3, telemetry.emitted.size)
@@ -226,7 +306,7 @@ class AdEventsTest {
             val events = adEvents(telemetry = recording)
 
             events.rendered()
-            events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+            events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
             events.processGone(didCrash = true)
 
             assertEquals(3, recording.emitted.size)
@@ -241,7 +321,7 @@ class AdEventsTest {
         val events = adEvents()
 
         events.rendered()
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
         events.processGone(didCrash = true)
 
         val ids = telemetry.emitted.map { it.json().envelope.getString("event_id") }
@@ -261,8 +341,8 @@ class AdEventsTest {
         assertEquals(2_000_000_000_007L, telemetry.single("ad_impression").envelope.getLong("event_ts"))
 
         now = 2_100_000_000_000L
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
-        assertEquals(2_100_000_000_007L, telemetry.single("creative_load_failed").envelope.getLong("event_ts"))
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
+        assertEquals(2_100_000_000_007L, telemetry.single("ad_load_failed").envelope.getLong("event_ts"))
 
         now = 2_200_000_000_000L
         events.processGone(didCrash = false)
@@ -288,7 +368,7 @@ class AdEventsTest {
             val events = adEvents(auctionId = auctionId, telemetry = recording)
 
             events.rendered()
-            events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+            events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
             events.processGone(didCrash = true)
 
             assertEquals(3, recording.emitted.size)
@@ -305,7 +385,7 @@ class AdEventsTest {
             val events = adEvents(auctionId = auctionId, telemetry = recording)
 
             events.rendered()
-            events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+            events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
             events.processGone(didCrash = true)
 
             assertEquals(3, recording.emitted.size)
@@ -324,7 +404,7 @@ class AdEventsTest {
             val events = adEvents(adType = adType, telemetry = recording)
 
             events.rendered()
-            events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+            events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
             events.processGone(didCrash = true)
 
             assertEquals(3, recording.emitted.size)
@@ -339,7 +419,7 @@ class AdEventsTest {
         val events = adEvents(adType = null)
 
         events.rendered()
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
         events.processGone(didCrash = true)
 
         assertEquals(3, telemetry.emitted.size)
@@ -355,7 +435,7 @@ class AdEventsTest {
             val events = adEvents(adType = adType, telemetry = recording)
 
             events.rendered()
-            events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+            events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
             events.processGone(didCrash = true)
 
             assertEquals(3, recording.emitted.size)
@@ -370,7 +450,7 @@ class AdEventsTest {
         val events = adEvents()
 
         events.rendered()
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
         events.processGone(didCrash = true)
 
         assertEquals(3, telemetry.emitted.size)
@@ -382,20 +462,20 @@ class AdEventsTest {
     // rule 9
 
     @Test
-    fun `the failure events carry the creative type in its wire spelling and the impression carries none`() {
+    fun `render_process_gone carries the creative type in its wire spelling, the impression and ad_load_failed none`() {
         Creative.entries.forEach { creative ->
             val recording = RecordingTelemetry()
             val events = adEvents(creative = creative, telemetry = recording)
 
             events.rendered()
-            events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+            events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
             events.processGone(didCrash = true)
 
             assertEquals(3, recording.emitted.size)
             assertFalse("$creative", recording.single("ad_impression").has("creative_type"))
-            listOf("creative_load_failed", "render_process_gone").forEach { name ->
-                assertEquals("$name $creative", creative.wireName, recording.single(name).getString("creative_type"))
-            }
+            assertFalse("$creative", recording.single("ad_load_failed").has("creative_type"))
+            val gone = recording.single("render_process_gone")
+            assertEquals("$creative", creative.wireName, gone.getString("creative_type"))
         }
         assertEquals(listOf("html", "mraid", "vast"), Creative.entries.map { it.wireName })
     }
@@ -695,10 +775,10 @@ class AdEventsTest {
         events.showRequested()
         elapsed += 20
 
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
         events.processGone(didCrash = true)
 
-        listOf("creative_load_failed", "render_process_gone").forEach { name ->
+        listOf("ad_load_failed", "render_process_gone").forEach { name ->
             val json = telemetry.single(name)
             assertFalse(name, json.has("render_duration_ms"))
             assertFalse(name, json.has("om_enabled"))
@@ -719,49 +799,356 @@ class AdEventsTest {
         assertEquals(0, telemetry.captures)
     }
 
-    // rule 11, rule 25 (integers are JSON integers)
+    // rule 11, BID-136 AC 2: the code, owner and stage of every error code
 
     @Test
-    fun `every load failure reason goes out in its wire spelling`() {
-        LoadFailure.entries.forEach { reason ->
+    fun `every error code goes out as its number with its domain and its load stage`() {
+        ErrorCode.entries.forEach { code ->
             val recording = RecordingTelemetry()
 
-            adEvents(telemetry = recording).loadFailed(reason)
+            adEvents(telemetry = recording).loadFailed(code)
 
-            assertEquals(reason.wireName, recording.single("creative_load_failed").getString("reason"))
-        }
-        assertEquals(
-            listOf("webview_error", "markup_rejected", "vast_error", "no_media_file", "playback_error", "blank_creative"),
-            LoadFailure.entries.map { it.wireName },
-        )
-    }
-
-    @Test
-    fun `any code goes out as an integer, zero and negative ones included`() {
-        listOf(Int.MIN_VALUE, -6, -1, 0, 1, 404, Int.MAX_VALUE).forEach { code ->
-            val recording = RecordingTelemetry()
-
-            adEvents(telemetry = recording).loadFailed(LoadFailure.WEBVIEW_ERROR, code)
-
-            assertJsonInteger(code.toLong(), recording.single("creative_load_failed"), "code")
+            val json = recording.single("ad_load_failed")
+            assertEquals(code.name, code.number.toString(), json.get("error_code"))
+            assertEquals(code.name, code.domain.wireName, json.getString("error_domain"))
+            if (code.stage != null) {
+                assertEquals(code.name, code.stage.wireName, json.getString("failed_stage"))
+            } else {
+                assertFalse(code.name, json.has("failed_stage"))
+            }
         }
     }
 
     @Test
-    fun `a failure without a code leaves the code out`() {
-        adEvents().loadFailed(LoadFailure.VAST_ERROR)
-
-        assertEquals(
-            setOf("envelope", "creative_type", "reason"),
-            telemetry.single("creative_load_failed").keySet(),
+    fun `the numbers and wire names the table promises for the codes raised today`() {
+        val expected = mapOf(
+            ErrorCode.WEBVIEW_MAIN_FRAME_ERROR to Triple("6001", "creative", "webview_load"),
+            ErrorCode.MARKUP_REJECTED to Triple("6002", "device", "webview_init"),
+            ErrorCode.BLANK_CREATIVE to Triple("6003", "creative", "webview_load"),
+            ErrorCode.VAST_INVALID to Triple("6004", "creative", "parse"),
+            ErrorCode.VAST_WRAPPER_TOO_DEEP to Triple("6005", "creative", "parse"),
+            ErrorCode.VAST_WRAPPER_NO_URI to Triple("6006", "creative", "parse"),
+            ErrorCode.VAST_WRAPPED_NO_AD to Triple("6014", "creative", "parse"),
+            ErrorCode.VAST_WRAPPER_CLEARTEXT_BLOCKED to Triple("6015", "creative", "asset_fetch"),
+            ErrorCode.NO_PLAYABLE_MEDIA to Triple("7001", "creative", null),
+            ErrorCode.PLAYER_ERROR to Triple("7002", "creative", null),
+            ErrorCode.VAST_WRAPPER_NO_ANSWER to Triple("8001", "network", "asset_fetch"),
+            ErrorCode.VAST_WRAPPER_HTTP_STATUS to Triple("8002", "dsp", "asset_fetch"),
+            ErrorCode.WEBVIEW_MAIN_FRAME_NETWORK to Triple("8003", "network", "webview_load"),
         )
+        expected.forEach { (code, wire) ->
+            val recording = RecordingTelemetry()
+
+            adEvents(telemetry = recording).loadFailed(code)
+
+            val json = recording.single("ad_load_failed")
+            assertEquals(code.name, wire.first, json.get("error_code"))
+            assertEquals(code.name, wire.second, json.getString("error_domain"))
+            assertEquals(code.name, wire.third, json.optString("failed_stage", "").ifEmpty { null })
+        }
+    }
+
+    // BID-136 AC 2: the external pair
+
+    @Test
+    fun `an external code goes out as a string with the external source of the code`() {
+        ErrorCode.entries.filter { it.externalSource != null }.forEach { code ->
+            val recording = RecordingTelemetry()
+
+            adEvents(telemetry = recording).loadFailed(code, "12")
+
+            val json = recording.single("ad_load_failed")
+            assertEquals(code.name, "12", json.get("external_error_code"))
+            assertEquals(code.name, code.externalSource!!.wireName, json.getString("external_error_source"))
+        }
     }
 
     @Test
-    fun `a failure with an explicit null code leaves the code out`() {
-        adEvents().loadFailed(LoadFailure.PLAYBACK_ERROR, null)
+    fun `an external code goes out as the text it came as, negative and extreme ones included`() {
+        listOf(Int.MIN_VALUE.toString(), "-6", "0", "404", Int.MAX_VALUE.toString(), "ERR_NAME_NOT_RESOLVED").forEach { value ->
+            val recording = RecordingTelemetry()
 
-        assertFalse(telemetry.single("creative_load_failed").has("code"))
+            adEvents(telemetry = recording)
+                .loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR, value)
+
+            val json = recording.single("ad_load_failed")
+            assertEquals(value, json.get("external_error_code"))
+            assertEquals("webview", json.getString("external_error_source"))
+        }
+    }
+
+    @Test
+    fun `an external code on a code that has no external source is dropped, both fields`() {
+        ErrorCode.entries.filter { it.externalSource == null }.forEach { code ->
+            val recording = RecordingTelemetry()
+
+            adEvents(telemetry = recording).loadFailed(code, "12")
+
+            val json = recording.single("ad_load_failed")
+            assertFalse(code.name, json.has("external_error_code"))
+            assertFalse(code.name, json.has("external_error_source"))
+            assertEquals(code.name, code.number.toString(), json.get("error_code"))
+        }
+    }
+
+    @Test
+    fun `a code with an external source and no external error leaves both fields out`() {
+        adEvents().loadFailed(ErrorCode.VAST_INVALID, externalCode = null)
+
+        val json = telemetry.single("ad_load_failed")
+        assertFalse(json.has("external_error_code"))
+        assertFalse(json.has("external_error_source"))
+    }
+
+    // BID-136 AC 1: the load time
+
+    @Test
+    fun `the load time is the time from the load start to the failure`() {
+        val events = adEvents()
+        elapsed = 1_000
+        events.loadStarted()
+        elapsed = 1_420
+
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
+
+        assertJsonInteger(420L, telemetry.single("ad_load_failed"), "duration_ms")
+    }
+
+    @Test
+    fun `a failure with no load start has no load time`() {
+        val events = adEvents()
+
+        events.loadFailed(ErrorCode.VAST_INVALID)
+
+        assertFalse(telemetry.single("ad_load_failed").has("duration_ms"))
+    }
+
+    @Test
+    fun `the load time counts from the first load start, and a failure at the same moment is zero`() {
+        val events = adEvents()
+        elapsed = 500
+        events.loadStarted()
+        elapsed = 900
+        events.loadStarted()
+        elapsed = 500
+
+        events.loadFailed(ErrorCode.VAST_INVALID)
+
+        assertJsonInteger(0L, telemetry.single("ad_load_failed"), "duration_ms")
+    }
+
+    @Test
+    fun `a clock that went backwards or overflowed leaves the load time out`() {
+        listOf(100L to 99L, Long.MAX_VALUE to Long.MIN_VALUE, Long.MIN_VALUE to Long.MAX_VALUE).forEach { (start, end) ->
+            val recording = RecordingTelemetry()
+            val events = adEvents(telemetry = recording)
+            elapsed = start
+            events.loadStarted()
+            elapsed = end
+
+            events.loadFailed(ErrorCode.VAST_INVALID)
+
+            assertFalse("$start..$end", recording.single("ad_load_failed").has("duration_ms"))
+        }
+    }
+
+    @Test
+    fun `a failure at show has no load time, however long the ad waited`() {
+        listOf(ErrorCode.NO_PLAYABLE_MEDIA, ErrorCode.PLAYER_ERROR).forEach { code ->
+            val recording = RecordingTelemetry()
+            val events = adEvents(telemetry = recording)
+            elapsed = 1_000
+            events.loadStarted()
+            elapsed = 61_000
+
+            events.loadFailed(code)
+
+            assertFalse(code.name, recording.single("ad_load_failed").has("duration_ms"))
+        }
+    }
+
+    // BID-136 AC 3: errors are never sampled out
+
+    @Test
+    fun `the gate keeps a load failure at rate 1 for a day when sampling and the per-name rate are zero`() {
+        val gate = TelemetryGate(
+            session,
+            RateLimiter(monotonic),
+            TelemetryConfig(samplingRate = 0.0, eventRates = mapOf("ad_load_failed" to 0.0)),
+        )
+        val captured = mutableListOf<Pair<EventClass, TelemetryEvent>>()
+        val gated = object : Telemetry {
+            override fun emit(eventName: String, eventClass: EventClass, capture: (SamplingRate) -> TelemetryEvent) {
+                gate.admit(eventName, eventClass)?.let { captured += eventClass to capture(it) }
+            }
+
+            override fun sync() = Unit
+        }
+
+        adEvents(telemetry = gated).loadFailed(ErrorCode.VAST_INVALID, "100")
+
+        val (eventClass, event) = captured.single()
+        assertEquals(EventClass.ERROR, eventClass)
+        assertEquals(EventClass.ERROR, event.eventClass)
+        assertEquals(TimeUnit.HOURS.toMillis(24), eventClass.ttlMillis)
+        val json = JSONObject(event.encode().toString(Charsets.UTF_8))
+        assertEquals("ad_load_failed", json.envelope.getString("event_name"))
+        assertEquals(1.0, json.envelope.getDouble("sampling_rate"), 0.0)
+        assertEquals("6004", json.get("error_code"))
+    }
+
+    // BID-136 AC 5 and AC 6: exception class names
+
+    @Test
+    fun `the exception class is the class name of the throwable, and a failure without one leaves it out`() {
+        adEvents().loadFailed(ErrorCode.MARKUP_REJECTED, cause = IllegalArgumentException("never sent"))
+        val without = RecordingTelemetry()
+        adEvents(telemetry = without).loadFailed(ErrorCode.MARKUP_REJECTED)
+
+        val json = telemetry.single("ad_load_failed")
+        assertEquals("java.lang.IllegalArgumentException", json.getString("exception_class"))
+        assertFalse(json.has("exception_cause_class"))
+        assertFalse(without.single("ad_load_failed").has("exception_class"))
+        assertFalse(without.single("ad_load_failed").has("exception_cause_class"))
+    }
+
+    @Test
+    fun `the exception message is never sent`() {
+        val marker = "https://creative.invalid/secret?token=abc123"
+        adEvents().loadFailed(ErrorCode.MARKUP_REJECTED, cause = IllegalStateException(marker, IOException(marker)))
+
+        val text = telemetry.emitted.single().event!!.encode().toString(Charsets.UTF_8)
+        assertFalse(text, "creative.invalid" in text)
+        assertFalse(text, "abc123" in text)
+        assertTrue(text, "java.lang.IllegalStateException" in text)
+    }
+
+    @Test
+    fun `the cause class is the root cause, not the first cause`() {
+        val chain = IllegalStateException("a", IllegalArgumentException("b", IOException("c", ConnectException("d"))))
+
+        adEvents().loadFailed(ErrorCode.MARKUP_REJECTED, cause = chain)
+
+        val json = telemetry.single("ad_load_failed")
+        assertEquals("java.lang.IllegalStateException", json.getString("exception_class"))
+        assertEquals("java.net.ConnectException", json.getString("exception_cause_class"))
+    }
+
+    @Test
+    fun `a throwable whose root is its own class has no cause class`() {
+        val chain = IllegalStateException("a", IllegalArgumentException("b", IllegalStateException("c")))
+
+        adEvents().loadFailed(ErrorCode.MARKUP_REJECTED, cause = chain)
+
+        val json = telemetry.single("ad_load_failed")
+        assertEquals("java.lang.IllegalStateException", json.getString("exception_class"))
+        assertFalse(json.has("exception_cause_class"))
+    }
+
+    @Test
+    fun `a throwable with no cause has no cause class`() {
+        adEvents().loadFailed(ErrorCode.MARKUP_REJECTED, cause = IOException("x"))
+
+        assertFalse(telemetry.single("ad_load_failed").has("exception_cause_class"))
+    }
+
+    @Test
+    fun `a cause that points back at the throwable ends the walk`() {
+        val first = LoopingException()
+        val second = LoopingException()
+        first.next = second
+        second.next = first
+
+        adEvents().loadFailed(ErrorCode.MARKUP_REJECTED, cause = first)
+
+        val json = telemetry.single("ad_load_failed")
+        assertEquals(LoopingException::class.java.name, json.getString("exception_class"))
+        assertFalse(json.has("exception_cause_class"))
+    }
+
+    @Test
+    fun `a cycle between two classes ends the walk at the last throwable before it repeats`() {
+        val outer = IllegalStateException("outer")
+        val loop = LoopingException()
+        val back = BackReferringException(outer)
+        loop.next = back
+        outer.initCause(loop)
+
+        adEvents().loadFailed(ErrorCode.MARKUP_REJECTED, cause = outer)
+
+        val json = telemetry.single("ad_load_failed")
+        assertEquals("java.lang.IllegalStateException", json.getString("exception_class"))
+        assertEquals(BackReferringException::class.java.name, json.getString("exception_cause_class"))
+    }
+
+    @Test
+    fun `a cycle of two throwables reports the second as the root`() {
+        val outer = IllegalStateException("outer")
+        val loop = LoopingException()
+        loop.next = outer
+        outer.initCause(loop)
+
+        adEvents().loadFailed(ErrorCode.MARKUP_REJECTED, cause = outer)
+
+        val json = telemetry.single("ad_load_failed")
+        assertEquals("java.lang.IllegalStateException", json.getString("exception_class"))
+        assertEquals(LoopingException::class.java.name, json.getString("exception_cause_class"))
+    }
+
+    @Test
+    fun `a throwable that is its own cause ends the walk`() {
+        adEvents().loadFailed(ErrorCode.MARKUP_REJECTED, cause = SelfCause())
+
+        val json = telemetry.single("ad_load_failed")
+        assertEquals(SelfCause::class.java.name, json.getString("exception_class"))
+        assertFalse(json.has("exception_cause_class"))
+    }
+
+    @Test
+    fun `a cause whose getCause throws ends the walk at the throwable before it`() {
+        adEvents().loadFailed(ErrorCode.MARKUP_REJECTED, cause = IllegalStateException("a", ThrowingCause()))
+
+        val json = telemetry.single("ad_load_failed")
+        assertEquals("java.lang.IllegalStateException", json.getString("exception_class"))
+        assertEquals(ThrowingCause::class.java.name, json.getString("exception_cause_class"))
+    }
+
+    @Test
+    fun `a throwable whose own getCause throws still reports its class`() {
+        adEvents().loadFailed(ErrorCode.MARKUP_REJECTED, cause = ThrowingCause())
+
+        val json = telemetry.single("ad_load_failed")
+        assertEquals(ThrowingCause::class.java.name, json.getString("exception_class"))
+        assertFalse(json.has("exception_cause_class"))
+    }
+
+    @Test
+    fun `a chain of ten thousand causes is reported once, its root taken 32 causes down`() {
+        var chain: Throwable? = null
+        for (depth in 10_000 downTo 0) {
+            chain = when (depth) {
+                32 -> IOException("link", chain)
+                33 -> ConnectException("link").apply { initCause(chain) }
+                else -> IllegalStateException("link", chain)
+            }
+        }
+
+        adEvents().loadFailed(ErrorCode.MARKUP_REJECTED, cause = chain)
+
+        val json = telemetry.single("ad_load_failed")
+        assertEquals("6002", json.get("error_code"))
+        assertEquals("java.lang.IllegalStateException", json.getString("exception_class"))
+        assertEquals("java.io.IOException", json.getString("exception_cause_class"))
+    }
+
+    @Test
+    fun `a nested class name is sent with its dollar sign`() {
+        adEvents().loadFailed(ErrorCode.MARKUP_REJECTED, cause = SelfCause())
+
+        assertEquals(
+            "org.bidon.rendering.telemetry.AdEventsTest\$SelfCause",
+            telemetry.single("ad_load_failed").getString("exception_class"),
+        )
     }
 
     // rule 12
@@ -783,7 +1170,7 @@ class AdEventsTest {
             val recording = RecordingTelemetry()
             val events = adEvents(telemetry = recording)
             events.loadStarted()
-            events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+            events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
 
             events.processGone(didCrash = didCrash)
 
@@ -873,30 +1260,32 @@ class AdEventsTest {
     // rule 14
 
     @Test
-    fun `only the first load failure emits, and it keeps its own reason and code`() {
+    fun `only the first load failure emits, and it keeps its own code and external error`() {
         val events = adEvents()
 
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
-        events.loadFailed(LoadFailure.PLAYBACK_ERROR, 7)
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
-        events.loadFailed(LoadFailure.VAST_ERROR, 0)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
+        events.loadFailed(ErrorCode.PLAYER_ERROR, "7")
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
+        events.loadFailed(ErrorCode.VAST_INVALID, "100", IOException())
 
-        assertEquals(listOf("creative_load_failed" to EventClass.ERROR), telemetry.calls())
-        val json = telemetry.single("creative_load_failed")
-        assertEquals("webview_error", json.getString("reason"))
-        assertFalse(json.has("code"))
+        assertEquals(listOf("ad_load_failed" to EventClass.ERROR), telemetry.calls())
+        val json = telemetry.single("ad_load_failed")
+        assertEquals("6001", json.get("error_code"))
+        assertFalse(json.has("external_error_code"))
+        assertFalse(json.has("exception_class"))
     }
 
     @Test
-    fun `a first failure with a code is not replaced by a later one without`() {
+    fun `a first failure with an external error is not replaced by a later one without`() {
         val events = adEvents()
 
-        events.loadFailed(LoadFailure.NO_MEDIA_FILE, -3)
-        events.loadFailed(LoadFailure.MARKUP_REJECTED)
+        events.loadFailed(ErrorCode.NO_PLAYABLE_MEDIA, "-3")
+        events.loadFailed(ErrorCode.MARKUP_REJECTED)
 
-        val json = telemetry.single("creative_load_failed")
-        assertEquals("no_media_file", json.getString("reason"))
-        assertJsonInteger(-3L, json, "code")
+        val json = telemetry.single("ad_load_failed")
+        assertEquals("7001", json.get("error_code"))
+        assertEquals("-3", json.get("external_error_code"))
+        assertEquals("vast", json.getString("external_error_source"))
     }
 
     // rule 15
@@ -922,7 +1311,7 @@ class AdEventsTest {
         val events = adEvents()
 
         events.processGone(didCrash = true)
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR, -1)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
 
         assertEquals(listOf("render_process_gone" to EventClass.ERROR), telemetry.calls())
     }
@@ -931,11 +1320,11 @@ class AdEventsTest {
     fun `a load failure before the render process died does not stop the death being reported`() {
         val events = adEvents()
 
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR, -1)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
         events.processGone(didCrash = false)
 
         assertEquals(
-            listOf("creative_load_failed" to EventClass.ERROR, "render_process_gone" to EventClass.ERROR),
+            listOf("ad_load_failed" to EventClass.ERROR, "render_process_gone" to EventClass.ERROR),
             telemetry.calls(),
         )
     }
@@ -949,7 +1338,7 @@ class AdEventsTest {
         events.processGone(didCrash = true)
         telemetry.rate = SamplingRate.ALL
 
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
 
         assertEquals(listOf("render_process_gone" to EventClass.ERROR), telemetry.calls())
     }
@@ -961,10 +1350,10 @@ class AdEventsTest {
         val events = adEvents()
 
         events.rendered()
-        events.loadFailed(LoadFailure.PLAYBACK_ERROR, 2)
+        events.loadFailed(ErrorCode.PLAYER_ERROR)
 
         assertEquals(
-            listOf("ad_impression" to EventClass.COUNTED, "creative_load_failed" to EventClass.ERROR),
+            listOf("ad_impression" to EventClass.COUNTED, "ad_load_failed" to EventClass.ERROR),
             telemetry.calls(),
         )
     }
@@ -973,11 +1362,11 @@ class AdEventsTest {
     fun `a render after a failure is still reported`() {
         val events = adEvents()
 
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
         events.rendered()
 
         assertEquals(
-            listOf("creative_load_failed" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
+            listOf("ad_load_failed" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
             telemetry.calls(),
         )
     }
@@ -1029,12 +1418,12 @@ class AdEventsTest {
     fun `a load failure that telemetry did not keep still uses up the load failure`() {
         val events = adEvents()
         telemetry.rate = null
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
         telemetry.rate = SamplingRate.ALL
 
-        events.loadFailed(LoadFailure.PLAYBACK_ERROR, 3)
+        events.loadFailed(ErrorCode.PLAYER_ERROR)
 
-        assertEquals(listOf("creative_load_failed" to EventClass.ERROR), telemetry.calls())
+        assertEquals(listOf("ad_load_failed" to EventClass.ERROR), telemetry.calls())
         assertEquals(0, telemetry.captures)
     }
 
@@ -1056,18 +1445,18 @@ class AdEventsTest {
         val events = adEvents()
         telemetry.rate = null
         events.rendered()
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
         events.processGone(didCrash = true)
         telemetry.rate = SamplingRate.ALL
 
         events.rendered()
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
         events.processGone(didCrash = true)
 
         assertEquals(
             listOf(
                 "ad_impression" to EventClass.COUNTED,
-                "creative_load_failed" to EventClass.ERROR,
+                "ad_load_failed" to EventClass.ERROR,
                 "render_process_gone" to EventClass.ERROR,
             ),
             telemetry.calls(),
@@ -1085,8 +1474,8 @@ class AdEventsTest {
 
     @Test
     fun `load failures racing on many threads emit once`() {
-        race(rounds = ROUNDS) { events, index -> events.loadFailed(LoadFailure.entries[index % 5], index) }
-            .forEach { calls -> assertEquals(listOf("creative_load_failed" to EventClass.ERROR), calls) }
+        race(rounds = ROUNDS) { events, index -> events.loadFailed(ErrorCode.entries[index % ErrorCode.entries.size]) }
+            .forEach { calls -> assertEquals(listOf("ad_load_failed" to EventClass.ERROR), calls) }
     }
 
     @Test
@@ -1099,12 +1488,12 @@ class AdEventsTest {
     fun `a process death racing load failures emits once, with at most one load failure`() {
         val outcomes = race(rounds = ROUNDS) { events, index ->
             if (index % 2 == 0) events.processGone(didCrash = true)
-            else events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+            else events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
         }
 
         outcomes.forEach { calls ->
             assertEquals(calls.toString(), 1, calls.count { it.first == "render_process_gone" })
-            assertTrue(calls.toString(), calls.count { it.first == "creative_load_failed" } <= 1)
+            assertTrue(calls.toString(), calls.count { it.first == "ad_load_failed" } <= 1)
             assertEquals(calls.toString(), calls.size, calls.count { it.first in RACED_NAMES })
         }
     }
@@ -1114,7 +1503,7 @@ class AdEventsTest {
         val outcomes = race(rounds = ROUNDS) { events, index ->
             when (index % 6) {
                 0 -> events.rendered()
-                1 -> events.loadFailed(LoadFailure.PLAYBACK_ERROR)
+                1 -> events.loadFailed(ErrorCode.PLAYER_ERROR)
                 2 -> events.processGone(didCrash = false)
                 3 -> events.loadStarted()
                 4 -> events.showRequested()
@@ -1125,7 +1514,7 @@ class AdEventsTest {
         outcomes.forEach { calls ->
             assertEquals(calls.toString(), 1, calls.count { it.first == "ad_impression" })
             assertEquals(calls.toString(), 1, calls.count { it.first == "render_process_gone" })
-            assertTrue(calls.toString(), calls.count { it.first == "creative_load_failed" } <= 1)
+            assertTrue(calls.toString(), calls.count { it.first == "ad_load_failed" } <= 1)
         }
     }
 
@@ -1144,12 +1533,12 @@ class AdEventsTest {
     @Test
     fun `a load failure made while the first one is being emitted neither emits nor waits for it`() {
         val events = adEvents()
-        telemetry.whileEmitting = { onAnotherThread { events.loadFailed(LoadFailure.PLAYBACK_ERROR, 1) } }
+        telemetry.whileEmitting = { onAnotherThread { events.loadFailed(ErrorCode.PLAYER_ERROR) } }
 
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
 
-        assertEquals(listOf("creative_load_failed" to EventClass.ERROR), telemetry.calls())
-        assertEquals("webview_error", telemetry.single("creative_load_failed").getString("reason"))
+        assertEquals(listOf("ad_load_failed" to EventClass.ERROR), telemetry.calls())
+        assertEquals("6001", telemetry.single("ad_load_failed").get("error_code"))
     }
 
     @Test
@@ -1165,7 +1554,7 @@ class AdEventsTest {
     @Test
     fun `a load failure made while a process death is being emitted lost the race, so it does not emit`() {
         val events = adEvents()
-        telemetry.whileEmitting = { onAnotherThread { events.loadFailed(LoadFailure.WEBVIEW_ERROR) } }
+        telemetry.whileEmitting = { onAnotherThread { events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR) } }
 
         events.processGone(didCrash = true)
 
@@ -1177,10 +1566,10 @@ class AdEventsTest {
         val events = adEvents()
         telemetry.whileEmitting = { onAnotherThread { events.processGone(didCrash = true) } }
 
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
 
         assertEquals(
-            setOf("creative_load_failed" to EventClass.ERROR, "render_process_gone" to EventClass.ERROR),
+            setOf("ad_load_failed" to EventClass.ERROR, "render_process_gone" to EventClass.ERROR),
             telemetry.calls().toSet(),
         )
         assertEquals(2, telemetry.emitted.size)
@@ -1191,10 +1580,10 @@ class AdEventsTest {
         val events = adEvents()
         telemetry.whileEmitting = { onAnotherThread { events.rendered() } }
 
-        events.loadFailed(LoadFailure.PLAYBACK_ERROR)
+        events.loadFailed(ErrorCode.PLAYER_ERROR)
 
         assertEquals(
-            setOf("creative_load_failed" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
+            setOf("ad_load_failed" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
             telemetry.calls().toSet(),
         )
     }
@@ -1231,13 +1620,13 @@ class AdEventsTest {
     fun `closing after every event emits nothing more`() {
         val events = adEvents()
         events.rendered()
-        events.loadFailed(LoadFailure.PLAYBACK_ERROR)
+        events.loadFailed(ErrorCode.PLAYER_ERROR)
 
         events.closed()
         events.closed()
 
         assertEquals(
-            listOf("ad_impression" to EventClass.COUNTED, "creative_load_failed" to EventClass.ERROR),
+            listOf("ad_impression" to EventClass.COUNTED, "ad_load_failed" to EventClass.ERROR),
             telemetry.calls(),
         )
     }
@@ -1260,7 +1649,7 @@ class AdEventsTest {
         events.closed()
 
         events.processGone(didCrash = true)
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR, -1)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
 
         assertEquals(emptyList<Pair<String, EventClass>>(), telemetry.calls())
     }
@@ -1283,10 +1672,10 @@ class AdEventsTest {
         events.closed()
 
         events.rendered()
-        events.loadFailed(LoadFailure.VAST_ERROR, 3)
+        events.loadFailed(ErrorCode.VAST_INVALID)
 
         assertEquals(
-            listOf("ad_impression" to EventClass.COUNTED, "creative_load_failed" to EventClass.ERROR),
+            listOf("ad_impression" to EventClass.COUNTED, "ad_load_failed" to EventClass.ERROR),
             telemetry.calls(),
         )
     }
@@ -1294,16 +1683,16 @@ class AdEventsTest {
     @Test
     fun `closing the ad does not use up the render or the load failure`() {
         val events = adEvents()
-        events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
         events.closed()
         events.rendered()
         events.closed()
 
         events.rendered()
-        events.loadFailed(LoadFailure.PLAYBACK_ERROR)
+        events.loadFailed(ErrorCode.PLAYER_ERROR)
 
         assertEquals(
-            listOf("creative_load_failed" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
+            listOf("ad_load_failed" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
             telemetry.calls(),
         )
     }
@@ -1348,13 +1737,13 @@ class AdEventsTest {
             when (index % 4) {
                 0 -> events.closed()
                 1, 2 -> events.processGone(didCrash = false)
-                else -> events.loadFailed(LoadFailure.WEBVIEW_ERROR)
+                else -> events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
             }
         }
 
         outcomes.forEach { calls ->
             assertTrue(calls.toString(), calls.count { it.first == "render_process_gone" } <= 1)
-            assertTrue(calls.toString(), calls.count { it.first == "creative_load_failed" } <= 1)
+            assertTrue(calls.toString(), calls.count { it.first == "ad_load_failed" } <= 1)
             assertTrue(calls.toString(), calls.all { it.first in RACED_NAMES })
         }
     }
@@ -1368,7 +1757,7 @@ class AdEventsTest {
             { it.showRequested() },
             { it.viewRequested() },
             { it.rendered() },
-            { it.loadFailed(LoadFailure.WEBVIEW_ERROR, Int.MIN_VALUE) },
+            { it.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR, Int.MIN_VALUE.toString()) },
             { it.processGone(didCrash = true) },
             { it.closed() },
         )
@@ -1381,7 +1770,7 @@ class AdEventsTest {
     // rule 20, rule 22
 
     @Test
-    fun `capturing and encoding never throw for extreme clock readings, and an overflowing render duration is left out`() {
+    fun `capturing and encoding never throw for extreme clock readings, and an overflowing duration is left out`() {
         val readings = listOf(Long.MIN_VALUE, -1L, 0L, 1L, Long.MAX_VALUE)
         readings.forEach { wall ->
             readings.forEach { start ->
@@ -1390,11 +1779,12 @@ class AdEventsTest {
                     now = wall
                     val events = adEvents(telemetry = recording)
                     elapsed = start
+                    events.loadStarted()
                     events.showRequested()
                     elapsed = end
 
                     events.rendered()
-                    events.loadFailed(LoadFailure.WEBVIEW_ERROR, Int.MAX_VALUE)
+                    events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR, Int.MAX_VALUE.toString())
                     events.processGone(didCrash = true)
 
                     assertEquals(3, recording.emitted.size)
@@ -1405,6 +1795,12 @@ class AdEventsTest {
                         assertJsonInteger(expected, rendered, "render_duration_ms")
                     } else {
                         assertFalse("$start..$end", rendered.has("render_duration_ms"))
+                    }
+                    val failed = recording.single("ad_load_failed")
+                    if (expected != null) {
+                        assertJsonInteger(expected, failed, "duration_ms")
+                    } else {
+                        assertFalse("$start..$end", failed.has("duration_ms"))
                     }
                 }
             }
@@ -1422,7 +1818,7 @@ class AdEventsTest {
                     val events = adEvents(auctionId, adType, creative, recording)
 
                     events.rendered()
-                    events.loadFailed(LoadFailure.MARKUP_REJECTED)
+                    events.loadFailed(ErrorCode.MARKUP_REJECTED)
                     events.processGone(didCrash = false)
 
                     assertEquals(3, recording.emitted.size)
@@ -1479,6 +1875,23 @@ class AdEventsTest {
         assertEquals(emptyList<Throwable>(), otherThreadFailures.toList())
     }
 
+    private class LoopingException : RuntimeException() {
+        var next: Throwable? = null
+        override val cause: Throwable? get() = next
+    }
+
+    private class BackReferringException(private val target: Throwable) : RuntimeException() {
+        override val cause: Throwable? get() = target
+    }
+
+    private class SelfCause : RuntimeException() {
+        override val cause: Throwable? get() = this
+    }
+
+    private class ThrowingCause : RuntimeException() {
+        override val cause: Throwable? get() = throw IllegalStateException("getCause is not allowed")
+    }
+
     private val JSONObject.envelope get() = getJSONObject("envelope")
 
     private fun assertEnvelope(json: JSONObject, name: String, rate: Double) {
@@ -1505,7 +1918,7 @@ class AdEventsTest {
             "event_id", "event_name", "event_ts", "auction_id", "session_id", "ad_type", "sampling_rate",
         )
 
-        val RACED_NAMES = setOf("render_process_gone", "creative_load_failed")
+        val RACED_NAMES = setOf("render_process_gone", "ad_load_failed")
     }
 }
 

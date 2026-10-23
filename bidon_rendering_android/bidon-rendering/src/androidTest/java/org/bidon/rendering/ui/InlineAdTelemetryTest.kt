@@ -143,6 +143,14 @@ class InlineAdTelemetryTest {
     fun anMraidCreativeWhoseOwnLoadFailsIsReportedWithTheWebViewCode() = aCreativeWhoseOwnLoadFails(Kind.MRAID)
 
     @Test
+    fun anHtmlCreativeWhoseOwnLoadFailsOnAnUnsupportedSchemeIsTheCreativesFailure() =
+        aCreativeWhoseOwnLoadFailsOnAnUnsupportedScheme(Kind.HTML)
+
+    @Test
+    fun anMraidCreativeWhoseOwnLoadFailsOnAnUnsupportedSchemeIsTheCreativesFailure() =
+        aCreativeWhoseOwnLoadFailsOnAnUnsupportedScheme(Kind.MRAID)
+
+    @Test
     fun anHtmlNavigationThatFailsAfterTheLoadIsNotALoadFailure() = aNavigationAfterTheLoadFails(Kind.HTML)
 
     /** A two-part expand loads its URL into the same WebView after the creative loaded. */
@@ -230,25 +238,53 @@ class InlineAdTelemetryTest {
     }
 
     private fun aCreativeWhoseOwnLoadFails(kind: Kind) {
-        val (request, error) = realMainFrameError()
+        val (failed, error) = mainFrameFailure(kind, UNREACHABLE)
+        // The host does not resolve, which is a network failure and not the creative's.
+        assertEquals("8003", failed.json.getString("error_code"))
+        assertEquals("network", failed.json.getString("error_domain"))
+        assertEquals("webview_load", failed.json.getString("failed_stage"))
+        assertEquals("webview", failed.json.getString("external_error_source"))
+        assertEquals("not the code the WebView reported", error.errorCode.toString(), failed.json.getString("external_error_code"))
+        // The WebView's own code, not a placeholder for a missing one.
+        assertNotEquals(WebViewClient.ERROR_UNKNOWN.toString(), failed.json.getString("external_error_code"))
+        assertTrue("no load time", failed.json.getLong("duration_ms") >= 0)
+    }
+
+    private fun aCreativeWhoseOwnLoadFailsOnAnUnsupportedScheme(kind: Kind) {
+        val (failed, error) = mainFrameFailure(kind, UNSUPPORTED_SCHEME)
+
+        // A scheme the WebView cannot load is the creative's failure, not the network's.
+        assertEquals(WebViewClient.ERROR_UNSUPPORTED_SCHEME, error.errorCode)
+        assertEquals("6001", failed.json.getString("error_code"))
+        assertEquals("creative", failed.json.getString("error_domain"))
+        assertEquals("webview_load", failed.json.getString("failed_stage"))
+        assertEquals("webview", failed.json.getString("external_error_source"))
+        assertEquals("not the code the WebView reported", error.errorCode.toString(), failed.json.getString("external_error_code"))
+        assertTrue("no load time", failed.json.getLong("duration_ms") >= 0)
+    }
+
+    /**
+     * Loads a creative of [kind] whose main frame fails before its page finished, with the error a real WebView
+     * reported for [url], and returns the one failure the renderer reported, with that error.
+     */
+    private fun mainFrameFailure(kind: Kind, url: String): Pair<QueuedEvents.Stored, WebResourceError> {
+        val (request, error) = realMainFrameError(url)
         val events = Events()
         val renderer = renderer(kind)
-        instrumentation.runOnMainSync {
-            renderer.load(markup(kind), events)
-            // Before the creative's page finished, its main frame fails, with the error a real WebView reported.
-            val webView = renderer.getView() as WebView
-            webView.webViewClient.onReceivedError(webView, request, error)
+        val failed = try {
+            instrumentation.runOnMainSync {
+                renderer.load(markup(kind), events)
+                val webView = renderer.getView() as WebView
+                webView.webViewClient.onReceivedError(webView, request, error)
+            }
+            assertTrue("no error", events.failed.await(5, TimeUnit.SECONDS))
+            queued.next()
+        } finally {
+            instrumentation.runOnMainSync { renderer.destroy() }
         }
-        assertTrue("no error", events.failed.await(5, TimeUnit.SECONDS))
-
-        val failed = queued.next()
-        queued.assertAdEvent(failed, "creative_load_failed", EventClass.ERROR, kind.creative)
-        assertEquals("webview_error", failed.json.getString("reason"))
-        assertEquals("not the code the WebView reported", error.errorCode, failed.json.getInt("code"))
-        // The WebView's own code, not a placeholder for a missing one.
-        assertNotEquals(WebViewClient.ERROR_UNKNOWN, failed.json.getInt("code"))
-        instrumentation.runOnMainSync { renderer.destroy() }
+        queued.assertAdEvent(failed, "ad_load_failed", EventClass.ERROR, null)
         queued.assertNoMore()
+        return failed to error
     }
 
     private fun aNavigationAfterTheLoadFails(kind: Kind) {
@@ -265,7 +301,7 @@ class InlineAdTelemetryTest {
     }
 
     /** The request and error a WebView reports for a main frame nothing answers, as the framework builds them. */
-    private fun realMainFrameError(): Pair<WebResourceRequest, WebResourceError> {
+    private fun realMainFrameError(url: String): Pair<WebResourceRequest, WebResourceError> {
         val reported = CountDownLatch(1)
         var failure: Pair<WebResourceRequest, WebResourceError>? = null
         lateinit var webView: WebView
@@ -279,10 +315,10 @@ class InlineAdTelemetryTest {
                         }
                     }
                 }
-                loadUrl(UNREACHABLE)
+                loadUrl(url)
             }
         }
-        assertTrue("the unreachable page did not fail", reported.await(10, TimeUnit.SECONDS))
+        assertTrue("the page at $url did not fail", reported.await(10, TimeUnit.SECONDS))
         instrumentation.runOnMainSync { webView.destroy() }
         return failure!!
     }
@@ -309,5 +345,6 @@ class InlineAdTelemetryTest {
     private companion object {
         /** The reserved `.invalid` domain never resolves, so the load fails on the host lookup. */
         const val UNREACHABLE = "http://creative.invalid/"
+        const val UNSUPPORTED_SCHEME = "bidontest-unknown://page"
     }
 }

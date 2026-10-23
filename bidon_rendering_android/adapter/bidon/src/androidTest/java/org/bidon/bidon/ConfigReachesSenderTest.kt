@@ -141,7 +141,7 @@ class ConfigReachesSenderTest {
     }
 
     /**
-     * Loads a page with nothing on it through the renderer, which reports `creative_load_failed` for [auctionId]: an
+     * Loads a page with nothing on it through the renderer, which reports `ad_load_failed` for [auctionId]: an
      * error, so never sampled out.
      */
     private fun failBlankCreative(auctionId: String) {

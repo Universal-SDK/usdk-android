@@ -11,29 +11,8 @@ internal enum class Creative(val wireName: String) {
     VAST("vast"),
 }
 
-/** Why a creative could not be loaded or played, as it is written on the wire. */
-internal enum class LoadFailure(val wireName: String) {
-    /** The main frame failed to load. */
-    WEBVIEW_ERROR("webview_error"),
-
-    /** The WebView threw while the markup was loaded into it. */
-    MARKUP_REJECTED("markup_rejected"),
-
-    /** The VAST parser failed. */
-    VAST_ERROR("vast_error"),
-
-    /** No media file the device can play. */
-    NO_MEDIA_FILE("no_media_file"),
-
-    /** The player could not play the video. */
-    PLAYBACK_ERROR("playback_error"),
-
-    /** The page loaded with nothing on it that could be seen. */
-    BLANK_CREATIVE("blank_creative"),
-}
-
 /**
- * The renderer's telemetry events of one ad: `ad_impression`, `creative_load_failed` and `render_process_gone`.
+ * The renderer's telemetry events of one ad: `ad_impression`, `ad_load_failed` and `render_process_gone`.
  *
  * Each event is reported once per ad, whether or not telemetry keeps it, and a death of the render process only while
  * the ad is open. A call takes its place before it emits and holds no lock while it does, so a second call never
@@ -97,15 +76,30 @@ internal class AdEvents(
     }
 
     /**
-     * The creative could not be loaded or played: emits `creative_load_failed`, unless an earlier failure or the
-     * death of the render process was reported first.
+     * The creative could not be loaded or played: emits `ad_load_failed` with [code]'s number, domain and load stage,
+     * unless an earlier failure or the death of the render process was reported first. `duration_ms` is the time
+     * since [loadStarted], sent only for a code with a load stage.
+     *
+     * @param externalCode what the WebView, the server or the player said, kept as it came, with [code]'s external
+     * source; dropped for a code that has none
+     * @param cause the exception behind the failure; only its class names are sent
      */
-    fun loadFailed(reason: LoadFailure, code: Int? = null) {
+    fun loadFailed(code: ErrorCode, externalCode: String? = null, cause: Throwable? = null) {
         if (!loadFailureReported.compareAndSet(false, true)) return
-        emit(EventName.CREATIVE_LOAD_FAILED, EventClass.ERROR) {
-            put("creative_type", creative.wireName)
-            put("reason", reason.wireName)
-            if (code != null) put("code", code)
+        // A failure with no load stage came after the load, so the time since its start is not a load time.
+        val durationMillis = if (code.stage != null) elapsedSince(loadStart.get()) else null
+        val classes = cause?.let(ExceptionClasses::of)
+        emit(EventName.AD_LOAD_FAILED, EventClass.ERROR) {
+            put("error_code", code.number.toString())
+            put("error_domain", code.domain.wireName)
+            if (code.stage != null) put("failed_stage", code.stage.wireName)
+            if (durationMillis != null) put("duration_ms", durationMillis)
+            if (externalCode != null && code.externalSource != null) {
+                put("external_error_code", externalCode)
+                put("external_error_source", code.externalSource.wireName)
+            }
+            classes?.exceptionClass?.let { put("exception_class", it) }
+            classes?.rootCauseClass?.let { put("exception_cause_class", it) }
         }
     }
 

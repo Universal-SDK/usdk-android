@@ -515,8 +515,12 @@ class BlankCreativeTest {
         assertEquals("onError count", 1, events.errorCalls.get())
 
         val event = queued.next()
-        queued.assertAdEvent(event, "creative_load_failed", EventClass.ERROR, kind.creative)
-        assertEquals("blank_creative", event.json.getString("reason"))
+        queued.assertAdEvent(event, "ad_load_failed", EventClass.ERROR, null)
+        assertEquals("6003", event.json.getString("error_code"))
+        assertEquals("creative", event.json.getString("error_domain"))
+        assertEquals("webview_load", event.json.getString("failed_stage"))
+        assertFalse(event.json.has("external_error_code"))
+        assertFalse(event.json.has("external_error_source"))
         assertNull("the blank view was handed out", onMain { renderer.getView() })
 
         // A creative that fills in late is not loaded after it was reported failed.
@@ -644,8 +648,8 @@ class BlankCreativeTest {
         assertFalse("onLoaded after the failure", events.loaded.await(AFTER_WINDOW_MILLIS, TimeUnit.MILLISECONDS))
         assertEquals("onError count", 1, events.errorCalls.get())
         val event = queued.next()
-        queued.assertAdEvent(event, "creative_load_failed", EventClass.ERROR, kind.creative)
-        assertEquals("webview_error", event.json.getString("reason"))
+        queued.assertAdEvent(event, "ad_load_failed", EventClass.ERROR, null)
+        assertDeadAddressFailure(event)
         queued.assertNoMore()
     }
 
@@ -714,12 +718,21 @@ class BlankCreativeTest {
         SystemClock.sleep(SECOND_PAGE_SETTLE_MILLIS)
         assertEquals("onError count", 1, events.errorCalls.get())
         val event = queued.next()
-        queued.assertAdEvent(event, "creative_load_failed", EventClass.ERROR, kind.creative)
-        assertEquals("webview_error", event.json.getString("reason"))
+        queued.assertAdEvent(event, "ad_load_failed", EventClass.ERROR, null)
+        assertDeadAddressFailure(event)
         assertNull("the failed view was handed out", onMain { renderer.getView() })
 
         assertFalse("onLoaded after the failure", events.loaded.await(AFTER_WINDOW_MILLIS, TimeUnit.MILLISECONDS))
         queued.assertNoMore()
+    }
+
+    /** The main frame sent to the dead address fails on the host lookup: the network's failure, with the WebView's code. */
+    private fun assertDeadAddressFailure(event: QueuedEvents.Stored) {
+        assertEquals("8003", event.json.getString("error_code"))
+        assertEquals("network", event.json.getString("error_domain"))
+        assertEquals("webview_load", event.json.getString("failed_stage"))
+        assertEquals("webview", event.json.getString("external_error_source"))
+        assertTrue("the WebView's code is not a number", event.json.getString("external_error_code").toIntOrNull() != null)
     }
 
     private fun aProcessKilledWhileThePageIsRead(kind: Kind) {
@@ -864,7 +877,8 @@ class BlankCreativeTest {
             "customElements.define('x-ad', class extends HTMLElement {" +
             "constructor() { super(); this.attachShadow({mode: 'closed'}).innerHTML = '<p>ad</p>' } })" +
             "</script><x-ad></x-ad></body></html>"
-        const val UNREACHABLE = "http://127.0.0.1:1/"
+        /** A host that never resolves, so a main frame sent there fails on the host lookup, a network error. */
+        const val UNREACHABLE = "http://creative.invalid/"
         const val READ_SIGNAL = "/page-read"
         const val BODY_DISPLAY_NONE = "<html><body style='display: none'><p>ad</p></body></html>"
         const val BODY_VISIBILITY_HIDDEN = "<html><body style='visibility: hidden'><p>ad</p></body></html>"
