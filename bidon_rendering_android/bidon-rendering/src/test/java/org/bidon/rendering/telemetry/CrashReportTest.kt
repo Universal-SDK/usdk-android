@@ -79,10 +79,10 @@ class CrashReportTest {
     fun `the crash's own fields sit next to the envelope, not inside it`() {
         val event = decode(report.encode(crash(own("vast.VastRenderer", "load")), onMainThread = true)!!)
 
-        assertEquals(setOf("envelope", "crashed_on_main_thread", "exceptions"), event.keySet())
+        assertEquals(setOf("envelope", "crashed_on_main_thread", "exceptions"), event.keyNames())
         assertEquals(
             setOf("event_id", "event_name", "event_ts", "session_id", "sampling_rate"),
-            event.getJSONObject("envelope").keySet(),
+            event.getJSONObject("envelope").keyNames(),
         )
         assertTrue(event.getBoolean("crashed_on_main_thread"))
         assertTrue(event.getJSONArray("exceptions").length() > 0)

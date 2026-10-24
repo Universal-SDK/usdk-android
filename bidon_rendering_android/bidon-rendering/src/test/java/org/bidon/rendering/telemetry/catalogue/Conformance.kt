@@ -3,6 +3,7 @@ package org.bidon.rendering.telemetry.catalogue
 import org.bidon.rendering.telemetry.catalogue.ProtoCatalogue.FieldType
 import org.bidon.rendering.telemetry.catalogue.ProtoCatalogue.Message
 import org.bidon.rendering.telemetry.catalogue.ProtoCatalogue.ScalarKind
+import org.bidon.rendering.telemetry.keyNames
 import org.json.JSONArray
 import org.json.JSONObject
 import java.math.BigDecimal
@@ -91,7 +92,7 @@ internal object Conformance {
         }
 
         fun checkObject(json: JSONObject, message: Message, prefix: String) {
-            for (key in json.keySet()) {
+            for (key in json.keyNames()) {
                 val path = prefix + key
                 val value = json.get(key)
                 val type = message.fields[key]
@@ -113,7 +114,7 @@ internal object Conformance {
                     Rule.WRONG_TYPE
                 }
                 FieldType.StringMap ->
-                    if (value is JSONObject && value.keySet().all { value.get(it) is String }) null else Rule.WRONG_TYPE
+                    if (value is JSONObject && value.keyNames().all { value.get(it) is String }) null else Rule.WRONG_TYPE
                 is FieldType.EnumRef -> Rule.ENUM_FIELD
                 is FieldType.MessageRef -> if (value is JSONObject) {
                     checkObject(value, catalogue.messages.getValue(type.name), "$path.")

@@ -36,7 +36,7 @@ class SettingsFileTest {
     private val endpointKeys = setOf("url", "app_key", "bundle", "sdk_version")
     private val switchKeys = setOf("enabled", "sample_rate", "event_rates", "event_names")
 
-    private fun writtenKeys(): Set<String> = JSONObject(path.readText()).keySet()
+    private fun writtenKeys(): Set<String> = JSONObject(path.readText()).keyNames()
 
     @Test
     fun `full settings survive a round trip`() {

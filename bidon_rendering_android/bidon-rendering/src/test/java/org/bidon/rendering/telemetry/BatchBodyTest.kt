@@ -25,7 +25,7 @@ class BatchBodyTest {
         assertEquals("app_\"key\"", json.getJSONObject("app").getString("key"))
         assertEquals("com.example", json.getJSONObject("app").getString("bundle"))
         assertEquals(session.value, json.getJSONObject("session").getString("id"))
-        assertEquals(setOf("app", "session", "events"), json.keySet())
+        assertEquals(setOf("app", "session", "events"), json.keyNames())
     }
 
     @Test

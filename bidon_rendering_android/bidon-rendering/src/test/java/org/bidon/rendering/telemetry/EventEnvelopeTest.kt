@@ -26,7 +26,7 @@ class EventEnvelopeTest {
     fun `the envelope goes out as an object of its own, with nothing next to it`() {
         val event = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.ALL).event()
 
-        assertEquals(setOf("envelope"), event.keySet())
+        assertEquals(setOf("envelope"), event.keyNames())
     }
 
     @Test
@@ -48,7 +48,7 @@ class EventEnvelopeTest {
                 "event_id", "event_name", "event_ts", "auction_id", "session_id", "ad_type", "ad_format",
                 "sampling_rate",
             ),
-            json.keySet(),
+            json.keyNames(),
         )
         assertEquals(envelope.eventId, json.getString("event_id"))
         assertEquals("ad_filled", json.getString("event_name"))
@@ -64,7 +64,7 @@ class EventEnvelopeTest {
     fun `absent fields are left out rather than written as null`() {
         val json = EventEnvelope.capture("session_started", session, clock, samplingRate = SamplingRate.ALL).json()
 
-        assertEquals(setOf("event_id", "event_name", "event_ts", "session_id", "sampling_rate"), json.keySet())
+        assertEquals(setOf("event_id", "event_name", "event_ts", "session_id", "sampling_rate"), json.keyNames())
     }
 
     @Test

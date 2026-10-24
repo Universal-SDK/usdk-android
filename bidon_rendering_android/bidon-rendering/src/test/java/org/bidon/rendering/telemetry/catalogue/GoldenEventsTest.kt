@@ -3,6 +3,7 @@ package org.bidon.rendering.telemetry.catalogue
 import java.io.File
 import java.math.BigInteger
 import org.bidon.rendering.telemetry.EventName
+import org.bidon.rendering.telemetry.keyNames
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -24,7 +25,7 @@ class GoldenEventsTest {
 
     /** JSON text as a tree of maps, lists and typed leaves: integers as [BigInteger], other numbers as [Double]. */
     private fun tree(value: Any?): Any? = when (value) {
-        is JSONObject -> value.keySet().associateWith { tree(value.get(it)) }
+        is JSONObject -> value.keyNames().associateWith { tree(value.get(it)) }
         is JSONArray -> (0 until value.length()).map { tree(value.get(it)) }
         JSONObject.NULL -> null
         is Int, is Long, is BigInteger -> BigInteger(value.toString())

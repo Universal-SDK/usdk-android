@@ -142,7 +142,7 @@ class AdEventsTest {
         events.rendered()
 
         val json = telemetry.single("ad_impression")
-        assertEquals(setOf("envelope", "render_duration_ms", "om_enabled"), json.keySet())
+        assertEquals(setOf("envelope", "render_duration_ms", "om_enabled"), json.keyNames())
         assertEnvelope(json.envelope, "ad_impression", rate = 1.0)
         assertJsonInteger(1_234L, json, "render_duration_ms")
         assertEquals(false, json.get("om_enabled"))
@@ -188,7 +188,7 @@ class AdEventsTest {
                 "envelope", "error_code", "error_domain", "failed_stage", "duration_ms", "external_error_code",
                 "external_error_source", "exception_class", "exception_cause_class",
             ),
-            json.keySet(),
+            json.keyNames(),
         )
         assertEnvelope(json.envelope, "ad_load_failed", rate = 0.5)
         assertEquals("8002", json.get("error_code"))
@@ -208,7 +208,7 @@ class AdEventsTest {
         events.loadFailed(ErrorCode.BLANK_CREATIVE)
 
         val json = telemetry.single("ad_load_failed")
-        assertEquals(setOf("envelope", "error_code", "error_domain", "failed_stage"), json.keySet())
+        assertEquals(setOf("envelope", "error_code", "error_domain", "failed_stage"), json.keyNames())
         assertEquals("6003", json.get("error_code"))
         assertEquals("creative", json.getString("error_domain"))
         assertEquals("webview_load", json.getString("failed_stage"))
@@ -225,7 +225,7 @@ class AdEventsTest {
         val json = telemetry.single("ad_load_failed")
         assertEquals(
             setOf("envelope", "error_code", "error_domain", "external_error_code", "external_error_source"),
-            json.keySet(),
+            json.keyNames(),
         )
         assertEquals("7001", json.get("error_code"))
         assertEquals("creative", json.getString("error_domain"))
@@ -270,7 +270,7 @@ class AdEventsTest {
         events.processGone(didCrash = true)
 
         val json = telemetry.single("render_process_gone")
-        assertEquals(setOf("envelope", "creative_type", "did_crash", "was_shown"), json.keySet())
+        assertEquals(setOf("envelope", "creative_type", "did_crash", "was_shown"), json.keyNames())
         assertEnvelope(json.envelope, "render_process_gone", rate = 0.125)
         assertEquals("html", json.getString("creative_type"))
         assertEquals(true, json.get("did_crash"))
@@ -622,7 +622,7 @@ class AdEventsTest {
     fun `there is no render duration without a mark`() {
         adEvents().rendered()
 
-        assertEquals(setOf("envelope", "om_enabled"), telemetry.single("ad_impression").keySet())
+        assertEquals(setOf("envelope", "om_enabled"), telemetry.single("ad_impression").keyNames())
     }
 
     @Test
@@ -1895,7 +1895,7 @@ class AdEventsTest {
     private val JSONObject.envelope get() = getJSONObject("envelope")
 
     private fun assertEnvelope(json: JSONObject, name: String, rate: Double) {
-        assertEquals(ENVELOPE_KEYS, json.keySet())
+        assertEquals(ENVELOPE_KEYS, json.keyNames())
         assertEquals(4, UUID.fromString(json.getString("event_id")).version())
         assertEquals(name, json.getString("event_name"))
         assertEquals(now, json.getLong("event_ts"))
