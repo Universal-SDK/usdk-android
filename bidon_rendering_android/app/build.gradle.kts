@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.demo.tetris"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.demo.tetris"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 
@@ -34,8 +36,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_11
     }
 }
 
@@ -47,7 +52,7 @@ dependencies {
     implementation(libs.androidx.preference.ktx)
     implementation(project(":bidon-rendering"))
     implementation(project(":adapter"))
-    implementation("org.bidon:bidon-sdk:0.14.0")
+    implementation("org.bidon:bidon-sdk:0.16.0")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

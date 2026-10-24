@@ -32,6 +32,7 @@ internal class AdEvents(
     private val monotonicClock: MonotonicClock,
 ) {
 
+    // Only ever compared with null, so the identity comparison of compareAndSet is exact.
     private val showStart = AtomicReference<Long?>()
     private val viewStart = AtomicReference<Long?>()
     private val loadStart = AtomicReference<Long?>()

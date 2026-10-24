@@ -1,3 +1,6 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
+
 plugins {
     id("com.android.library")
     alias(libs.plugins.kotlin.android)
@@ -5,7 +8,7 @@ plugins {
 
 android {
     namespace = "org.bidon.bidon"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 24
@@ -19,18 +22,29 @@ android {
         }
     }
 
+    // The test app runs as a current host app does, as bidon-rendering's does.
+    testOptions {
+        targetSdk = 36
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_11
+        // The mediation SDK's language and library level: a publisher needs no newer Kotlin for us than for it.
+        languageVersion = KotlinVersion.KOTLIN_2_1
+        apiVersion = KotlinVersion.KOTLIN_2_1
     }
 }
 
 dependencies {
     implementation(project(":bidon-rendering"))
-    implementation("org.bidon:bidon-sdk:0.14.0")
+    implementation("org.bidon:bidon-sdk:0.16.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     testImplementation(libs.junit)

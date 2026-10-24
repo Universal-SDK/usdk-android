@@ -1,3 +1,7 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
+
 plugins {
     id("com.android.library")
     alias(libs.plugins.kotlin.android)
@@ -7,7 +11,7 @@ plugins {
 
 android {
     namespace = "org.bidon.rendering"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 24
@@ -24,18 +28,24 @@ android {
     // The test app runs as a current host app does. Left unset it takes minSdk, and Android then puts a warning
     // dialog over the test app's screens that takes their focus and the first Back.
     testOptions {
-        targetSdk = 35
+        targetSdk = 36
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_11
+        // The mediation SDK's language and library level: a publisher needs no newer Kotlin for us than for it.
+        languageVersion = KotlinVersion.KOTLIN_2_1
+        apiVersion = KotlinVersion.KOTLIN_2_1
         // Interface methods with a body become JVM default methods, so a callback added to AdRenderer.Listener later,
         // with a body, does not break a host compiled against an earlier version.
-        freeCompilerArgs += "-Xjvm-default=all"
+        jvmDefault = JvmDefaultMode.NO_COMPATIBILITY
     }
 }
 
