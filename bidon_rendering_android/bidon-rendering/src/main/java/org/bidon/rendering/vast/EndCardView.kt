@@ -157,11 +157,7 @@ internal class EndCardView(
             load(url) {
                 crossfade(true)
                 listener(
-                    onError = { _, throwable ->
-                        listener?.onError(
-                            throwable.throwable ?: Exception("Image load error")
-                        )
-                    }
+                    onError = { _, result -> listener?.onError(result.throwable) }
                 )
             }
 
