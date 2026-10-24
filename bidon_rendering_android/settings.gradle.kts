@@ -27,5 +27,4 @@ rootProject.name = "bidon_rendering_android"
 include(":app")
 include(":bidon-rendering")
 include(":adapter")
-includeBuild("../../bidon-sdk-android")
 project(":adapter").projectDir = File("adapter/bidon")
