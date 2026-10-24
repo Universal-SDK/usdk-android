@@ -39,7 +39,7 @@ kotlin {
 
 dependencies {
     implementation(project(":bidon-rendering"))
-    implementation("org.bidon:bidon-sdk:0.14.0")
+    implementation("org.bidon:bidon-sdk:0.16.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     testImplementation(libs.junit)

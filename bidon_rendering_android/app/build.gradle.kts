@@ -52,7 +52,7 @@ dependencies {
     implementation(libs.androidx.preference.ktx)
     implementation(project(":bidon-rendering"))
     implementation(project(":adapter"))
-    implementation("org.bidon:bidon-sdk:0.14.0")
+    implementation("org.bidon:bidon-sdk:0.16.0")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
