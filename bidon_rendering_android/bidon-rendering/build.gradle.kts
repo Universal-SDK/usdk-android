@@ -28,7 +28,7 @@ android {
     // The test app runs as a current host app does. Left unset it takes minSdk, and Android then puts a warning
     // dialog over the test app's screens that takes their focus and the first Back.
     testOptions {
-        targetSdk = 35
+        targetSdk = 36
     }
 
     compileOptions {

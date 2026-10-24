@@ -22,6 +22,11 @@ android {
         }
     }
 
+    // The test app runs as a current host app does, as bidon-rendering's does.
+    testOptions {
+        targetSdk = 36
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
