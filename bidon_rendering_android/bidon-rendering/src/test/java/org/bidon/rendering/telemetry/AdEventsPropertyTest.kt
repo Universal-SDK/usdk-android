@@ -198,6 +198,31 @@ class AdEventsPropertyTest {
         }
     }
 
+    @Test
+    fun `the time since the load ended is the show minus the load end when the show is not earlier, and left out otherwise`() {
+        runBlocking {
+            checkAll(reading, reading, Arb.boolean()) { loaded, shown, hasLoad ->
+                var now = 0L
+                val telemetry = RecordingTelemetry()
+                val events = adEvents(telemetry, monotonicClock = { now })
+
+                if (hasLoad) {
+                    now = loaded
+                    events.loadSucceeded()
+                }
+                now = shown
+                events.showRequested()
+
+                val json = telemetry.single("ad_show_requested")
+                if (hasLoad && shown >= loaded) {
+                    assertJsonInteger(shown - loaded, json, "time_since_loaded_ms")
+                } else {
+                    assertFalse("loaded=$loaded shown=$shown hasLoad=$hasLoad", json.has("time_since_loaded_ms"))
+                }
+            }
+        }
+    }
+
     /**
      * The text an exception message can hold, with markers no class name or field name contains: `qx` leads every
      * host and `zq9` every text.

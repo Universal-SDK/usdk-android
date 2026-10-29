@@ -153,6 +153,7 @@ class VideoAdTrackingTest {
             SystemClock.sleep(1_000)
 
             assertEquals(1, events.impressions.get())
+            queued.assertShowRequested(queued.next())
             val impression = queued.next()
             queued.assertImpression(impression)
             queued.assertRenderDuration(impression)
@@ -369,6 +370,7 @@ class VideoAdTrackingTest {
         showAd(vast, events) {
             assertTrue("the show did not fail", events.failed.await(5, TimeUnit.SECONDS))
 
+            queued.assertShowRequested(queued.next())
             val failed = queued.next()
             queued.assertAdEvent(failed, "ad_load_failed", EventClass.ERROR, null)
             assertEquals("7001", failed.json.getString("error_code"))
@@ -394,6 +396,7 @@ class VideoAdTrackingTest {
             SystemClock.sleep(500)
 
             assertEquals(0, events.impressions.get())
+            queued.assertShowRequested(queued.next())
             val failed = queued.next()
             queued.assertAdEvent(failed, "ad_load_failed", EventClass.ERROR, null)
             assertEquals("7002", failed.json.getString("error_code"))
@@ -488,6 +491,7 @@ class VideoAdTrackingTest {
 
             assertTrue("the ad did not close", events.closed.await(30, TimeUnit.SECONDS))
             waitFor("the video screen to go") { Unit.takeIf { videoScreens().isEmpty() } }
+            queued.assertShowRequested(queued.next())
             queued.assertImpression(queued.next())
             val gone = queued.next()
             queued.assertAdEvent(gone, "render_crashed", EventClass.ERROR, Renderer.VAST)

@@ -115,6 +115,7 @@ internal class HtmlRenderer(
         probe = null
         if (hasContent) {
             isLoaded = true
+            events?.loadSucceeded()
             listener?.onLoaded()
             return
         }

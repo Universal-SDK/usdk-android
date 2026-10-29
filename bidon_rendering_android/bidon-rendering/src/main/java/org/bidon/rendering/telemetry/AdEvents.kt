@@ -12,11 +12,12 @@ internal enum class Renderer(val wireName: String) {
 }
 
 /**
- * The renderer's telemetry events of one ad: `ad_impression`, `ad_load_failed` and `render_crashed`.
+ * The renderer's telemetry events of one ad: `ad_show_requested`, `ad_impression`, `ad_load_failed` and
+ * `render_crashed`.
  *
- * Each event is reported once per ad, whether or not telemetry keeps it, and a death of the render process only while
- * the ad is open. A call takes its place before it emits and holds no lock while it does, so a second call never
- * waits for the first.
+ * Every show request is reported. The other events are reported once per ad, whether or not telemetry keeps them,
+ * and a death of the render process only while the ad is open. A call takes its place before it emits and holds no
+ * lock while it does, so a second call never waits for the first.
  *
  * Safe to call from any thread, and never throws.
  *
@@ -38,6 +39,7 @@ internal class AdEvents(
     private val showStart = AtomicReference<Long?>()
     private val viewStart = AtomicReference<Long?>()
     private val loadStart = AtomicReference<Long?>()
+    private val loadEnd = AtomicReference<Long?>()
     private val renderReported = AtomicBoolean()
 
     /** Taken by the first process death, or by [closed], after which a death is not reported. */
@@ -46,9 +48,25 @@ internal class AdEvents(
     /** Taken by the first load failure, or closed by a process death before any load failure. */
     private val loadFailureReported = AtomicBoolean()
 
-    /** The host asked for the ad to be shown on a full screen. Only the first call counts. */
+    /**
+     * The host asked for the ad to be shown on a full screen: emits `ad_show_requested` on every call. The first call
+     * is the start of `render_duration_ms`.
+     *
+     * `time_since_loaded_ms` is the time from [loadSucceeded] to this call, on the monotonic clock. It is left out when
+     * the load had not ended by then, or the clock gives no sensible difference.
+     */
     fun showRequested() {
-        showStart.compareAndSet(null, monotonicClock.elapsedMillis())
+        val now = monotonicClock.elapsedMillis()
+        showStart.compareAndSet(null, now)
+        val sinceLoadedMillis = elapsedBetween(loadEnd.get(), now)
+        emit(EventName.AD_SHOW_REQUESTED, EventClass.DIAGNOSTIC) {
+            if (sinceLoadedMillis != null) put("time_since_loaded_ms", sinceLoadedMillis)
+        }
+    }
+
+    /** The creative finished loading. Only the first call counts; emits nothing. */
+    fun loadSucceeded() {
+        loadEnd.compareAndSet(null, monotonicClock.elapsedMillis())
     }
 
     /** The host asked for the ad's view. Only the first call counts. */
@@ -135,10 +153,13 @@ internal class AdEvents(
      * The monotonic time from [start] to now, or `null` when there is no start, it reads later than now, or the clock
      * gives no sensible difference.
      */
-    private fun elapsedSince(start: Long?): Long? {
+    private fun elapsedSince(start: Long?): Long? = elapsedBetween(start, monotonicClock.elapsedMillis())
+
+    /** [end] minus [start], or `null` when there is no start, [end] reads earlier, or the difference overflows. */
+    private fun elapsedBetween(start: Long?, end: Long): Long? {
         if (start == null) return null
         val millis = try {
-            Math.subtractExact(monotonicClock.elapsedMillis(), start)
+            Math.subtractExact(end, start)
         } catch (_: ArithmeticException) {
             return null
         }

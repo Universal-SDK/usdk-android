@@ -59,6 +59,19 @@ internal class QueuedEvents(directory: File) {
         assertEquals(false, event.json.get("om_enabled"))
     }
 
+    /**
+     * Asserts [event] is the `ad_show_requested` of this test's ad of [adType]: a DIAGNOSTIC event without a renderer,
+     * with a time since the load ended when [afterLoad] is `true` and none when it is `false`.
+     */
+    fun assertShowRequested(event: Stored, afterLoad: Boolean = true, adType: AdType = AdType.INTERSTITIAL) {
+        assertAdEvent(event, "ad_show_requested", EventClass.DIAGNOSTIC, renderer = null, adType)
+        if (afterLoad) {
+            assertTrue("no time since loaded in ${event.json}", event.json.optLong("time_since_loaded_ms", -1) >= 0)
+        } else {
+            assertFalse("time since loaded in ${event.json}", event.json.has("time_since_loaded_ms"))
+        }
+    }
+
     /** Asserts [event] carries a render duration. */
     fun assertRenderDuration(event: Stored) {
         assertTrue("no render duration in ${event.json}", event.json.optLong("render_duration_ms", -1) >= 0)

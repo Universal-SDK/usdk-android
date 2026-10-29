@@ -248,6 +248,7 @@ class RenderProcessGoneTest {
         }
         onMain { renderer.destroy() }
         // Neither the error that ended the ad nor the show of a dead ad is a second event.
+        queued.assertShowRequested(queued.next())
         queued.assertNoMore()
     }
 
@@ -295,6 +296,7 @@ class RenderProcessGoneTest {
             assertEquals(0, events.errors.get())
         }
         onMain { renderer.destroy() }
+        queued.assertShowRequested(queued.next())
         assertImpressionCounted()
         // The ad was closed: the death of the shared render process is not reported for it.
         queued.assertNoMore()
@@ -457,6 +459,7 @@ class RenderProcessGoneTest {
             assertEquals("reported as an error after it was shown", 0, events.errors.get())
         }
         onMain { renderer.destroy() }
+        queued.assertShowRequested(queued.next())
         assertImpressionCounted()
         assertProcessGone(kind, how, afterImpression = true)
         queued.assertNoMore()

@@ -155,7 +155,7 @@ class AdEventsTest {
     @Test
     fun `an event's own fields sit next to the envelope, not inside it`() {
         val events = adEvents(renderer = Renderer.MRAID)
-        events.showRequested()
+        events.viewRequested()
 
         events.rendered()
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
@@ -596,7 +596,10 @@ class AdEventsTest {
 
         events.rendered()
 
-        assertEquals(1, telemetry.emitted.size)
+        assertEquals(
+            listOf("ad_show_requested" to EventClass.DIAGNOSTIC, "ad_impression" to EventClass.COUNTED),
+            telemetry.calls(),
+        )
         assertJsonInteger(250L, telemetry.single("ad_impression"), "render_duration_ms")
     }
 
@@ -724,7 +727,10 @@ class AdEventsTest {
         events.rendered()
 
         assertFalse(telemetry.single("ad_impression").has("render_duration_ms"))
-        assertEquals(1, telemetry.emitted.size)
+        assertEquals(
+            listOf("ad_impression" to EventClass.COUNTED, "ad_show_requested" to EventClass.DIAGNOSTIC),
+            telemetry.calls(),
+        )
     }
 
     @Test
@@ -758,6 +764,8 @@ class AdEventsTest {
     fun `marks that land between the render and the capture add no render duration`() {
         val events = adEvents()
         telemetry.beforeCapture = {
+            // Once: the show request emits too, and must not run the hook again.
+            telemetry.beforeCapture = {}
             elapsed = 100
             events.showRequested()
             events.viewRequested()
@@ -775,6 +783,8 @@ class AdEventsTest {
         events.viewRequested()
         elapsed = 250
         telemetry.beforeCapture = {
+            // Once: the show request emits too, and must not run the hook again.
+            telemetry.beforeCapture = {}
             elapsed = 900
             events.showRequested()
         }
@@ -791,6 +801,8 @@ class AdEventsTest {
         events.showRequested()
         elapsed = 250
         telemetry.beforeCapture = {
+            // Once: the show request emits too, and must not run the hook again.
+            telemetry.beforeCapture = {}
             elapsed = 900
             events.showRequested()
             events.viewRequested()
@@ -847,7 +859,7 @@ class AdEventsTest {
     @Test
     fun `only ad_impression carries the render duration and the OM flag`() {
         val events = adEvents()
-        events.showRequested()
+        events.viewRequested()
         elapsed += 20
 
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
@@ -861,12 +873,13 @@ class AdEventsTest {
     }
 
     @Test
-    fun `the marks emit nothing and touch nothing else on telemetry`() {
+    fun `the view mark and the load marks emit nothing and touch nothing else on telemetry`() {
         val events = adEvents()
 
         repeat(3) {
-            events.showRequested()
             events.viewRequested()
+            events.loadStarted()
+            events.loadSucceeded()
         }
 
         assertEquals(emptyList<Pair<String, EventClass>>(), telemetry.calls())
@@ -1378,7 +1391,10 @@ class AdEventsTest {
 
         events.rendered()
 
-        assertEquals(1, telemetry.emitted.size)
+        assertEquals(
+            listOf("ad_impression" to EventClass.COUNTED, "ad_show_requested" to EventClass.DIAGNOSTIC),
+            telemetry.calls(),
+        )
         assertFalse(telemetry.single("ad_impression").has("render_duration_ms"))
     }
 
@@ -1752,7 +1768,10 @@ class AdEventsTest {
 
         events.rendered()
 
-        assertEquals(listOf("ad_impression" to EventClass.COUNTED), telemetry.calls())
+        assertEquals(
+            listOf("ad_show_requested" to EventClass.DIAGNOSTIC, "ad_impression" to EventClass.COUNTED),
+            telemetry.calls(),
+        )
     }
 
     // rule 28
@@ -1911,6 +1930,7 @@ class AdEventsTest {
             { it.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR, Int.MIN_VALUE.toString()) },
             { it.processGone(crashed) },
             { it.closed() },
+            { it.loadSucceeded() },
         )
         permutations(calls).forEach { order ->
             val events = adEvents(telemetry = Telemetry.Disabled)
@@ -1931,7 +1951,7 @@ class AdEventsTest {
                     val events = adEvents(telemetry = recording)
                     elapsed = start
                     events.loadStarted()
-                    events.showRequested()
+                    events.viewRequested()
                     elapsed = end
 
                     events.rendered()
@@ -1979,19 +1999,220 @@ class AdEventsTest {
         }
     }
 
+    // BID-140 AC 1: ad_show_requested and the time since the load ended
+
+    @Test
+    fun `a show request emits one ad_show_requested as a diagnostic event`() {
+        val events = adEvents()
+        events.loadSucceeded()
+
+        events.showRequested()
+
+        assertEquals(listOf("ad_show_requested" to EventClass.DIAGNOSTIC), telemetry.calls())
+        assertEquals(0, telemetry.syncs)
+    }
+
+    @Test
+    fun `ad_show_requested is the envelope plus the time since the load ended, and nothing else`() {
+        telemetry.rate = SamplingRate.of(0.25)!!
+        val events = adEvents(renderer = Renderer.VAST)
+        events.loadSucceeded()
+        elapsed += 2_500
+
+        events.showRequested()
+
+        val json = telemetry.single("ad_show_requested")
+        assertEquals(setOf("envelope", "time_since_loaded_ms"), json.keyNames())
+        assertEnvelope(json.envelope, "ad_show_requested", rate = 0.25)
+        assertJsonInteger(2_500L, json, "time_since_loaded_ms")
+    }
+
+    @Test
+    fun `the time since the load ended is read from the monotonic clock, not the wall clock`() {
+        val events = adEvents()
+        events.loadSucceeded()
+        elapsed += 2_500
+        now -= 3_600_000
+
+        events.showRequested()
+
+        val json = telemetry.single("ad_show_requested")
+        assertJsonInteger(2_500L, json, "time_since_loaded_ms")
+        assertEquals(now, json.envelope.getLong("event_ts"))
+    }
+
+    @Test
+    fun `a wall clock moved forward in between does not change the time since the load ended`() {
+        val events = adEvents()
+        events.loadSucceeded()
+        elapsed += 700
+        now += 86_400_000
+
+        events.showRequested()
+
+        assertJsonInteger(700L, telemetry.single("ad_show_requested"), "time_since_loaded_ms")
+    }
+
+    @Test
+    fun `a show request with no load leaves the time since the load ended out`() {
+        adEvents().showRequested()
+
+        assertEquals(setOf("envelope"), telemetry.single("ad_show_requested").keyNames())
+    }
+
+    @Test
+    fun `the start of the load is not the end of it`() {
+        val events = adEvents()
+        events.loadStarted()
+        elapsed += 900
+
+        events.showRequested()
+
+        assertFalse(telemetry.single("ad_show_requested").has("time_since_loaded_ms"))
+    }
+
+    @Test
+    fun `the time since the load ended counts from the first loadSucceeded, not a later one`() {
+        val events = adEvents()
+        events.loadSucceeded()
+        elapsed += 100
+        events.loadSucceeded()
+        elapsed += 400
+
+        events.showRequested()
+
+        assertJsonInteger(500L, telemetry.single("ad_show_requested"), "time_since_loaded_ms")
+    }
+
+    @Test
+    fun `each show request measures from the load to its own call`() {
+        val events = adEvents()
+        events.loadSucceeded()
+        elapsed += 2_500
+        events.showRequested()
+        elapsed += 1_500
+
+        events.showRequested()
+
+        val times = telemetry.emitted.filter { it.name == "ad_show_requested" }.map { it.json().getLong("time_since_loaded_ms") }
+        assertEquals(listOf(2_500L, 4_000L), times)
+    }
+
+    @Test
+    fun `a show request at the very moment the load ended is zero`() {
+        val events = adEvents()
+        events.loadSucceeded()
+
+        events.showRequested()
+
+        assertJsonInteger(0L, telemetry.single("ad_show_requested"), "time_since_loaded_ms")
+    }
+
+    @Test
+    fun `a show request before the load ended has no time, and a later one measures from the end of the load`() {
+        val events = adEvents()
+        elapsed = 5_000
+        events.showRequested()
+        elapsed = 6_000
+        events.loadSucceeded()
+        elapsed = 9_000
+
+        events.showRequested()
+
+        val times = telemetry.emitted.filter { it.name == "ad_show_requested" }
+        assertFalse(times[0].json().has("time_since_loaded_ms"))
+        assertJsonInteger(3_000L, times[1].json(), "time_since_loaded_ms")
+    }
+
+    @Test
+    fun `the time since the load ended is left out when the clock reads earlier at the show or overflows, and written when widest`() {
+        listOf(
+            500L to 300L,
+            Long.MAX_VALUE to Long.MIN_VALUE,
+            Long.MIN_VALUE to Long.MAX_VALUE,
+            -1L to Long.MAX_VALUE,
+        ).forEach { (loaded, shown) ->
+            val recording = RecordingTelemetry()
+            val events = adEvents(telemetry = recording)
+            elapsed = loaded
+            events.loadSucceeded()
+            elapsed = shown
+
+            events.showRequested()
+
+            assertFalse("$loaded..$shown", recording.single("ad_show_requested").has("time_since_loaded_ms"))
+        }
+        val recording = RecordingTelemetry()
+        val events = adEvents(telemetry = recording)
+        elapsed = 0
+        events.loadSucceeded()
+        elapsed = Long.MAX_VALUE
+
+        events.showRequested()
+
+        assertJsonInteger(Long.MAX_VALUE, recording.single("ad_show_requested"), "time_since_loaded_ms")
+    }
+
+    // BID-140 AC 2: one ad_show_requested per call
+
+    @Test
+    fun `a show request after a failed load, a death or a close still emits ad_show_requested`() {
+        val events = adEvents()
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
+        events.processGone(killed)
+        events.closed()
+
+        events.showRequested()
+
+        assertEquals(
+            listOf(
+                "ad_load_failed" to EventClass.ERROR,
+                "render_crashed" to EventClass.ERROR,
+                "ad_show_requested" to EventClass.DIAGNOSTIC,
+            ),
+            telemetry.calls(),
+        )
+    }
+
+    @Test
+    fun `a view request emits no ad_show_requested`() {
+        val events = adEvents()
+        events.loadSucceeded()
+
+        repeat(3) { events.viewRequested() }
+
+        assertEquals(emptyList<Pair<String, EventClass>>(), telemetry.calls())
+    }
+
+    // BID-140: threads
+
+    @Test
+    fun `show requests racing on many threads each emit`() {
+        val outcomes = race(rounds = ROUNDS) { events, _ -> events.showRequested() }
+
+        outcomes.forEach { calls ->
+            assertEquals(calls.toString(), THREADS, calls.count { it.first == "ad_show_requested" })
+        }
+    }
+
     // Helpers
 
     /**
-     * Runs [THREADS] calls of [call] at once on a fresh [AdEvents], [rounds] times, and returns what each round
-     * emitted. The threads are released together by a latch once all of them are waiting on it.
+     * Runs [THREADS] calls of [call] at once on a fresh [AdEvents] that [setup] has prepared, [rounds] times, and
+     * returns what each round emitted. The threads are released together by a latch once all of them are waiting on it.
      */
-    private fun race(rounds: Int, call: (AdEvents, Int) -> Unit): List<List<Pair<String, EventClass>>> {
+    private fun race(
+        rounds: Int,
+        setup: (AdEvents) -> Unit = {},
+        call: (AdEvents, Int) -> Unit,
+    ): List<List<Pair<String, EventClass>>> {
         val pool = Executors.newFixedThreadPool(THREADS)
         try {
             return List(rounds) {
                 val recording = RecordingTelemetry()
                 val events = adEvents(telemetry = recording)
                 elapsed = 0
+                setup(events)
                 val ready = CountDownLatch(THREADS)
                 val go = CountDownLatch(1)
                 val futures = List(THREADS) { index ->

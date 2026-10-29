@@ -26,6 +26,11 @@ internal object GoldenEvents {
 
     /** The encoded text of [name], as the encoder wrote it. */
     fun encode(name: EventName): String = when (name) {
+        EventName.AD_SHOW_REQUESTED -> adEvent(name) { advance ->
+            loadSucceeded()
+            advance(WAIT_MILLIS)
+            showRequested()
+        }
         EventName.AD_IMPRESSION -> adEvent(name) { advance ->
             showRequested()
             advance(RENDER_MILLIS)
@@ -58,6 +63,7 @@ internal object GoldenEvents {
     private const val NOW = 1_790_326_698_635L
     private const val RENDER_MILLIS = 420L
     private const val LOAD_MILLIS = 420L
+    private const val WAIT_MILLIS = 2_500L
     private val CLOCK = Clock { NOW }
 
     /**

@@ -134,6 +134,7 @@ class DisplayRewardTest {
         val events = Events()
         showAd(kind, closeDelaySeconds = 1, events) {
             val screen = waitFor("the ad screen") { resumedAdScreen() }
+            queued.assertShowRequested(queued.next())
             val impression = queued.next()
             queued.assertImpression(impression)
             queued.assertRenderDuration(impression)

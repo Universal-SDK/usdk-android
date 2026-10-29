@@ -72,6 +72,7 @@ internal class VastRenderer(
             result
                 .onSuccess { ad ->
                     vastAd = ad
+                    events?.loadSucceeded()
                     listener.onLoaded()
                 }
                 .onFailure { error ->
