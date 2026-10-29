@@ -1,6 +1,7 @@
 package org.bidon.bidon.impl
 
 import org.bidon.rendering.AdType
+import org.bidon.rendering.Integration
 import org.bidon.sdk.adapter.DemandAd
 import org.bidon.sdk.stats.impl.StatisticsCollectorImpl
 import org.junit.Assert.assertEquals
@@ -32,5 +33,27 @@ class RendererAdInfoTest {
 
         assertNull(info.auctionId)
         assertEquals(AdType.BANNER, info.type)
+    }
+
+    @Test
+    fun everyKindOfAdIsLabelledDirect() {
+        AdType.entries.forEach { type ->
+            val collector = StatisticsCollectorImpl().apply {
+                addRoundInfo(
+                    auctionId = "auction-1",
+                    demandAd = DemandAd(org.bidon.sdk.ads.AdType.Rewarded),
+                    auctionPricefloor = 0.1,
+                )
+            }
+
+            assertEquals("$type", Integration.DIRECT, collector.adInfo(type).integration)
+        }
+    }
+
+    @Test
+    fun anAdWhoseAuctionIdIsMissingIsStillLabelledDirect() {
+        AdType.entries.forEach { type ->
+            assertEquals("$type", Integration.DIRECT, StatisticsCollectorImpl().adInfo(type).integration)
+        }
     }
 }

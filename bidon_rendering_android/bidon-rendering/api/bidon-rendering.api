@@ -1,6 +1,9 @@
 public final class org/bidon/rendering/AdInfo {
 	public fun <init> (Ljava/lang/String;Lorg/bidon/rendering/AdType;)V
+	public fun <init> (Ljava/lang/String;Lorg/bidon/rendering/AdType;Lorg/bidon/rendering/Integration;)V
+	public synthetic fun <init> (Ljava/lang/String;Lorg/bidon/rendering/AdType;Lorg/bidon/rendering/Integration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getAuctionId ()Ljava/lang/String;
+	public final fun getIntegration ()Lorg/bidon/rendering/Integration;
 	public final fun getType ()Lorg/bidon/rendering/AdType;
 }
 
@@ -125,6 +128,15 @@ public final class org/bidon/rendering/CreativeType : java/lang/Enum {
 
 public final class org/bidon/rendering/CreativeType$Companion {
 	public final fun of (Ljava/lang/String;Lorg/bidon/rendering/AdRenderingConfig;)Lorg/bidon/rendering/CreativeType;
+}
+
+public final class org/bidon/rendering/Integration : java/lang/Enum {
+	public static final field DIRECT Lorg/bidon/rendering/Integration;
+	public static final field MAX_BIDDING Lorg/bidon/rendering/Integration;
+	public static final field MAX_CUSTOM Lorg/bidon/rendering/Integration;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/bidon/rendering/Integration;
+	public static fun values ()[Lorg/bidon/rendering/Integration;
 }
 
 public final class org/bidon/rendering/LogLevel : java/lang/Enum {
