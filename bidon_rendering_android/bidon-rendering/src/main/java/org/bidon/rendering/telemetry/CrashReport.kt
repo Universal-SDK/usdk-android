@@ -6,7 +6,7 @@ import java.util.Collections
 import java.util.IdentityHashMap
 
 /**
- * Tells whether an uncaught exception passed through our own code, and describes it as a `render_crashed` event that
+ * Tells whether an uncaught exception passed through our own code, and describes it as an `sdk_crashed` event that
  * fits one queue record.
  *
  * The event says which exceptions were involved and where they passed through our code. It never carries an
@@ -32,7 +32,7 @@ internal class CrashReport(
      */
     fun encode(throwable: Throwable, onMainThread: Boolean): ByteArray? {
         // A crash bypasses the gate and is always kept (D-031).
-        val envelope = EventEnvelope.capture(EventName.RENDER_CRASHED, sessionId, clock, samplingRate = SamplingRate.ALL)
+        val envelope = EventEnvelope.capture(EventName.SDK_CRASHED, sessionId, clock, samplingRate = SamplingRate.ALL)
         val exceptions = chain(throwable)
         var maxFrames = MAX_FRAMES
         while (true) {

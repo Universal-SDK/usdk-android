@@ -99,7 +99,7 @@ object BidonRenderer {
     ): AdRenderer {
         ensureInitialized()
 
-        val events = RendererTelemetry.adEvents(telemetry, type, ad)
+        val events = RendererTelemetry.adEvents(telemetry, type, ad, rendering)
         return when (type) {
             CreativeType.HTML -> HtmlRenderer(appContext, rendering, events)
             CreativeType.VAST -> VastRenderer(appContext, rendering, events)

@@ -6,6 +6,7 @@ import android.view.MotionEvent
 import android.webkit.WebChromeClient
 import org.bidon.rendering.html.ClickHandler
 import org.bidon.rendering.html.HtmlWebView
+import org.bidon.rendering.telemetry.ProcessExit
 
 /**
  * Extends HtmlWebView with MRAID support:
@@ -36,7 +37,7 @@ internal class MraidWebView(context: Context) : HtmlWebView(context) {
         onClick: () -> Unit,
         onPageLoaded: () -> Unit,
         onPageLoadError: (errorCode: Int, description: String) -> Unit,
-        onWebViewGone: (didCrash: Boolean) -> Unit
+        onWebViewGone: (exit: ProcessExit) -> Unit
     ) {
         this.bridge = bridge
 

@@ -47,9 +47,13 @@ class AdEventsTest {
     private fun adEvents(
         auctionId: String? = AUCTION,
         adType: AdType? = AdType.INTERSTITIAL,
-        creative: Creative = Creative.HTML,
+        renderer: Renderer = Renderer.HTML,
+        declaredType: String? = null,
         telemetry: Telemetry = this.telemetry,
-    ) = AdEvents(telemetry, session, auctionId, adType, creative, clock, monotonic)
+    ) = AdEvents(telemetry, session, auctionId, adType, renderer, declaredType, clock, monotonic)
+
+    private val crashed = ProcessExit(didCrash = true, priorityAtExit = null)
+    private val killed = ProcessExit(didCrash = false, priorityAtExit = null)
 
     // rule 1
 
@@ -70,10 +74,10 @@ class AdEventsTest {
     }
 
     @Test
-    fun `a gone render process emits one render_process_gone as an error`() {
-        adEvents().processGone(didCrash = true)
+    fun `a gone render process emits one render_crashed as an error`() {
+        adEvents().processGone(crashed)
 
-        assertEquals(listOf("render_process_gone" to EventClass.ERROR), telemetry.calls())
+        assertEquals(listOf("render_crashed" to EventClass.ERROR), telemetry.calls())
         assertEquals(0, telemetry.syncs)
     }
 
@@ -98,14 +102,14 @@ class AdEventsTest {
 
         events.rendered()
         events.loadFailed(ErrorCode.VAST_INVALID)
-        events.processGone(didCrash = false)
+        events.processGone(killed)
 
         assertEquals(3, telemetry.captures)
         assertEquals(
             listOf(
                 "ad_impression" to EventClass.COUNTED,
                 "ad_load_failed" to EventClass.ERROR,
-                "render_process_gone" to EventClass.ERROR,
+                "render_crashed" to EventClass.ERROR,
             ),
             telemetry.calls(),
         )
@@ -119,7 +123,7 @@ class AdEventsTest {
 
         events.rendered()
         events.loadFailed(ErrorCode.PLAYER_ERROR)
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
 
         telemetry.emitted.forEach { emit ->
             assertEquals(emit.name, emit.eventClass, emit.event!!.eventClass)
@@ -134,7 +138,7 @@ class AdEventsTest {
 
     @Test
     fun `ad_impression is the envelope plus the render duration and the OM flag, and nothing else`() {
-        val events = adEvents(creative = Creative.MRAID)
+        val events = adEvents(renderer = Renderer.MRAID)
         elapsed = 5_000
         events.showRequested()
         elapsed = 6_234
@@ -150,12 +154,12 @@ class AdEventsTest {
 
     @Test
     fun `an event's own fields sit next to the envelope, not inside it`() {
-        val events = adEvents(creative = Creative.MRAID)
+        val events = adEvents(renderer = Renderer.MRAID)
         events.showRequested()
 
         events.rendered()
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
 
         val impression = telemetry.single("ad_impression")
         assertTrue(impression.has("render_duration_ms"))
@@ -164,15 +168,16 @@ class AdEventsTest {
         val failed = telemetry.single("ad_load_failed")
         assertTrue(failed.has("error_code"))
         assertFalse(failed.envelope.has("error_code"))
-        val gone = telemetry.single("render_process_gone")
-        assertEquals("mraid", gone.getString("creative_type"))
-        assertFalse(gone.envelope.has("creative_type"))
+        val gone = telemetry.single("render_crashed")
+        assertEquals("mraid", gone.getString("renderer"))
+        assertFalse(gone.envelope.has("renderer"))
+        assertFalse(gone.envelope.has("was_shown"))
     }
 
     @Test
     fun `ad_load_failed with everything it can carry is the envelope plus the code, owner, stage, load time, external pair and exception classes, and nothing else`() {
         telemetry.rate = SamplingRate.of(0.5)!!
-        val events = adEvents(creative = Creative.VAST)
+        val events = adEvents(renderer = Renderer.VAST)
         events.loadStarted()
         elapsed += 420
 
@@ -203,7 +208,7 @@ class AdEventsTest {
 
     @Test
     fun `ad_load_failed with only a code is the envelope plus the code, owner and stage`() {
-        val events = adEvents(creative = Creative.HTML)
+        val events = adEvents(renderer = Renderer.HTML)
 
         events.loadFailed(ErrorCode.BLANK_CREATIVE)
 
@@ -216,7 +221,7 @@ class AdEventsTest {
 
     @Test
     fun `a failure after the show stage began has no load stage and no load time`() {
-        val events = adEvents(creative = Creative.VAST)
+        val events = adEvents(renderer = Renderer.VAST)
         events.loadStarted()
         elapsed += 60_030
 
@@ -235,7 +240,7 @@ class AdEventsTest {
 
     @Test
     fun `ad_load_failed does not carry the creative type, the old reason or the old code`() {
-        val events = adEvents(creative = Creative.MRAID)
+        val events = adEvents(renderer = Renderer.MRAID)
 
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR, "-2")
 
@@ -261,20 +266,89 @@ class AdEventsTest {
     }
 
     @Test
-    fun `render_process_gone is the envelope plus the creative type and the two flags, and nothing else`() {
+    fun `render_crashed is the envelope plus the renderer and was_shown, and nothing else, when nothing else is known`() {
         telemetry.rate = SamplingRate.of(0.125)!!
-        val events = adEvents(creative = Creative.HTML)
+        val events = adEvents(renderer = Renderer.HTML)
         events.loadStarted()
         elapsed += 30
 
-        events.processGone(didCrash = true)
+        events.processGone(ProcessExit(didCrash = null, priorityAtExit = null))
 
-        val json = telemetry.single("render_process_gone")
-        assertEquals(setOf("envelope", "creative_type", "did_crash", "was_shown"), json.keyNames())
-        assertEnvelope(json.envelope, "render_process_gone", rate = 0.125)
-        assertEquals("html", json.getString("creative_type"))
-        assertEquals(true, json.get("did_crash"))
+        val json = telemetry.single("render_crashed")
+        assertEquals(setOf("envelope", "renderer", "was_shown"), json.keyNames())
+        assertEnvelope(json.envelope, "render_crashed", rate = 0.125)
+        assertEquals("html", json.getString("renderer"))
         assertEquals(false, json.get("was_shown"))
+    }
+
+    @Test
+    fun `render_crashed with everything it can carry is the envelope plus the renderer, crtype, did_crash, priority and was_shown, for each renderer`() {
+        Renderer.entries.forEach { renderer ->
+            val recording = RecordingTelemetry()
+            val events = adEvents(renderer = renderer, declaredType = "static_image", telemetry = recording)
+            events.rendered()
+
+            events.processGone(ProcessExit(didCrash = true, priorityAtExit = RendererPriority.BOUND))
+
+            val json = recording.single("render_crashed")
+            assertEquals(
+                "$renderer",
+                setOf("envelope", "renderer", "crtype", "did_crash", "renderer_priority_at_exit", "was_shown"),
+                json.keyNames(),
+            )
+            assertEquals("$renderer", renderer.wireName, json.getString("renderer"))
+            assertEquals("$renderer", "static_image", json.getString("crtype"))
+            assertEquals("$renderer", true, json.get("did_crash"))
+            assertEquals("$renderer", "bound", json.get("renderer_priority_at_exit"))
+            assertEquals("$renderer", true, json.get("was_shown"))
+            assertEnvelope(json.envelope, "render_crashed", rate = 1.0)
+        }
+    }
+
+    @Test
+    fun `render_crashed without a declared crtype leaves the key out for each renderer`() {
+        Renderer.entries.forEach { renderer ->
+            val recording = RecordingTelemetry()
+
+            adEvents(renderer = renderer, declaredType = null, telemetry = recording)
+                .processGone(ProcessExit(didCrash = false, priorityAtExit = RendererPriority.WAIVED))
+
+            val json = recording.single("render_crashed")
+            assertEquals(
+                "$renderer",
+                setOf("envelope", "renderer", "did_crash", "renderer_priority_at_exit", "was_shown"),
+                json.keyNames(),
+            )
+            assertEquals("$renderer", renderer.wireName, json.getString("renderer"))
+        }
+    }
+
+    @Test
+    fun `render_crashed carries the crtype as it was declared, whatever the renderer`() {
+        listOf("html", "mraid", "vast", "static_image", "native", "playable").forEach { declaredType ->
+            val recording = RecordingTelemetry()
+
+            adEvents(renderer = Renderer.HTML, declaredType = declaredType, telemetry = recording)
+                .processGone(crashed)
+
+            assertEquals(declaredType, recording.single("render_crashed").getString("crtype"))
+            assertEquals("html", recording.single("render_crashed").getString("renderer"))
+        }
+    }
+
+    @Test
+    fun `render_crashed carries no creative_type, URL, message or description`() {
+        Renderer.entries.forEach { renderer ->
+            val recording = RecordingTelemetry()
+
+            adEvents(renderer = renderer, declaredType = "vast", telemetry = recording)
+                .processGone(ProcessExit(didCrash = true, priorityAtExit = RendererPriority.IMPORTANT))
+
+            val json = recording.single("render_crashed")
+            listOf("creative_type", "url", "message", "error_message", "description", "reason", "error_code")
+                .forEach { assertFalse("$renderer $it", json.has(it)) }
+            assertFalse("$renderer", json.envelope.has("creative_type"))
+        }
     }
 
     // rule 3
@@ -286,7 +360,7 @@ class AdEventsTest {
 
         events.rendered()
         events.loadFailed(ErrorCode.MARKUP_REJECTED)
-        events.processGone(didCrash = false)
+        events.processGone(killed)
 
         assertEquals(3, telemetry.emitted.size)
         telemetry.emitted.forEach { emit ->
@@ -307,7 +381,7 @@ class AdEventsTest {
 
             events.rendered()
             events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-            events.processGone(didCrash = true)
+            events.processGone(crashed)
 
             assertEquals(3, recording.emitted.size)
             recording.emitted.forEach { emit ->
@@ -322,7 +396,7 @@ class AdEventsTest {
 
         events.rendered()
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
 
         val ids = telemetry.emitted.map { it.json().envelope.getString("event_id") }
         ids.forEach { assertEquals(4, UUID.fromString(it).version()) }
@@ -345,8 +419,8 @@ class AdEventsTest {
         assertEquals(2_100_000_000_007L, telemetry.single("ad_load_failed").envelope.getLong("event_ts"))
 
         now = 2_200_000_000_000L
-        events.processGone(didCrash = false)
-        assertEquals(2_200_000_000_007L, telemetry.single("render_process_gone").envelope.getLong("event_ts"))
+        events.processGone(killed)
+        assertEquals(2_200_000_000_007L, telemetry.single("render_crashed").envelope.getLong("event_ts"))
     }
 
     @Test
@@ -369,7 +443,7 @@ class AdEventsTest {
 
             events.rendered()
             events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-            events.processGone(didCrash = true)
+            events.processGone(crashed)
 
             assertEquals(3, recording.emitted.size)
             recording.emitted.forEach { emit ->
@@ -386,7 +460,7 @@ class AdEventsTest {
 
             events.rendered()
             events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-            events.processGone(didCrash = true)
+            events.processGone(crashed)
 
             assertEquals(3, recording.emitted.size)
             recording.emitted.forEach { emit ->
@@ -405,7 +479,7 @@ class AdEventsTest {
 
             events.rendered()
             events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-            events.processGone(didCrash = true)
+            events.processGone(crashed)
 
             assertEquals(3, recording.emitted.size)
             recording.emitted.forEach { emit ->
@@ -420,7 +494,7 @@ class AdEventsTest {
 
         events.rendered()
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
 
         assertEquals(3, telemetry.emitted.size)
         telemetry.emitted.forEach { emit -> assertFalse(emit.name, emit.json().envelope.has("ad_type")) }
@@ -436,7 +510,7 @@ class AdEventsTest {
 
             events.rendered()
             events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-            events.processGone(didCrash = true)
+            events.processGone(crashed)
 
             assertEquals(3, recording.emitted.size)
             recording.emitted.forEach { emit -> assertFalse("${emit.name} $adType", emit.json().envelope.has("ad_format")) }
@@ -451,7 +525,7 @@ class AdEventsTest {
 
         events.rendered()
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
 
         assertEquals(3, telemetry.emitted.size)
         telemetry.emitted.forEach { emit ->
@@ -462,25 +536,26 @@ class AdEventsTest {
     // rule 9
 
     @Test
-    fun `render_process_gone carries the creative type in its wire spelling, the impression and ad_load_failed none`() {
-        Creative.entries.forEach { creative ->
+    fun `render_crashed names the renderer in its wire spelling, the impression and ad_load_failed carry no renderer or creative type`() {
+        Renderer.entries.forEach { renderer ->
             val recording = RecordingTelemetry()
-            val events = adEvents(creative = creative, telemetry = recording)
+            val events = adEvents(renderer = renderer, telemetry = recording)
 
             events.rendered()
             events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-            events.processGone(didCrash = true)
+            events.processGone(crashed)
 
             assertEquals(3, recording.emitted.size)
-            assertFalse("$creative", recording.single("ad_impression").has("creative_type"))
-            assertFalse("$creative", recording.single("ad_load_failed").has("creative_type"))
-            val gone = recording.single("render_process_gone")
-            assertEquals("$creative", creative.wireName, gone.getString("creative_type"))
+            listOf("ad_impression", "ad_load_failed").forEach { name ->
+                assertFalse("$renderer $name", recording.single(name).has("creative_type"))
+                assertFalse("$renderer $name", recording.single(name).has("renderer"))
+            }
+            val gone = recording.single("render_crashed")
+            assertEquals("$renderer", renderer.wireName, gone.getString("renderer"))
+            assertFalse("$renderer", gone.has("creative_type"))
         }
-        assertEquals(listOf("html", "mraid", "vast"), Creative.entries.map { it.wireName })
+        assertEquals(listOf("html", "mraid", "vast"), Renderer.entries.map { it.wireName })
     }
-
-    // rule 10
 
     @Test
     fun `the render duration runs from the first show request, not a later one`() {
@@ -776,9 +851,9 @@ class AdEventsTest {
         elapsed += 20
 
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
 
-        listOf("ad_load_failed", "render_process_gone").forEach { name ->
+        listOf("ad_load_failed", "render_crashed").forEach { name ->
             val json = telemetry.single(name)
             assertFalse(name, json.has("render_duration_ms"))
             assertFalse(name, json.has("om_enabled"))
@@ -1158,9 +1233,59 @@ class AdEventsTest {
         listOf(false, true).forEach { didCrash ->
             val recording = RecordingTelemetry()
 
-            adEvents(telemetry = recording).processGone(didCrash = didCrash)
+            adEvents(telemetry = recording).processGone(ProcessExit(didCrash, priorityAtExit = null))
 
-            assertEquals("did_crash for $didCrash", didCrash, recording.single("render_process_gone").get("did_crash"))
+            assertEquals("did_crash for $didCrash", didCrash, recording.single("render_crashed").get("did_crash"))
+        }
+    }
+
+    @Test
+    fun `an unknown cause leaves did_crash out and the event is still sent`() {
+        adEvents().processGone(ProcessExit(didCrash = null, priorityAtExit = RendererPriority.IMPORTANT))
+
+        assertEquals(listOf("render_crashed" to EventClass.ERROR), telemetry.calls())
+        val json = telemetry.single("render_crashed")
+        assertFalse(json.has("did_crash"))
+        assertEquals("important", json.get("renderer_priority_at_exit"))
+        assertEquals(false, json.get("was_shown"))
+    }
+
+    @Test
+    fun `an unknown priority leaves renderer_priority_at_exit out and the event is still sent`() {
+        adEvents().processGone(ProcessExit(didCrash = false, priorityAtExit = null))
+
+        assertEquals(listOf("render_crashed" to EventClass.ERROR), telemetry.calls())
+        val json = telemetry.single("render_crashed")
+        assertFalse(json.has("renderer_priority_at_exit"))
+        assertEquals(false, json.get("did_crash"))
+    }
+
+    @Test
+    fun `no detail at all leaves both did_crash and renderer_priority_at_exit out`() {
+        adEvents().processGone(ProcessExit(didCrash = null, priorityAtExit = null))
+
+        assertEquals(listOf("render_crashed" to EventClass.ERROR), telemetry.calls())
+        val json = telemetry.single("render_crashed")
+        assertFalse(json.has("did_crash"))
+        assertFalse(json.has("renderer_priority_at_exit"))
+        assertEquals(setOf("envelope", "renderer", "was_shown"), json.keyNames())
+    }
+
+    @Test
+    fun `each priority goes out under its lower case wire name, as a string`() {
+        val expected = mapOf(
+            RendererPriority.WAIVED to "waived",
+            RendererPriority.BOUND to "bound",
+            RendererPriority.IMPORTANT to "important",
+        )
+        assertEquals(expected.keys, RendererPriority.entries.toSet())
+        expected.forEach { (priority, wire) ->
+            val recording = RecordingTelemetry()
+
+            adEvents(telemetry = recording).processGone(ProcessExit(didCrash = false, priorityAtExit = priority))
+
+            assertEquals("$priority", wire, recording.single("render_crashed").get("renderer_priority_at_exit"))
+            assertEquals("$priority", wire, priority.wireName)
         }
     }
 
@@ -1172,9 +1297,9 @@ class AdEventsTest {
             events.loadStarted()
             events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
 
-            events.processGone(didCrash = didCrash)
+            events.processGone(ProcessExit(didCrash, priorityAtExit = null))
 
-            assertEquals("was_shown for $didCrash", false, recording.single("render_process_gone").get("was_shown"))
+            assertEquals("was_shown for $didCrash", false, recording.single("render_crashed").get("was_shown"))
         }
     }
 
@@ -1185,9 +1310,9 @@ class AdEventsTest {
             val events = adEvents(telemetry = recording)
             events.rendered()
 
-            events.processGone(didCrash = didCrash)
+            events.processGone(ProcessExit(didCrash, priorityAtExit = null))
 
-            val json = recording.single("render_process_gone")
+            val json = recording.single("render_crashed")
             assertEquals("was_shown for $didCrash", true, json.get("was_shown"))
             assertEquals("did_crash for $didCrash", didCrash, json.get("did_crash"))
         }
@@ -1200,19 +1325,19 @@ class AdEventsTest {
         events.rendered()
         telemetry.rate = SamplingRate.ALL
 
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
 
-        assertEquals(true, telemetry.single("render_process_gone").get("was_shown"))
+        assertEquals(true, telemetry.single("render_crashed").get("was_shown"))
     }
 
     @Test
     fun `an impression after the process death was reported does not make was_shown true`() {
         val events = adEvents()
 
-        events.processGone(didCrash = false)
+        events.processGone(killed)
         events.rendered()
 
-        assertEquals(false, telemetry.single("render_process_gone").get("was_shown"))
+        assertEquals(false, telemetry.single("render_crashed").get("was_shown"))
     }
 
     // rule 30
@@ -1222,11 +1347,11 @@ class AdEventsTest {
         val events = adEvents()
         telemetry.beforeCapture = { events.rendered() }
 
-        events.processGone(didCrash = false)
+        events.processGone(killed)
 
-        assertEquals(false, telemetry.single("render_process_gone").get("was_shown"))
+        assertEquals(false, telemetry.single("render_crashed").get("was_shown"))
         assertEquals(
-            setOf("render_process_gone" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
+            setOf("render_crashed" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
             telemetry.calls().toSet(),
         )
     }
@@ -1294,14 +1419,40 @@ class AdEventsTest {
     fun `only the first process death emits, and it keeps its own crash flag`() {
         val events = adEvents()
 
-        events.processGone(didCrash = true)
-        events.processGone(didCrash = false)
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
+        events.processGone(killed)
+        events.processGone(crashed)
 
-        assertEquals(listOf("render_process_gone" to EventClass.ERROR), telemetry.calls())
-        val json = telemetry.single("render_process_gone")
+        assertEquals(listOf("render_crashed" to EventClass.ERROR), telemetry.calls())
+        val json = telemetry.single("render_crashed")
         assertEquals(true, json.get("did_crash"))
         assertEquals(false, json.get("was_shown"))
+    }
+
+    @Test
+    fun `several deaths for one ad give one event that keeps the first death's crash flag and priority`() {
+        val events = adEvents()
+
+        events.processGone(ProcessExit(didCrash = true, priorityAtExit = RendererPriority.IMPORTANT))
+        events.processGone(ProcessExit(didCrash = false, priorityAtExit = RendererPriority.WAIVED))
+        events.processGone(ProcessExit(didCrash = null, priorityAtExit = null))
+
+        assertEquals(listOf("render_crashed" to EventClass.ERROR), telemetry.calls())
+        val json = telemetry.single("render_crashed")
+        assertEquals(true, json.get("did_crash"))
+        assertEquals("important", json.get("renderer_priority_at_exit"))
+    }
+
+    @Test
+    fun `a first death with no detail is not filled in by a later one`() {
+        val events = adEvents()
+
+        events.processGone(ProcessExit(didCrash = null, priorityAtExit = null))
+        events.processGone(ProcessExit(didCrash = true, priorityAtExit = RendererPriority.BOUND))
+
+        val json = telemetry.single("render_crashed")
+        assertFalse(json.has("did_crash"))
+        assertFalse(json.has("renderer_priority_at_exit"))
     }
 
     // rule 16
@@ -1310,10 +1461,10 @@ class AdEventsTest {
     fun `a load failure after the render process died does not emit`() {
         val events = adEvents()
 
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
 
-        assertEquals(listOf("render_process_gone" to EventClass.ERROR), telemetry.calls())
+        assertEquals(listOf("render_crashed" to EventClass.ERROR), telemetry.calls())
     }
 
     @Test
@@ -1321,10 +1472,10 @@ class AdEventsTest {
         val events = adEvents()
 
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-        events.processGone(didCrash = false)
+        events.processGone(killed)
 
         assertEquals(
-            listOf("ad_load_failed" to EventClass.ERROR, "render_process_gone" to EventClass.ERROR),
+            listOf("ad_load_failed" to EventClass.ERROR, "render_crashed" to EventClass.ERROR),
             telemetry.calls(),
         )
     }
@@ -1335,12 +1486,12 @@ class AdEventsTest {
     fun `a process death that was not kept still stops a later load failure`() {
         val events = adEvents()
         telemetry.rate = null
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
         telemetry.rate = SamplingRate.ALL
 
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
 
-        assertEquals(listOf("render_process_gone" to EventClass.ERROR), telemetry.calls())
+        assertEquals(listOf("render_crashed" to EventClass.ERROR), telemetry.calls())
     }
 
     // rule 17
@@ -1377,11 +1528,11 @@ class AdEventsTest {
     fun `a render after the render process died is still reported`() {
         val events = adEvents()
 
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
         events.rendered()
 
         assertEquals(
-            listOf("render_process_gone" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
+            listOf("render_crashed" to EventClass.ERROR, "ad_impression" to EventClass.COUNTED),
             telemetry.calls(),
         )
     }
@@ -1391,10 +1542,10 @@ class AdEventsTest {
         val events = adEvents()
 
         events.rendered()
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
 
         assertEquals(
-            listOf("ad_impression" to EventClass.COUNTED, "render_process_gone" to EventClass.ERROR),
+            listOf("ad_impression" to EventClass.COUNTED, "render_crashed" to EventClass.ERROR),
             telemetry.calls(),
         )
     }
@@ -1431,12 +1582,12 @@ class AdEventsTest {
     fun `a process death that telemetry did not keep still uses up the process death`() {
         val events = adEvents()
         telemetry.rate = null
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
         telemetry.rate = SamplingRate.ALL
 
-        events.processGone(didCrash = false)
+        events.processGone(killed)
 
-        assertEquals(listOf("render_process_gone" to EventClass.ERROR), telemetry.calls())
+        assertEquals(listOf("render_crashed" to EventClass.ERROR), telemetry.calls())
         assertEquals(0, telemetry.captures)
     }
 
@@ -1446,18 +1597,18 @@ class AdEventsTest {
         telemetry.rate = null
         events.rendered()
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
         telemetry.rate = SamplingRate.ALL
 
         events.rendered()
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
 
         assertEquals(
             listOf(
                 "ad_impression" to EventClass.COUNTED,
                 "ad_load_failed" to EventClass.ERROR,
-                "render_process_gone" to EventClass.ERROR,
+                "render_crashed" to EventClass.ERROR,
             ),
             telemetry.calls(),
         )
@@ -1480,19 +1631,19 @@ class AdEventsTest {
 
     @Test
     fun `process deaths racing on many threads emit once`() {
-        race(rounds = ROUNDS) { events, index -> events.processGone(index % 2 == 0) }
-            .forEach { calls -> assertEquals(listOf("render_process_gone" to EventClass.ERROR), calls) }
+        race(rounds = ROUNDS) { events, index -> events.processGone(if (index % 2 == 0) crashed else killed) }
+            .forEach { calls -> assertEquals(listOf("render_crashed" to EventClass.ERROR), calls) }
     }
 
     @Test
     fun `a process death racing load failures emits once, with at most one load failure`() {
         val outcomes = race(rounds = ROUNDS) { events, index ->
-            if (index % 2 == 0) events.processGone(didCrash = true)
+            if (index % 2 == 0) events.processGone(crashed)
             else events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
         }
 
         outcomes.forEach { calls ->
-            assertEquals(calls.toString(), 1, calls.count { it.first == "render_process_gone" })
+            assertEquals(calls.toString(), 1, calls.count { it.first == "render_crashed" })
             assertTrue(calls.toString(), calls.count { it.first == "ad_load_failed" } <= 1)
             assertEquals(calls.toString(), calls.size, calls.count { it.first in RACED_NAMES })
         }
@@ -1504,7 +1655,7 @@ class AdEventsTest {
             when (index % 6) {
                 0 -> events.rendered()
                 1 -> events.loadFailed(ErrorCode.PLAYER_ERROR)
-                2 -> events.processGone(didCrash = false)
+                2 -> events.processGone(killed)
                 3 -> events.loadStarted()
                 4 -> events.showRequested()
                 else -> events.viewRequested()
@@ -1513,7 +1664,7 @@ class AdEventsTest {
 
         outcomes.forEach { calls ->
             assertEquals(calls.toString(), 1, calls.count { it.first == "ad_impression" })
-            assertEquals(calls.toString(), 1, calls.count { it.first == "render_process_gone" })
+            assertEquals(calls.toString(), 1, calls.count { it.first == "render_crashed" })
             assertTrue(calls.toString(), calls.count { it.first == "ad_load_failed" } <= 1)
         }
     }
@@ -1544,11 +1695,11 @@ class AdEventsTest {
     @Test
     fun `a process death made while the first one is being emitted neither emits nor waits for it`() {
         val events = adEvents()
-        telemetry.whileEmitting = { onAnotherThread { events.processGone(didCrash = false) } }
+        telemetry.whileEmitting = { onAnotherThread { events.processGone(killed) } }
 
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
 
-        assertEquals(listOf("render_process_gone" to EventClass.ERROR), telemetry.calls())
+        assertEquals(listOf("render_crashed" to EventClass.ERROR), telemetry.calls())
     }
 
     @Test
@@ -1556,20 +1707,20 @@ class AdEventsTest {
         val events = adEvents()
         telemetry.whileEmitting = { onAnotherThread { events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR) } }
 
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
 
-        assertEquals(listOf("render_process_gone" to EventClass.ERROR), telemetry.calls())
+        assertEquals(listOf("render_crashed" to EventClass.ERROR), telemetry.calls())
     }
 
     @Test
     fun `a process death made while a load failure is being emitted still emits, without waiting`() {
         val events = adEvents()
-        telemetry.whileEmitting = { onAnotherThread { events.processGone(didCrash = true) } }
+        telemetry.whileEmitting = { onAnotherThread { events.processGone(crashed) } }
 
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
 
         assertEquals(
-            setOf("ad_load_failed" to EventClass.ERROR, "render_process_gone" to EventClass.ERROR),
+            setOf("ad_load_failed" to EventClass.ERROR, "render_crashed" to EventClass.ERROR),
             telemetry.calls().toSet(),
         )
         assertEquals(2, telemetry.emitted.size)
@@ -1637,8 +1788,8 @@ class AdEventsTest {
         events.rendered()
         events.closed()
 
-        events.processGone(didCrash = true)
-        events.processGone(didCrash = false)
+        events.processGone(crashed)
+        events.processGone(killed)
 
         assertEquals(listOf("ad_impression" to EventClass.COUNTED), telemetry.calls())
     }
@@ -1648,7 +1799,7 @@ class AdEventsTest {
         val events = adEvents()
         events.closed()
 
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
 
         assertEquals(emptyList<Pair<String, EventClass>>(), telemetry.calls())
@@ -1658,12 +1809,12 @@ class AdEventsTest {
     fun `a process death before the ad was closed is still reported, once`() {
         val events = adEvents()
 
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
         events.closed()
-        events.processGone(didCrash = false)
+        events.processGone(killed)
 
-        assertEquals(listOf("render_process_gone" to EventClass.ERROR), telemetry.calls())
-        assertEquals(true, telemetry.single("render_process_gone").get("did_crash"))
+        assertEquals(listOf("render_crashed" to EventClass.ERROR), telemetry.calls())
+        assertEquals(true, telemetry.single("render_crashed").get("did_crash"))
     }
 
     @Test
@@ -1704,9 +1855,9 @@ class AdEventsTest {
         val events = adEvents()
         telemetry.whileEmitting = { onAnotherThread { events.closed() } }
 
-        events.processGone(didCrash = true)
+        events.processGone(crashed)
 
-        assertEquals(listOf("render_process_gone" to EventClass.ERROR), telemetry.calls())
+        assertEquals(listOf("render_crashed" to EventClass.ERROR), telemetry.calls())
     }
 
     @Test
@@ -1722,12 +1873,12 @@ class AdEventsTest {
     @Test
     fun `process deaths racing a close emit at most one death, and no other event`() {
         val outcomes = race(rounds = ROUNDS) { events, index ->
-            if (index % 2 == 0) events.closed() else events.processGone(didCrash = true)
+            if (index % 2 == 0) events.closed() else events.processGone(crashed)
         }
 
         outcomes.forEach { calls ->
             assertTrue(calls.toString(), calls.size <= 1)
-            assertTrue(calls.toString(), calls.all { it == ("render_process_gone" to EventClass.ERROR) })
+            assertTrue(calls.toString(), calls.all { it == ("render_crashed" to EventClass.ERROR) })
         }
     }
 
@@ -1736,13 +1887,13 @@ class AdEventsTest {
         val outcomes = race(rounds = ROUNDS) { events, index ->
             when (index % 4) {
                 0 -> events.closed()
-                1, 2 -> events.processGone(didCrash = false)
+                1, 2 -> events.processGone(killed)
                 else -> events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
             }
         }
 
         outcomes.forEach { calls ->
-            assertTrue(calls.toString(), calls.count { it.first == "render_process_gone" } <= 1)
+            assertTrue(calls.toString(), calls.count { it.first == "render_crashed" } <= 1)
             assertTrue(calls.toString(), calls.count { it.first == "ad_load_failed" } <= 1)
             assertTrue(calls.toString(), calls.all { it.first in RACED_NAMES })
         }
@@ -1758,7 +1909,7 @@ class AdEventsTest {
             { it.viewRequested() },
             { it.rendered() },
             { it.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR, Int.MIN_VALUE.toString()) },
-            { it.processGone(didCrash = true) },
+            { it.processGone(crashed) },
             { it.closed() },
         )
         permutations(calls).forEach { order ->
@@ -1785,7 +1936,7 @@ class AdEventsTest {
 
                     events.rendered()
                     events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR, Int.MAX_VALUE.toString())
-                    events.processGone(didCrash = true)
+                    events.processGone(crashed)
 
                     assertEquals(3, recording.emitted.size)
                     recording.emitted.forEach { emit -> assertEquals(wall, emit.json().envelope.getLong("event_ts")) }
@@ -1813,13 +1964,13 @@ class AdEventsTest {
         val adTypes = listOf<AdType?>(null) + AdType.entries
         auctionIds.forEach { auctionId ->
             adTypes.forEach { adType ->
-                Creative.entries.forEach { creative ->
+                Renderer.entries.forEach { renderer ->
                     val recording = RecordingTelemetry()
-                    val events = adEvents(auctionId, adType, creative, recording)
+                    val events = adEvents(auctionId, adType, renderer, telemetry = recording)
 
                     events.rendered()
                     events.loadFailed(ErrorCode.MARKUP_REJECTED)
-                    events.processGone(didCrash = false)
+                    events.processGone(killed)
 
                     assertEquals(3, recording.emitted.size)
                     recording.emitted.forEach { assertNotNull(it.event!!.encode()) }
@@ -1918,7 +2069,7 @@ class AdEventsTest {
             "event_id", "event_name", "event_ts", "auction_id", "session_id", "ad_type", "sampling_rate",
         )
 
-        val RACED_NAMES = setOf("render_process_gone", "ad_load_failed")
+        val RACED_NAMES = setOf("render_crashed", "ad_load_failed")
     }
 }
 

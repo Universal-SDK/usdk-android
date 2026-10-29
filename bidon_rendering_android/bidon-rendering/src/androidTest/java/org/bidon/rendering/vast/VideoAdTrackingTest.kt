@@ -19,7 +19,7 @@ import androidx.test.runner.lifecycle.Stage
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.LocalHttpServer
-import org.bidon.rendering.telemetry.Creative
+import org.bidon.rendering.telemetry.Renderer
 import org.bidon.rendering.telemetry.EventClass
 import org.bidon.rendering.telemetry.QueuedEvents
 import org.bidon.rendering.ui.BlankActivity
@@ -111,7 +111,7 @@ class VideoAdTrackingTest {
 
     /** Loads [vast], shows it over a blank screen, runs [block], and tears everything down. */
     private fun showAd(vast: String, events: Events, block: () -> Unit) {
-        val renderer = VastRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Creative.VAST))
+        val renderer = VastRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Renderer.VAST))
         instrumentation.runOnMainSync { renderer.load(vast, events) }
         assertTrue("the ad did not load", events.loaded.await(10, TimeUnit.SECONDS))
 
@@ -313,7 +313,7 @@ class VideoAdTrackingTest {
     /** Loads [vast] into a renderer that is destroyed afterwards, and returns the one failure it reported. */
     private fun loadFailure(vast: String): QueuedEvents.Stored {
         val events = Events()
-        val renderer = VastRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Creative.VAST))
+        val renderer = VastRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Renderer.VAST))
         try {
             instrumentation.runOnMainSync { renderer.load(vast, events) }
             assertTrue("the load did not fail", events.failed.await(20, TimeUnit.SECONDS))
@@ -344,7 +344,7 @@ class VideoAdTrackingTest {
     fun aLoadCancelledByDestroyIsNotAFailure() {
         server.stall("/wrapped.xml")
         val events = Events()
-        val renderer = VastRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Creative.VAST))
+        val renderer = VastRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Renderer.VAST))
         val wrapper = """
             <VAST version="4.2"><Ad id="1"><Wrapper><AdSystem>test</AdSystem>
             <VASTAdTagURI><![CDATA[${server.url("/wrapped.xml")}]]></VASTAdTagURI>
@@ -490,9 +490,16 @@ class VideoAdTrackingTest {
             waitFor("the video screen to go") { Unit.takeIf { videoScreens().isEmpty() } }
             queued.assertImpression(queued.next())
             val gone = queued.next()
-            queued.assertAdEvent(gone, "render_process_gone", EventClass.ERROR, Creative.VAST)
+            queued.assertAdEvent(gone, "render_crashed", EventClass.ERROR, Renderer.VAST)
+            assertEquals("vast", gone.json.getString("renderer"))
             assertTrue(gone.json.getBoolean("did_crash"))
             assertTrue(gone.json.getBoolean("was_shown"))
+            assertTrue(
+                gone.json.toString(),
+                gone.json.getString("renderer_priority_at_exit") in setOf("waived", "bound", "important"),
+            )
+            assertFalse(gone.json.toString(), gone.json.has("crtype"))
+            assertFalse(gone.json.toString(), gone.json.has("creative_type"))
             queued.assertNoMore()
         }
     }

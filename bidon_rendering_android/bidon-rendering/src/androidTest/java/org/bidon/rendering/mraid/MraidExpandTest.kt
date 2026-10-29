@@ -24,7 +24,7 @@ import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.TestCreatives.PAINTED
 import org.bidon.rendering.TestCreatives.SETTLE_MILLIS
 import org.bidon.rendering.tap
-import org.bidon.rendering.telemetry.Creative
+import org.bidon.rendering.telemetry.Renderer
 import org.bidon.rendering.telemetry.QueuedEvents
 import org.bidon.rendering.ui.BlankActivity
 import org.bidon.rendering.ui.CloseButton
@@ -62,7 +62,7 @@ class MraidExpandTest {
     private val directory = File(instrumentation.targetContext.cacheDir, "mraid-expand-${SystemClock.elapsedRealtimeNanos()}")
     private val queued by lazy { QueuedEvents(directory) }
     private val renderer by lazy {
-        MraidRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Creative.MRAID))
+        MraidRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Renderer.MRAID))
     }
     private lateinit var scenario: ActivityScenario<BlankActivity>
     private lateinit var container: FrameLayout

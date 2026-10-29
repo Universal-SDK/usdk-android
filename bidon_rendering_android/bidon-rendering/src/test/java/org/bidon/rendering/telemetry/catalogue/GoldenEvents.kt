@@ -4,11 +4,13 @@ import org.bidon.rendering.telemetry.AdEvents
 import org.bidon.rendering.telemetry.AdType
 import org.bidon.rendering.telemetry.Clock
 import org.bidon.rendering.telemetry.CrashReport
-import org.bidon.rendering.telemetry.Creative
+import org.bidon.rendering.telemetry.Renderer
 import org.bidon.rendering.telemetry.EventClass
 import org.bidon.rendering.telemetry.ErrorCode
 import org.bidon.rendering.telemetry.EventName
 import org.bidon.rendering.telemetry.MonotonicClock
+import org.bidon.rendering.telemetry.ProcessExit
+import org.bidon.rendering.telemetry.RendererPriority
 import org.bidon.rendering.telemetry.SamplingRate
 import org.bidon.rendering.telemetry.SessionId
 import org.bidon.rendering.telemetry.Telemetry
@@ -38,11 +40,11 @@ internal object GoldenEvents {
                 IllegalStateException("never sent", IOException("never sent")),
             )
         }
-        EventName.RENDER_PROCESS_GONE -> adEvent(name) {
+        EventName.RENDER_CRASHED -> adEvent(name) {
             rendered()
-            processGone(didCrash = true)
+            processGone(ProcessExit(didCrash = true, priorityAtExit = RendererPriority.IMPORTANT))
         }
-        EventName.RENDER_CRASHED -> String(
+        EventName.SDK_CRASHED -> String(
             CrashReport(listOf("org.bidon.rendering."), SESSION, CLOCK).encode(crash(), onMainThread = true)!!,
             Charsets.UTF_8,
         )
@@ -72,7 +74,7 @@ internal object GoldenEvents {
             override fun sync() = Unit
         }
         var elapsed = 10_000L
-        AdEvents(telemetry, SESSION, AUCTION, AdType.INTERSTITIAL, Creative.HTML, CLOCK, MonotonicClock { elapsed })
+        AdEvents(telemetry, SESSION, AUCTION, AdType.INTERSTITIAL, Renderer.HTML, "html", CLOCK, MonotonicClock { elapsed })
             .actions { elapsed += it }
         return emitted.getValue(name.wireName)
     }

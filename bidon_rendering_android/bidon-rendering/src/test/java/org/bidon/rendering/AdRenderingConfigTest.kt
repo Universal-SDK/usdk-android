@@ -10,7 +10,8 @@ class AdRenderingConfigTest {
 
     /**
      * The `rendering` object of a live staging auction on 2026-09-11. The DSP sent no config, so
-     * every value in it is a server default.
+     * every value in it is a server default, except the creative type: the server filled in
+     * `static_image` then, and since 2026-09-22 leaves the type empty when the DSP declares none.
      */
     private val liveServerDefaults = """
         {
@@ -49,7 +50,11 @@ class AdRenderingConfigTest {
     fun `the renderer defaults are the server defaults`() {
         // Until the config reaches the device, the renderer runs on its own defaults. Keeping them
         // equal to the server's means nothing changes on screen the day it starts arriving.
-        assertEquals(AdRenderingConfig(), parse(liveServerDefaults))
+        val live = parse(liveServerDefaults)
+        assertEquals(AdRenderingConfig(), live.copy(declaredType = null))
+        // The type the server filled in is kept as declared, and picks no renderer.
+        assertEquals("static_image", live.declaredType)
+        assertNull(live.declaredCreativeType)
     }
 
     @Test
@@ -66,6 +71,7 @@ class AdRenderingConfigTest {
             assertEquals(12, paddingDp)
         }
         assertEquals(15_000L, config.skipOffsetMs)
+        assertNull(config.declaredType)
         assertNull(config.declaredCreativeType)
         assertEquals(50, config.impressionTracking.minViewablePercent)
         assertEquals(1_000L, config.impressionTracking.minViewableMs)
@@ -108,7 +114,7 @@ class AdRenderingConfigTest {
                     paddingDp = 20
                 ),
                 skipOffsetMs = 3_000,
-                declaredCreativeType = CreativeType.MRAID,
+                declaredType = "mraid",
                 impressionTracking = ImpressionTracking(minViewablePercent = 70, minViewableMs = 2_000)
             ),
             config
@@ -161,6 +167,51 @@ class AdRenderingConfigTest {
     }
 
     @Test
+    fun `the six creative types a DSP can declare are kept as declared`() {
+        listOf("html", "mraid", "vast", "static_image", "native", "playable").forEach { type ->
+            assertEquals(type, declaredType(type))
+        }
+    }
+
+    @Test
+    fun `a declared type is kept as delivered, and one that is not exactly one of the six is absent`() {
+        listOf("HTML", "Mraid", "VAST", "Static_Image", " html", "html ", "video", "banner", "", "none", "static-image")
+            .forEach { assertNull("'$it'", declaredType(it)) }
+    }
+
+    @Test
+    fun `a declared type is absent when the creative, its type or the whole config is missing or not text`() {
+        assertNull(AdRenderingConfig.fromJson(null).declaredType)
+        assertNull(parse("{}").declaredType)
+        assertNull(parse("""{ "creative": {} }""").declaredType)
+        assertNull(parse("""{ "creative": { "type": null } }""").declaredType)
+        assertNull(parse("""{ "creative": { "type": 7 } }""").declaredType)
+        assertNull(parse("""{ "creative": { "type": ["html"] } }""").declaredType)
+        assertNull(parse("""{ "creative": "html" }""").declaredType)
+    }
+
+    @Test
+    fun `a declared type other than html or mraid declares no renderer`() {
+        listOf("vast", "static_image", "native", "playable").forEach { type ->
+            assertNull(type, parse("""{ "creative": { "type": "$type" } }""").declaredCreativeType)
+            assertEquals(type, declaredType(type))
+        }
+        assertEquals(CreativeType.HTML, parse("""{ "creative": { "type": "html" } }""").declaredCreativeType)
+        assertEquals(CreativeType.MRAID, parse("""{ "creative": { "type": "mraid" } }""").declaredCreativeType)
+    }
+
+    @Test
+    fun `a declared vast is kept but still cannot be a declared renderer`() {
+        val config = parse("""{ "creative": { "type": "vast" } }""")
+
+        assertEquals("vast", config.declaredType)
+        assertNull(config.declaredCreativeType)
+    }
+
+    private fun declaredType(type: String): String? =
+        parse("""{ "creative": { "type": "$type" } }""").declaredType
+
+    @Test
     fun `unknown values fall back to the defaults`() {
         val button = closeButton(""" "style": "huge", "position": "center", "color": "white" """)
         assertEquals(CloseButtonConfig(), button)
@@ -207,8 +258,8 @@ class AdRenderingConfigTest {
         assertThrows(IllegalArgumentException::class.java) { CloseButtonConfig(sizeDp = 100) }
         assertThrows(IllegalArgumentException::class.java) { CloseButtonConfig(color = 0x80FFFFFF.toInt()) }
         assertThrows(IllegalArgumentException::class.java) { AdRenderingConfig(skipOffsetMs = -1) }
-        assertThrows(IllegalArgumentException::class.java) {
-            AdRenderingConfig(declaredCreativeType = CreativeType.VAST)
-        }
+        assertThrows(IllegalArgumentException::class.java) { AdRenderingConfig(declaredType = "banner") }
+        assertThrows(IllegalArgumentException::class.java) { AdRenderingConfig(declaredType = "VAST") }
+        assertNull(AdRenderingConfig(declaredType = "vast").declaredCreativeType)
     }
 }

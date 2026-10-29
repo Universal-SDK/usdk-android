@@ -18,7 +18,7 @@ import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.html.HtmlRenderer
 import org.bidon.rendering.mraid.MraidRenderer
 import org.bidon.rendering.mraid.ui.MraidAdActivity
-import org.bidon.rendering.telemetry.Creative
+import org.bidon.rendering.telemetry.Renderer
 import org.bidon.rendering.telemetry.QueuedEvents
 import org.json.JSONObject
 import org.junit.After
@@ -303,8 +303,8 @@ class DisplayRewardTest {
     private fun newRenderer(kind: Kind, rendering: AdRenderingConfig): AdRenderer {
         val context = instrumentation.targetContext
         return when (kind) {
-            Kind.HTML -> HtmlRenderer(context, rendering, queued.adEvents(Creative.HTML))
-            Kind.MRAID -> MraidRenderer(context, rendering, queued.adEvents(Creative.MRAID))
+            Kind.HTML -> HtmlRenderer(context, rendering, queued.adEvents(Renderer.HTML))
+            Kind.MRAID -> MraidRenderer(context, rendering, queued.adEvents(Renderer.MRAID))
         }
     }
 

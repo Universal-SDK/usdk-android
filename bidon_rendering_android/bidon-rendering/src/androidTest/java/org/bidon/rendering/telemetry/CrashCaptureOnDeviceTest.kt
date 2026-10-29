@@ -30,7 +30,7 @@ class CrashCaptureOnDeviceTest {
         val (crashed, next) = crashAndRestart(CrashVictimService.CRASH_IN_OUR_THREAD)
 
         val event = JSONObject(next.getStringArrayList(CrashVictimService.ERRORS)!!.single())
-        assertEquals("render_crashed", event.getJSONObject("envelope").getString("event_name"))
+        assertEquals("sdk_crashed", event.getJSONObject("envelope").getString("event_name"))
         assertFalse(event.getBoolean("crashed_on_main_thread"))
         val exception = event.getJSONArray("exceptions").getJSONObject(0)
         assertEquals("java.lang.IllegalStateException", exception.getString("class"))
@@ -46,8 +46,27 @@ class CrashCaptureOnDeviceTest {
         val (_, next) = crashAndRestart(CrashVictimService.CRASH_IN_OUR_COROUTINE)
 
         val event = JSONObject(next.getStringArrayList(CrashVictimService.ERRORS)!!.single())
-        assertEquals("render_crashed", event.getJSONObject("envelope").getString("event_name"))
+        assertEquals("sdk_crashed", event.getJSONObject("envelope").getString("event_name"))
         assertTrue(event.getBoolean("crashed_on_main_thread"))
+        assertTrue(next.hostReport!!.endsWith("java.lang.IllegalStateException: ours"))
+    }
+
+    @Test
+    fun aCrashInAListenerCalledFromVastRendererIsInTheNextProcessErrorQueue() {
+        val (crashed, next) = crashAndRestart(CrashVictimService.CRASH_IN_VAST_LISTENER)
+
+        val event = JSONObject(next.getStringArrayList(CrashVictimService.ERRORS)!!.single())
+        val envelope = event.getJSONObject("envelope")
+        assertEquals("sdk_crashed", envelope.getString("event_name"))
+        assertEquals(crashed.session, envelope.getString("session_id"))
+        assertTrue(event.getBoolean("crashed_on_main_thread"))
+        val exception = event.getJSONArray("exceptions").getJSONObject(0)
+        assertEquals("java.lang.IllegalStateException", exception.getString("class"))
+        val frames = (0 until exception.getJSONArray("frames").length()).map { exception.getJSONArray("frames").getString(it) }
+        // The listener's frame is the host's, outside org.bidon: only the VastRenderer frame below it makes this ours.
+        assertTrue(frames.toString(), frames.first().startsWith("com.example.host.ThrowingListener.onLoaded("))
+        assertTrue(frames.toString(), frames.any { it.startsWith("org.bidon.rendering.vast.VastRenderer") })
+        assertFalse("the message was stored", event.toString().contains("ours"))
         assertTrue(next.hostReport!!.endsWith("java.lang.IllegalStateException: ours"))
     }
 

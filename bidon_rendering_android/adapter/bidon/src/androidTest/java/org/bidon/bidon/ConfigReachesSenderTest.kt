@@ -3,11 +3,15 @@ package org.bidon.bidon
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Context
+import android.os.Build
+import android.webkit.WebView
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import org.bidon.rendering.AdInfo
 import org.bidon.rendering.AdRenderer
+import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.AdType
 import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.CreativeType
@@ -124,6 +128,29 @@ class ConfigReachesSenderTest {
         assertEquals("key-from-preferences", batch.getJSONObject("app").getString("key"))
     }
 
+    /**
+     * The creative type the DSP declared in the bid's `rendering` reaches the event of a WebView death through
+     * `createRenderer`, as the adapter hands it over: a playable drawn by the HTML renderer, whose process crashes.
+     */
+    @Test
+    @SdkSuppress(minSdkVersion = Build.VERSION_CODES.O)
+    fun theDeclaredCreativeTypeOfADyingWebViewReachesTheBatch() {
+        val ingest = ingest()
+        initAdapter(section(ingest.url, appKey = "declared-type-key"))
+        val auctionId = auctionId("declared-type")
+
+        crashRenderProcess(auctionId, AdRenderingConfig.fromJson(JSONObject("""{ "creative": { "type": "playable" } }""")))
+
+        val batch = ingest.awaitBatchWith(auctionId, whileWaiting = ::goToBackground)
+        val events = batch.getJSONArray("events")
+        val crashed = List(events.length()) { events.getJSONObject(it) }.single {
+            val envelope = it.getJSONObject("envelope")
+            envelope.optString("auction_id") == auctionId && envelope.getString("event_name") == "render_crashed"
+        }
+        assertEquals("playable", crashed.getString("crtype"))
+        assertEquals("html", crashed.getString("renderer"))
+    }
+
     private fun ingest() = FakeIngest().also { ingests += it }
 
     private fun auctionId(label: String) = "$label-${System.nanoTime()}"
@@ -160,6 +187,34 @@ class ConfigReachesSenderTest {
         }
         try {
             assertTrue("the blank creative did not fail", failed.await(10, TimeUnit.SECONDS))
+        } finally {
+            instrumentation.runOnMainSync { renderer.destroy() }
+        }
+    }
+
+    /**
+     * Loads a page through a renderer from `createRenderer` with [rendering], labelled with [auctionId], then crashes
+     * the process that renders its WebView, which the renderer reports as `render_crashed`.
+     */
+    private fun crashRenderProcess(auctionId: String, rendering: AdRenderingConfig) {
+        val loaded = CountDownLatch(1)
+        val failed = CountDownLatch(1)
+        lateinit var renderer: AdRenderer
+        instrumentation.runOnMainSync {
+            renderer = BidonRenderer.createRenderer(CreativeType.HTML, rendering, AdInfo(auctionId, AdType.INTERSTITIAL))
+            renderer.load("<html><body><p>ad</p></body></html>", object : AdRenderer.Listener {
+                override fun onLoaded() = loaded.countDown()
+                override fun onImpression() = Unit
+                override fun onClick() = Unit
+                override fun onClose() = Unit
+                override fun onReward() = Unit
+                override fun onError(error: Throwable) = failed.countDown()
+            })
+        }
+        try {
+            assertTrue("the creative did not load", loaded.await(10, TimeUnit.SECONDS))
+            instrumentation.runOnMainSync { (renderer.getView() as WebView).loadUrl("chrome://crash") }
+            assertTrue("the renderer did not end the ad", failed.await(10, TimeUnit.SECONDS))
         } finally {
             instrumentation.runOnMainSync { renderer.destroy() }
         }

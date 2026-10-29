@@ -12,6 +12,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.annotation.RequiresApi
 import org.bidon.rendering.LinkOpener
+import org.bidon.rendering.telemetry.ProcessExit
 
 /**
  * Turns a tap on a creative into a click report and a click-through.
@@ -26,7 +27,7 @@ internal class ClickHandler(
     private val onClick: () -> Unit,
     private val onPageLoaded: (() -> Unit)? = null,
     private val onPageLoadError: ((errorCode: Int, description: String) -> Unit)? = null,
-    private val onWebViewGone: ((didCrash: Boolean) -> Unit)? = null
+    private val onWebViewGone: ((exit: ProcessExit) -> Unit)? = null
 ) : WebViewClient() {
 
     private companion object {
@@ -119,15 +120,19 @@ internal class ClickHandler(
      */
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
-        val didCrash = detail?.didCrash() == true
-        val cause = if (didCrash) "crashed" else "was killed by the system"
+        val exit = processExitOf(detail)
+        val cause = when (exit.didCrash) {
+            true -> "crashed"
+            false -> "was killed by the system"
+            null -> "stopped for a reason the platform did not give"
+        }
         Log.w(TAG, "WebView renderer $cause; ending the ad")
 
         view?.let {
             (it.parent as? ViewGroup)?.removeView(it)
             it.destroy()
         }
-        onWebViewGone?.invoke(didCrash)
+        onWebViewGone?.invoke(exit)
         return true
     }
 }

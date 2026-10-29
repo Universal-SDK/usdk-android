@@ -4,15 +4,15 @@ import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
-/** The kind of creative an event is about, as it is written on the wire. */
-internal enum class Creative(val wireName: String) {
+/** The renderer that drew an ad, as it is written on the wire. */
+internal enum class Renderer(val wireName: String) {
     HTML("html"),
     MRAID("mraid"),
     VAST("vast"),
 }
 
 /**
- * The renderer's telemetry events of one ad: `ad_impression`, `ad_load_failed` and `render_process_gone`.
+ * The renderer's telemetry events of one ad: `ad_impression`, `ad_load_failed` and `render_crashed`.
  *
  * Each event is reported once per ad, whether or not telemetry keeps it, and a death of the render process only while
  * the ad is open. A call takes its place before it emits and holds no lock while it does, so a second call never
@@ -21,13 +21,15 @@ internal enum class Creative(val wireName: String) {
  * Safe to call from any thread, and never throws.
  *
  * @param auctionId the auction the ad won; a blank one is left out of the events
+ * @param declaredType the creative type the DSP declared, left out of the events when `null`
  */
 internal class AdEvents(
     private val telemetry: Telemetry,
     private val sessionId: SessionId,
     private val auctionId: String?,
     private val adType: AdType?,
-    private val creative: Creative,
+    private val renderer: Renderer,
+    private val declaredType: String?,
     private val clock: Clock,
     private val monotonicClock: MonotonicClock,
 ) {
@@ -105,17 +107,21 @@ internal class AdEvents(
     }
 
     /**
-     * The WebView's render process died: emits `render_process_gone`, unless the ad was [closed] first. `was_shown`
-     * tells whether [rendered] had been called by then. The load failure the WebView reports after a death is the
-     * same failure, so it is not reported again, even when the death itself is not.
+     * The WebView's render process died: emits `render_crashed` with the renderer, the declared `crtype` and what
+     * [exit] knows of the cause and the priority, unless the ad was [closed] first. Only the first death of an ad is
+     * reported, with its own detail. `was_shown` tells whether [rendered] had been called by then. The load failure
+     * the WebView reports after a death is the same failure, so it is not reported again, even when the death itself
+     * is not.
      */
-    fun processGone(didCrash: Boolean) {
+    fun processGone(exit: ProcessExit) {
         val wasShown = renderReported.get()
         loadFailureReported.set(true)
         if (!processGoneReported.compareAndSet(false, true)) return
-        emit(EventName.RENDER_PROCESS_GONE, EventClass.ERROR) {
-            put("creative_type", creative.wireName)
-            put("did_crash", didCrash)
+        emit(EventName.RENDER_CRASHED, EventClass.ERROR) {
+            put("renderer", renderer.wireName)
+            if (declaredType != null) put("crtype", declaredType)
+            exit.didCrash?.let { put("did_crash", it) }
+            exit.priorityAtExit?.let { put("renderer_priority_at_exit", it.wireName) }
             put("was_shown", wasShown)
         }
     }

@@ -13,7 +13,7 @@ class CreativeTypeTest {
 
     private val undeclared = AdRenderingConfig()
 
-    private fun declared(type: CreativeType) = AdRenderingConfig(declaredCreativeType = type)
+    private fun declared(type: CreativeType) = AdRenderingConfig(declaredType = type.name.lowercase())
 
     @Test
     fun `plain markup is html`() {

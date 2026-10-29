@@ -15,7 +15,7 @@ import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.LocalHttpServer
 import org.bidon.rendering.mraid.MraidRenderer
-import org.bidon.rendering.telemetry.Creative
+import org.bidon.rendering.telemetry.Renderer
 import org.bidon.rendering.telemetry.EventClass
 import org.bidon.rendering.telemetry.QueuedEvents
 import org.bidon.rendering.ui.BlankActivity
@@ -76,7 +76,7 @@ class BlankCreativeTest {
         }
     }
 
-    private enum class Kind(val creative: Creative) { HTML(Creative.HTML), MRAID(Creative.MRAID) }
+    private enum class Kind(val renderer: Renderer) { HTML(Renderer.HTML), MRAID(Renderer.MRAID) }
 
     // A page with nothing on it
 
@@ -746,7 +746,11 @@ class BlankCreativeTest {
         assertTrue("the death was not handled", events.failed.await(30, TimeUnit.SECONDS))
         SystemClock.sleep(SECOND_PAGE_SETTLE_MILLIS)
         assertEquals("onError count", 1, events.errorCalls.get())
-        queued.assertAdEvent(queued.next(), "render_process_gone", EventClass.ERROR, kind.creative)
+        val gone = queued.next()
+        queued.assertAdEvent(gone, "render_crashed", EventClass.ERROR, kind.renderer)
+        assertEquals(true, gone.json.getBoolean("did_crash"))
+        assertEquals(false, gone.json.getBoolean("was_shown"))
+        assertTrue(gone.json.toString(), gone.json.getString("renderer_priority_at_exit") in setOf("waived", "bound", "important"))
         assertFalse("onLoaded after the death", events.loaded.await(AFTER_WINDOW_MILLIS, TimeUnit.MILLISECONDS))
         queued.assertNoMore()
     }
@@ -780,8 +784,8 @@ class BlankCreativeTest {
     }
 
     private fun renderer(kind: Kind): AdRenderer = when (kind) {
-        Kind.HTML -> HtmlRenderer(context, AdRenderingConfig(), queued.adEvents(kind.creative))
-        Kind.MRAID -> MraidRenderer(context, AdRenderingConfig(), queued.adEvents(kind.creative))
+        Kind.HTML -> HtmlRenderer(context, AdRenderingConfig(), queued.adEvents(kind.renderer))
+        Kind.MRAID -> MraidRenderer(context, AdRenderingConfig(), queued.adEvents(kind.renderer))
     }.also { renderers += it }
 
     private fun load(renderer: AdRenderer, document: String, events: Events) =

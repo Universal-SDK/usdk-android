@@ -16,7 +16,7 @@ import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.html.HtmlRenderer
 import org.bidon.rendering.mraid.MraidRenderer
-import org.bidon.rendering.telemetry.Creative
+import org.bidon.rendering.telemetry.Renderer
 import org.bidon.rendering.telemetry.EventClass
 import org.bidon.rendering.telemetry.QueuedEvents
 import org.bidon.rendering.waitUntil
@@ -64,7 +64,7 @@ class InlineAdTelemetryTest {
         override fun onError(error: Throwable) = failed.countDown()
     }
 
-    private enum class Kind(val creative: Creative) { HTML(Creative.HTML), MRAID(Creative.MRAID) }
+    private enum class Kind(val renderer: Renderer) { HTML(Renderer.HTML), MRAID(Renderer.MRAID) }
 
     @Test
     fun anHtmlBannerPlacedByTheHostIsRenderedOnce() = aBannerPlacedByTheHostIsRenderedOnce(Kind.HTML)
@@ -330,8 +330,8 @@ class InlineAdTelemetryTest {
     }
 
     private fun renderer(kind: Kind): AdRenderer = when (kind) {
-        Kind.HTML -> HtmlRenderer(context, AdRenderingConfig(), queued.adEvents(kind.creative))
-        Kind.MRAID -> MraidRenderer(context, AdRenderingConfig(), queued.adEvents(kind.creative))
+        Kind.HTML -> HtmlRenderer(context, AdRenderingConfig(), queued.adEvents(kind.renderer))
+        Kind.MRAID -> MraidRenderer(context, AdRenderingConfig(), queued.adEvents(kind.renderer))
     }
 
     private fun load(renderer: AdRenderer, kind: Kind, events: Events) =

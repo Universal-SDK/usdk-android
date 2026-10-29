@@ -49,7 +49,7 @@ class TelemetrySettingsOnDeviceTest {
                 data = Bundle().apply { putString(CrashVictimService.CERTIFICATE, FakeIngest.certificatePem) },
             )
             // Bound until the batch arrives, so the process lives long enough to send it.
-            started to ingest.awaitBatch { batch -> batch.events().any { it.eventName == "render_crashed" } }
+            started to ingest.awaitBatch { batch -> batch.events().any { it.eventName == "sdk_crashed" } }
         }
         awaitDeath(started.arg1)
 
@@ -57,7 +57,7 @@ class TelemetrySettingsOnDeviceTest {
         assertEquals("run-1-key", batch.getJSONObject("app").getString("key"))
         assertEquals(context.packageName, batch.getJSONObject("app").getString("bundle"))
         assertEquals(started.data.session, batch.getJSONObject("session").getString("id"))
-        val crash = batch.events().single { it.eventName == "render_crashed" }
+        val crash = batch.events().single { it.eventName == "sdk_crashed" }
         assertEquals("not run 1's crash", configured.data.session, crash.getJSONObject("envelope").getString("session_id"))
     }
 
