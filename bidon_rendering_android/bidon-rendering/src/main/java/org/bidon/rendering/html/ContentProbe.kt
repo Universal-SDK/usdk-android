@@ -7,7 +7,13 @@ import android.webkit.WebView
 
 /**
  * Tells whether a loaded page shows anything that can be seen, waiting up to [EMPTY_PAGE_WAIT_MILLIS] for a page that is empty
- * when it finishes loading. Reads the page, never its size: the WebView is not in a window while the ad loads.
+ * when it finishes loading, and up to [SILENT_PAGE_LIMIT_MILLIS] for a page that stops answering. Reads the page, never its size: the WebView is not in a window while the ad loads.
+ *
+ * A page that has not answered once the wait and its grace are over counts as content, but is not reported yet: silence
+ * does not tell a page whose script holds its thread from one whose render process is dying. The page's next answer,
+ * whatever it says, shows it is alive and reports it; failing that, it is reported once [SILENT_PAGE_LIMIT_MILLIS] have
+ * passed since the start. The renderer cancels the probe when the render process dies, so a page that dies in between
+ * reports only its death.
  *
  * [onResult] is called once, on the main thread, unless [cancel] is called first. Call from the main thread.
  */
@@ -19,11 +25,13 @@ internal class ContentProbe(
     private val handler = Handler(Looper.getMainLooper())
     private var deadline = 0L
     private var isDone = false
+    private var isOverdue = false
 
     fun start() {
         deadline = SystemClock.uptimeMillis() + EMPTY_PAGE_WAIT_MILLIS
-        // A page whose script holds its thread never answers; it is not judged, so it counts as content.
-        handler.postDelayed({ finish(hasContent = true) }, EMPTY_PAGE_WAIT_MILLIS + ANSWER_GRACE_MILLIS)
+        // A page whose script holds its thread does not answer; it is not judged, so it counts as content.
+        handler.postDelayed({ isOverdue = true }, EMPTY_PAGE_WAIT_MILLIS + ANSWER_GRACE_MILLIS)
+        handler.postDelayed({ finish(hasContent = true) }, SILENT_PAGE_LIMIT_MILLIS)
         check()
     }
 
@@ -37,7 +45,7 @@ internal class ContentProbe(
             if (isDone) return@evaluateJavascript
             when {
                 // Only a definite "no" counts: a page the script could not read is given the benefit of the doubt.
-                answer != "false" -> finish(hasContent = true)
+                answer != "false" || isOverdue -> finish(hasContent = true)
                 SystemClock.uptimeMillis() >= deadline -> finish(hasContent = false)
                 else -> handler.postDelayed(::check, POLL_MILLIS)
             }
@@ -57,9 +65,19 @@ internal class ContentProbe(
         /** What a renderer reports for a page that showed nothing. */
         fun blankCreative() = IllegalStateException("The creative shows nothing")
 
+        /**
+         * How long from the start a page that has stopped answering is waited for before it counts as content anyway.
+         * Longer, on purpose, than the ad unit's load timeout, usually 6 s: under that timeout a page still silent when it
+         * runs out ends as a timed-out load, one outcome, and a page that silent is broken anyway. A shorter limit would
+         * report the load before the timeout could cut it, and a render process that dies after that would make a second
+         * outcome. A death before the limit is the only outcome; a live page that answers loads as soon as it lets go.
+         * The limit itself only ends the wait for a host that has no timeout of its own.
+         */
+        const val SILENT_PAGE_LIMIT_MILLIS = 12_000L
+
         private const val POLL_MILLIS = 100L
 
-        /** How much longer than the wait a page that does not answer at all is given. */
+        /** How much longer than the wait a page that does not answer at all is given before it counts as content. */
         private const val ANSWER_GRACE_MILLIS = 500L
 
         /**
