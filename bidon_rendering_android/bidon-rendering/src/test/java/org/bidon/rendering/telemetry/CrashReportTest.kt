@@ -49,6 +49,27 @@ class CrashReportTest {
     }
 
     @Test
+    fun `a crash whose only frame of ours is an adapter frame is ours and is recorded as sdk_crashed`() {
+        val adapterOnly = crash(
+            frame("kotlinx.coroutines.DispatchedTask", "run"),
+            frame("org.bidon.bidon.RendererLoadDeadline", "onTimeout", 31),
+            frame("android.os.Looper", "loop"),
+        )
+
+        assertTrue(report.isOwn(adapterOnly))
+        val event = decode(report.encode(adapterOnly, onMainThread = true)!!)
+        assertEquals("sdk_crashed", event.getJSONObject("envelope").getString("event_name"))
+        assertEquals(
+            listOf(
+                "kotlinx.coroutines.DispatchedTask.run(Test.kt:1)",
+                "org.bidon.bidon.RendererLoadDeadline.onTimeout(Test.kt:31)",
+                "android.os.Looper.loop(Test.kt:1)",
+            ),
+            event.getJSONArray("exceptions").getJSONObject(0).getJSONArray("frames").strings(),
+        )
+    }
+
+    @Test
     fun `a cause chain that loops back on itself is walked once`() {
         val first = crash(host("A", "a"))
         val second = crash(host("B", "b"))
@@ -61,11 +82,11 @@ class CrashReportTest {
     }
 
     @Test
-    fun `the event is render_crashed, in the envelope, with the time and session of the crash`() {
+    fun `the event is sdk_crashed, in the envelope, with the time and session of the crash`() {
         val event = decode(report.encode(crash(own("vast.VastRenderer", "load")), onMainThread = true)!!)
 
         val envelope = event.getJSONObject("envelope")
-        assertEquals("render_crashed", envelope.getString("event_name"))
+        assertEquals("sdk_crashed", envelope.getString("event_name"))
         assertEquals(session.value, envelope.getString("session_id"))
         assertEquals(1_790_000_000_000, envelope.getLong("event_ts"))
         assertTrue(envelope.getString("event_id").isNotBlank())

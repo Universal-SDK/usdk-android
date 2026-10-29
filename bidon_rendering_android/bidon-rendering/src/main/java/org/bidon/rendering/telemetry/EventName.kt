@@ -8,5 +8,5 @@ internal enum class EventName(val wireName: String) {
     AD_IMPRESSION("ad_impression"),
     AD_LOAD_FAILED("ad_load_failed"),
     RENDER_PROCESS_GONE("render_process_gone"),
-    RENDER_CRASHED("render_crashed"),
+    SDK_CRASHED("sdk_crashed"),
 }

@@ -80,12 +80,8 @@ class CatalogueConformanceTest {
     }
 
     @Test
-    fun `no sample breaks a rule the pending list does not name even for a known event`() {
-        // render_crashed is a catalogue name, so its two extra fields must be the only thing it breaks.
-        val crashed = violationsBySample().getValue(EventName.RENDER_CRASHED)
-        assertEquals(
-            setOf("crashed_on_main_thread", "exceptions"),
-            crashed.map { it.key }.toSet(),
-        )
+    fun `sdk_crashed is pending as an event the catalogue does not know yet, and breaks nothing else`() {
+        val crash = violationsBySample().getValue(EventName.SDK_CRASHED)
+        assertEquals(listOf(Violation("sdk_crashed", "envelope.event_name", Rule.UNKNOWN_EVENT)), crash)
     }
 }

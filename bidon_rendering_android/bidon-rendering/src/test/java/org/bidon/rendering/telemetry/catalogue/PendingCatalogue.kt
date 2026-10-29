@@ -16,12 +16,8 @@ internal object PendingCatalogue {
             removedBy = "Telemetry: a dying WebView arrives as `render_crashed`, telling a crash from a system kill",
         ),
         Entry(
-            "render_crashed", "crashed_on_main_thread", Rule.UNKNOWN_FIELD,
-            removedBy = "Telemetry: a crash in our code arrives as `sdk_crashed`, including crashes inside our coroutines",
-        ),
-        Entry(
-            "render_crashed", "exceptions", Rule.UNKNOWN_FIELD,
-            removedBy = "Telemetry: a crash in our code arrives as `sdk_crashed`, including crashes inside our coroutines",
+            "sdk_crashed", "envelope.event_name", Rule.UNKNOWN_EVENT,
+            removedBy = "Telemetry: crash, drop and exception-class data survive ingest on staging",
         ),
         Entry(
             "ad_load_failed", "external_error_code", Rule.UNKNOWN_FIELD,

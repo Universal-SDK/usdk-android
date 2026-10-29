@@ -42,7 +42,7 @@ internal object GoldenEvents {
             rendered()
             processGone(didCrash = true)
         }
-        EventName.RENDER_CRASHED -> String(
+        EventName.SDK_CRASHED -> String(
             CrashReport(listOf("org.bidon.rendering."), SESSION, CLOCK).encode(crash(), onMainThread = true)!!,
             Charsets.UTF_8,
         )

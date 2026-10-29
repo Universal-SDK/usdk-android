@@ -30,7 +30,7 @@ class CrashCaptureOnDeviceTest {
         val (crashed, next) = crashAndRestart(CrashVictimService.CRASH_IN_OUR_THREAD)
 
         val event = JSONObject(next.getStringArrayList(CrashVictimService.ERRORS)!!.single())
-        assertEquals("render_crashed", event.getJSONObject("envelope").getString("event_name"))
+        assertEquals("sdk_crashed", event.getJSONObject("envelope").getString("event_name"))
         assertFalse(event.getBoolean("crashed_on_main_thread"))
         val exception = event.getJSONArray("exceptions").getJSONObject(0)
         assertEquals("java.lang.IllegalStateException", exception.getString("class"))
@@ -46,7 +46,7 @@ class CrashCaptureOnDeviceTest {
         val (_, next) = crashAndRestart(CrashVictimService.CRASH_IN_OUR_COROUTINE)
 
         val event = JSONObject(next.getStringArrayList(CrashVictimService.ERRORS)!!.single())
-        assertEquals("render_crashed", event.getJSONObject("envelope").getString("event_name"))
+        assertEquals("sdk_crashed", event.getJSONObject("envelope").getString("event_name"))
         assertTrue(event.getBoolean("crashed_on_main_thread"))
         assertTrue(next.hostReport!!.endsWith("java.lang.IllegalStateException: ours"))
     }
