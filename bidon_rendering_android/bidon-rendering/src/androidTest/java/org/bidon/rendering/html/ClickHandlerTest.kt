@@ -4,9 +4,12 @@ import android.app.Instrumentation.ActivityMonitor
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
+import android.os.Build
 import android.webkit.WebResourceRequest
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
+import org.bidon.rendering.telemetry.ProcessExit
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -62,6 +65,17 @@ class ClickHandlerTest {
             onClick = { clicks++ }
         )
         return handler.shouldOverrideUrlLoading(null, FakeRequest(Uri.parse(url), tapped))
+    }
+
+    /** A death the platform gives no detail for is passed on with its cause unknown, never as a system kill. */
+    @Test
+    @SdkSuppress(minSdkVersion = Build.VERSION_CODES.O)
+    fun aRendererDeathWithoutDetailIsPassedOnWithItsCauseUnknown() {
+        var exit: ProcessExit? = null
+        val handler = ClickHandler(context = instrumentation.targetContext, onClick = {}, onWebViewGone = { exit = it })
+
+        assertTrue(handler.onRenderProcessGone(null, null))
+        assertEquals(ProcessExit(didCrash = null, priorityAtExit = null), exit)
     }
 
     @Test

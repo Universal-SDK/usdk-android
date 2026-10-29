@@ -13,6 +13,7 @@ import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.telemetry.ErrorCode
+import org.bidon.rendering.telemetry.ProcessExit
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.vast.RewardedController
 import org.bidon.rendering.vast.SkipOffset
@@ -289,8 +290,8 @@ internal class VideoAdActivity : AppCompatActivity() {
                     finish()
                 }
 
-                override fun onRendererGone(didCrash: Boolean) {
-                    presentation?.events?.processGone(didCrash)
+                override fun onRendererGone(exit: ProcessExit) {
+                    presentation?.events?.processGone(exit)
                     finish()
                 }
             })

@@ -17,6 +17,7 @@ import androidx.core.view.doOnAttach
 import org.bidon.rendering.mraid.ui.MraidAdActivity
 import org.bidon.rendering.telemetry.AdEvents
 import org.bidon.rendering.telemetry.ErrorCode
+import org.bidon.rendering.telemetry.ProcessExit
 
 internal class MraidRenderer(
     private val context: Context,
@@ -223,9 +224,9 @@ internal class MraidRenderer(
      * closed it, and the screen reports the close; a screen that is still starting finds no view and ends the ad
      * itself.
      */
-    private fun onWebViewGone(didCrash: Boolean) {
+    private fun onWebViewGone(exit: ProcessExit) {
         cancelProbe()
-        events?.processGone(didCrash)
+        events?.processGone(exit)
         // Takes down an expanded ad's dialog, which the WebView was drawn in.
         controller?.destroy()
         controller = null

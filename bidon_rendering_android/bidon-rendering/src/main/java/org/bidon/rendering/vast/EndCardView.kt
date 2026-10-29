@@ -11,6 +11,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import coil.load
 import org.bidon.rendering.LinkOpener
+import org.bidon.rendering.telemetry.ProcessExit
 import org.bidon.rendering.html.ClickHandler
 import org.bidon.rendering.html.HtmlWebView
 import org.bidon.rendering.vast.CompanionResource
@@ -30,7 +31,7 @@ internal class EndCardView(
         fun onError(error: Throwable)
 
         /** The HTML end card's renderer process died, and the WebView is already destroyed. */
-        fun onRendererGone(didCrash: Boolean)
+        fun onRendererGone(exit: ProcessExit)
     }
 
     private var listener: Listener? = null
@@ -179,10 +180,10 @@ internal class EndCardView(
                 onClick = { listener?.onClick() },
                 onPageLoaded = {},
                 onPageLoadError = { _, description -> listener?.onError(Exception(description)) },
-                onWebViewGone = { didCrash ->
+                onWebViewGone = { exit ->
                     // Already destroyed by the ClickHandler.
                     webView = null
-                    listener?.onRendererGone(didCrash)
+                    listener?.onRendererGone(exit)
                 }
             )
 

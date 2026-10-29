@@ -1,6 +1,7 @@
 package org.bidon.rendering
 
 import org.bidon.rendering.telemetry.EventClass
+import org.bidon.rendering.telemetry.ProcessExit
 import org.bidon.rendering.telemetry.SamplingRate
 import org.bidon.rendering.telemetry.Telemetry
 import org.bidon.rendering.telemetry.TelemetryEvent
@@ -34,10 +35,12 @@ class RendererTelemetryAdEventsTest {
             for ((adType, adTypeWire) in adTypes) {
                 val telemetry = Captured()
                 RendererTelemetry.adEvents(telemetry, creative, AdInfo("auction-$creativeWire", adType))!!
-                    .processGone(didCrash = false)
+                    .processGone(ProcessExit(didCrash = false, priorityAtExit = null))
 
                 val event = telemetry.events.single()
-                assertEquals(creativeWire, event.getString("creative_type"))
+                assertEquals(creativeWire, event.getString("renderer"))
+                assertFalse(event.has("creative_type"))
+                assertFalse(event.has("crtype"))
                 assertEquals(adTypeWire, event.getJSONObject("envelope").getString("ad_type"))
                 assertEquals("auction-$creativeWire", event.getJSONObject("envelope").getString("auction_id"))
             }

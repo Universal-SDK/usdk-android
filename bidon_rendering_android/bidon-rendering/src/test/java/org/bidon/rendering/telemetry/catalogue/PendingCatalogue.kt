@@ -12,11 +12,19 @@ internal object PendingCatalogue {
 
     val entries = listOf(
         Entry(
-            "render_process_gone", "envelope.event_name", Rule.UNKNOWN_EVENT,
-            removedBy = "Telemetry: a dying WebView arrives as `render_crashed`, telling a crash from a system kill",
+            "sdk_crashed", "envelope.event_name", Rule.UNKNOWN_EVENT,
+            removedBy = "Telemetry: crash, drop and exception-class data survive ingest on staging",
         ),
         Entry(
-            "sdk_crashed", "envelope.event_name", Rule.UNKNOWN_EVENT,
+            "render_crashed", "did_crash", Rule.UNKNOWN_FIELD,
+            removedBy = "Telemetry: crash, drop and exception-class data survive ingest on staging",
+        ),
+        Entry(
+            "render_crashed", "was_shown", Rule.UNKNOWN_FIELD,
+            removedBy = "Telemetry: crash, drop and exception-class data survive ingest on staging",
+        ),
+        Entry(
+            "render_crashed", "renderer_priority_at_exit", Rule.UNKNOWN_FIELD,
             removedBy = "Telemetry: crash, drop and exception-class data survive ingest on staging",
         ),
         Entry(

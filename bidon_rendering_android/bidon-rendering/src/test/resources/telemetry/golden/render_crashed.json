@@ -1,14 +1,15 @@
 {
-  "creative_type": "html",
   "did_crash": true,
   "envelope": {
     "ad_type": "interstitial",
     "auction_id": "8b0f3c2e-5d4a-4e1b-9c7f-2a6d8e1b3f50",
     "event_id": "3f2a8c1e-7b4d-4e9a-a1c6-5d8e2f0b9c47",
-    "event_name": "render_process_gone",
+    "event_name": "render_crashed",
     "event_ts": 1790326698635,
     "sampling_rate": 1,
     "session_id": "550e8400-e29b-41d4-a716-446655440000"
   },
+  "renderer": "html",
+  "renderer_priority_at_exit": "important",
   "was_shown": true
 }

@@ -11,6 +11,7 @@ import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.telemetry.AdEvents
 import org.bidon.rendering.telemetry.ErrorCode
+import org.bidon.rendering.telemetry.ProcessExit
 import org.bidon.rendering.ui.AdWindow
 import androidx.core.view.doOnAttach
 import org.bidon.rendering.ui.FullscreenAdActivity
@@ -193,9 +194,9 @@ internal class HtmlRenderer(
      * reports the close; a screen that is still starting finds no view and ends the ad itself. An ad already closed
      * has nothing left to report.
      */
-    private fun onWebViewGone(didCrash: Boolean) {
+    private fun onWebViewGone(exit: ProcessExit) {
         cancelProbe()
-        events?.processGone(didCrash)
+        events?.processGone(exit)
         webView = null
         isLoaded = false
         if (presentationKey == null) {

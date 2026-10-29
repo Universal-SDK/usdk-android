@@ -31,8 +31,9 @@ import org.bidon.rendering.mraid.MraidWebView
 import org.bidon.rendering.mraid.ui.MraidAdActivity
 import org.bidon.rendering.vast.CompanionResource
 import org.bidon.rendering.vast.ui.EndCardView
-import org.bidon.rendering.telemetry.Creative
+import org.bidon.rendering.telemetry.Renderer
 import org.bidon.rendering.telemetry.EventClass
+import org.bidon.rendering.telemetry.ProcessExit
 import org.bidon.rendering.telemetry.QueuedEvents
 import org.bidon.rendering.vast.VastCompanion
 import org.junit.After
@@ -123,7 +124,7 @@ class RenderProcessGoneTest {
     @Test
     fun anEndCardWhoseRendererDiesIsRemovedAndReportsIt() {
         val gone = CountDownLatch(1)
-        val crashed = AtomicReference<Boolean>()
+        val reported = AtomicReference<ProcessExit>()
         val errors = AtomicInteger()
         ActivityScenario.launch(BlankActivity::class.java).use { scenario ->
             lateinit var endCard: EndCardView
@@ -133,8 +134,8 @@ class RenderProcessGoneTest {
                         override fun onClose() = Unit
                         override fun onClick() = Unit
                         override fun onError(error: Throwable) = run { errors.incrementAndGet(); Unit }
-                        override fun onRendererGone(didCrash: Boolean) {
-                            crashed.set(didCrash)
+                        override fun onRendererGone(exit: ProcessExit) {
+                            reported.set(exit)
                             gone.countDown()
                         }
                     })
@@ -149,7 +150,8 @@ class RenderProcessGoneTest {
             onMain { webView.loadUrl(CRASH) }
 
             assertTrue("renderer death not reported", gone.await(RENDERER_GONE_SECONDS, TimeUnit.SECONDS))
-            assertEquals(true, crashed.get())
+            assertEquals(true, reported.get().didCrash)
+            assertTrue(reported.get().toString(), reported.get().priorityAtExit != null)
             assertEquals(0, errors.get())
             assertNull(onMain { endCard.find(WebView::class.java) })
             onMain { endCard.destroy() }
@@ -462,8 +464,8 @@ class RenderProcessGoneTest {
 
     private fun load(kind: Kind, events: Events): AdRenderer {
         val renderer = when (kind) {
-            Kind.HTML -> HtmlRenderer(context, AdRenderingConfig(), queued.adEvents(creative(kind)))
-            Kind.MRAID -> MraidRenderer(context, AdRenderingConfig(), queued.adEvents(creative(kind)))
+            Kind.HTML -> HtmlRenderer(context, AdRenderingConfig(), queued.adEvents(rendererOf(kind)))
+            Kind.MRAID -> MraidRenderer(context, AdRenderingConfig(), queued.adEvents(rendererOf(kind)))
         }
         val markup = when (kind) {
             Kind.HTML -> "<html><body><p>ad</p></body></html>"
@@ -474,18 +476,27 @@ class RenderProcessGoneTest {
         return renderer
     }
 
-    private fun creative(kind: Kind) = when (kind) {
-        Kind.HTML -> Creative.HTML
-        Kind.MRAID -> Creative.MRAID
+    private fun rendererOf(kind: Kind) = when (kind) {
+        Kind.HTML -> Renderer.HTML
+        Kind.MRAID -> Renderer.MRAID
     }
 
     private fun assertImpressionCounted() = queued.assertImpression(queued.next())
 
     private fun assertProcessGone(kind: Kind, how: String, afterImpression: Boolean) {
         val event = queued.next(RENDERER_GONE_SECONDS)
-        queued.assertAdEvent(event, "render_process_gone", EventClass.ERROR, creative(kind))
+        queued.assertAdEvent(event, "render_crashed", EventClass.ERROR, rendererOf(kind))
         assertEquals(how == CRASH, event.json.getBoolean("did_crash"))
         assertEquals(afterImpression, event.json.getBoolean("was_shown"))
+        assertTrue(
+            event.json.toString(),
+            event.json.getString("renderer_priority_at_exit") in setOf("waived", "bound", "important"),
+        )
+        // No crtype was declared, and nothing else rides on the event.
+        assertEquals(
+            setOf("envelope", "renderer", "did_crash", "renderer_priority_at_exit", "was_shown"),
+            event.json.keys().asSequence().toSet(),
+        )
     }
 
     /** Ends the process that renders [renderer]'s WebView, the way a crash or the low-memory killer would. */

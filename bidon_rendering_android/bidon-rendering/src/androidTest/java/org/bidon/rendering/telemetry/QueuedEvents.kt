@@ -32,8 +32,8 @@ internal class QueuedEvents(directory: File) {
     )
 
     /** The events of one ad, labelled as the adapter labels an interstitial. */
-    fun adEvents(creative: Creative, adType: AdType = AdType.INTERSTITIAL): AdEvents =
-        AdEvents(telemetry, sessionId, AUCTION_ID, adType, creative, Clock.System, MonotonicClock.System)
+    fun adEvents(renderer: Renderer, adType: AdType = AdType.INTERSTITIAL): AdEvents =
+        AdEvents(telemetry, sessionId, AUCTION_ID, adType, renderer, Clock.System, MonotonicClock.System)
 
     /** The next event stored; fails when none is within [seconds]. */
     fun next(seconds: Long = 10): Stored {
@@ -51,10 +51,10 @@ internal class QueuedEvents(directory: File) {
 
     /**
      * Asserts [event] is the impression of this test's ad of [adType]: an `ad_impression` of class COUNTED, kept at
-     * rate 1, without a creative type.
+     * rate 1, without a renderer.
      */
     fun assertImpression(event: Stored, adType: AdType = AdType.INTERSTITIAL) {
-        assertAdEvent(event, "ad_impression", EventClass.COUNTED, creative = null, adType)
+        assertAdEvent(event, "ad_impression", EventClass.COUNTED, renderer = null, adType)
         assertEquals(1.0, event.json.getJSONObject("envelope").getDouble("sampling_rate"), 0.0)
         assertEquals(false, event.json.get("om_enabled"))
     }
@@ -65,14 +65,14 @@ internal class QueuedEvents(directory: File) {
     }
 
     /**
-     * Asserts [event] is [name] of [eventClass], for this test's ad of [adType], whose creative type is [creative], or
-     * which carries none when [creative] is `null`.
+     * Asserts [event] is [name] of [eventClass], for this test's ad of [adType], whose renderer is [renderer], or
+     * which names none when [renderer] is `null`. No event carries a `creative_type`.
      */
     fun assertAdEvent(
         event: Stored,
         name: String,
         eventClass: EventClass,
-        creative: Creative?,
+        renderer: Renderer?,
         adType: AdType = AdType.INTERSTITIAL,
     ) {
         assertEquals(name, event.name)
@@ -80,10 +80,11 @@ internal class QueuedEvents(directory: File) {
         assertEquals(AUCTION_ID, event.json.getJSONObject("envelope").getString("auction_id"))
         assertEquals(adType.wireName, event.json.getJSONObject("envelope").getString("ad_type"))
         assertEquals(sessionId.value, event.json.getJSONObject("envelope").getString("session_id"))
-        if (creative == null) {
-            assertFalse("creative_type on $name", event.json.has("creative_type"))
+        assertFalse("creative_type on $name", event.json.has("creative_type"))
+        if (renderer == null) {
+            assertFalse("renderer on $name", event.json.has("renderer"))
         } else {
-            assertEquals(creative.wireName, event.json.getString("creative_type"))
+            assertEquals(renderer.wireName, event.json.getString("renderer"))
         }
     }
 

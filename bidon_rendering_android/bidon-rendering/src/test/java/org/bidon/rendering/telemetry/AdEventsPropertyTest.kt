@@ -51,7 +51,7 @@ class AdEventsPropertyTest {
         telemetry: Telemetry,
         auctionId: String? = "a",
         monotonicClock: MonotonicClock = MonotonicClock { 0L },
-    ) = AdEvents(telemetry, session, auctionId, AdType.BANNER, Creative.HTML, { 0L }, monotonicClock)
+    ) = AdEvents(telemetry, session, auctionId, AdType.BANNER, Renderer.HTML, { 0L }, monotonicClock)
 
     // rule 5
 
@@ -64,7 +64,7 @@ class AdEventsPropertyTest {
 
                 events.rendered()
                 events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
-                events.processGone(didCrash = true)
+                events.processGone(ProcessExit(didCrash = true, priorityAtExit = null))
 
                 assertEquals(3, telemetry.emitted.size)
                 telemetry.emitted.forEach { emit ->

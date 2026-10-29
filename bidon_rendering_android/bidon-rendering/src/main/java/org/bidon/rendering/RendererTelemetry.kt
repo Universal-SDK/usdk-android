@@ -17,7 +17,7 @@ import org.bidon.rendering.telemetry.Clock
 import org.bidon.rendering.telemetry.CrashCapture
 import org.bidon.rendering.telemetry.CrashReport
 import org.bidon.rendering.telemetry.CrashSlot
-import org.bidon.rendering.telemetry.Creative
+import org.bidon.rendering.telemetry.Renderer
 import org.bidon.rendering.telemetry.DiskEventStore
 import org.bidon.rendering.telemetry.ConfiguredSender
 import org.bidon.rendering.telemetry.HttpTelemetryClient
@@ -117,7 +117,7 @@ internal object RendererTelemetry {
             sessionId = sessionId,
             auctionId = ad?.auctionId,
             adType = ad?.type?.let(::wireAdType),
-            creative = creative(type),
+            renderer = renderer(type),
             clock = Clock.System,
             monotonicClock = MonotonicClock.System,
         )
@@ -129,10 +129,10 @@ internal object RendererTelemetry {
         AdType.REWARDED -> WireAdType.REWARDED
     }
 
-    private fun creative(type: CreativeType): Creative = when (type) {
-        CreativeType.HTML -> Creative.HTML
-        CreativeType.MRAID -> Creative.MRAID
-        CreativeType.VAST -> Creative.VAST
+    private fun renderer(type: CreativeType): Renderer = when (type) {
+        CreativeType.HTML -> Renderer.HTML
+        CreativeType.MRAID -> Renderer.MRAID
+        CreativeType.VAST -> Renderer.VAST
     }
 
     private fun reportFailure(failure: Throwable) {
