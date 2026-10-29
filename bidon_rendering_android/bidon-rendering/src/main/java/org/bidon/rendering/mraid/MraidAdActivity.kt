@@ -10,6 +10,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
+import org.bidon.rendering.telemetry.ErrorCode
 import org.bidon.rendering.ui.AdWindow
 import org.bidon.rendering.ui.CloseButton
 import org.bidon.rendering.ui.closeAvailableAtMs
@@ -67,6 +68,7 @@ internal class MraidAdActivity : AppCompatActivity() {
             // fails, and is not also reported as closed. One that was, on a screen restored after the system destroyed
             // it in the background, closes, like an ad whose renderer dies while it shows.
             if (!impressionReported) {
+                ad.events?.showFailed(ErrorCode.AD_SCREEN_NO_VIEW)
                 ad.onFailed(IllegalStateException("MRAID ad has no view to display"))
                 presentation = null
             }
@@ -74,7 +76,7 @@ internal class MraidAdActivity : AppCompatActivity() {
             return
         }
 
-        // mraid.close() from inside the creative dismisses this activity.
+        // mraid.close() from inside the creative dismisses this activity; one that came before it started, at once.
         ad.closeRequester = { finish() }
 
         val root = FrameLayout(this).apply {

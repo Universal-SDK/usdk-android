@@ -177,15 +177,16 @@ class RenderProcessGoneTest {
 
     /**
      * A screen that starts after the ad's WebView is gone, which is where a renderer that dies while the screen is
-     * starting leaves it. The ad was never on screen: it fails once and is not also closed.
+     * starting leaves it. The ad was never on screen: it fails once and is not also closed, and the show it was
+     * asked for ends as a show failure (7005, `view_attach`).
      */
     @Test
     fun anHtmlScreenThatFindsNoViewFailsTheAdOnceAndDoesNotCloseIt() =
-        aScreenThatFindsNoViewFailsTheAdOnceAndDoesNotCloseIt(FullscreenAdActivity::class.java)
+        aScreenThatFindsNoViewFailsTheAdOnceAndDoesNotCloseIt(FullscreenAdActivity::class.java, Renderer.HTML)
 
     @Test
     fun anMraidScreenThatFindsNoViewFailsTheAdOnceAndDoesNotCloseIt() =
-        aScreenThatFindsNoViewFailsTheAdOnceAndDoesNotCloseIt(MraidAdActivity::class.java)
+        aScreenThatFindsNoViewFailsTheAdOnceAndDoesNotCloseIt(MraidAdActivity::class.java, Renderer.MRAID)
 
     /**
      * A screen the system destroyed in the background and restores after the ad's WebView went away. The ad was on
@@ -372,15 +373,20 @@ class RenderProcessGoneTest {
         queued.assertNoMore()
     }
 
-    private fun aScreenThatFindsNoViewFailsTheAdOnceAndDoesNotCloseIt(screen: Class<out Activity>) {
+    private fun aScreenThatFindsNoViewFailsTheAdOnceAndDoesNotCloseIt(screen: Class<out Activity>, renderer: Renderer) {
         val failures = AtomicInteger()
         val closes = AtomicInteger()
+        // What the renderer has done by the time its screen starts: the ad loaded, and the host asked to show it.
+        val adEvents = queued.adEvents(renderer).apply {
+            loadSucceeded()
+            showRequested()
+        }
         val key = PresentedAds.register(object : PresentedAd {
             override val contentView: View? = null
             override val closeButton = AdRenderingConfig().closeButton
             override val lockedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             override var closeRequester: (() -> Unit)? = null
-            override val events: AdEvents? = null
+            override val events: AdEvents? = adEvents
             override fun onImpression() = Unit
             override fun onClicked() = Unit
             override fun onClosed() {
@@ -400,6 +406,10 @@ class RenderProcessGoneTest {
             assertEquals("closed an ad that was never shown", 0, closes.get())
         }
         PresentedAds.unregister(key)
+        queued.assertShowRequested(queued.next())
+        queued.assertShowFailed(queued.next(), ErrorCode.AD_SCREEN_NO_VIEW)
+        // The screen closing after its failure is not a second one.
+        queued.assertNoMore()
     }
 
     private fun aScreenRestoredWithoutItsViewClosesTheShownAd(screen: Class<out Activity>) {

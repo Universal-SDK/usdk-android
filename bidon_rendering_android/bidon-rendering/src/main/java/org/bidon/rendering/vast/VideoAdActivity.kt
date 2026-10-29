@@ -232,8 +232,7 @@ internal class VideoAdActivity : AppCompatActivity() {
             }
 
             override fun onError(error: Throwable) {
-                val playerCode = (error as? PlaybackException)?.errorCode
-                presentation?.events?.showFailed(ErrorCode.PLAYER_ERROR, playerCode?.toString(), error)
+                if (!impressionReported) failShow(error)
                 finish()
             }
         })
@@ -250,6 +249,18 @@ internal class VideoAdActivity : AppCompatActivity() {
         impressionReported = true
         eventTracker.onImpression(vastAd?.impressions.orEmpty())
         presentation?.onImpression()
+    }
+
+    /**
+     * The video failed before its first frame: the show fails, and the ad that was never seen is not also reported as
+     * closed. Not called after the impression: the show already ended in it, so the screen just closes.
+     */
+    private fun failShow(error: Throwable) {
+        val shown = presentation ?: return
+        val playerCode = (error as? PlaybackException)?.errorCode
+        shown.events?.showFailed(ErrorCode.PLAYER_ERROR, playerCode?.toString(), error)
+        shown.onFailed(error)
+        presentation = null
     }
 
     private fun reportVideoClick() {

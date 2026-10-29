@@ -57,9 +57,8 @@ internal interface PresentedAd {
     fun onFailed(error: Throwable)
 
     /**
-     * The ad's telemetry events, for what only the screen sees. Every presentation provides them; today only the video
-     * screen reports through them, for a video that cannot play or an end card whose renderer dies. Null when telemetry
-     * is off.
+     * The ad's telemetry events, for what only the screen sees: a screen that finds no view, a video that fails before
+     * its first frame, or an end card whose renderer dies. Every presentation provides them. Null when telemetry is off.
      */
     val events: AdEvents?
 }

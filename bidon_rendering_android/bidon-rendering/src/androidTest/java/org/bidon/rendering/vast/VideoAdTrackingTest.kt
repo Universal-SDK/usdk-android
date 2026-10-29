@@ -10,6 +10,7 @@ import android.webkit.WebView
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.ui.PlayerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -395,34 +396,73 @@ class VideoAdTrackingTest {
         }
     }
 
-    /** A video that fails before its first frame fails the show: `ad_show_failed`, not `ad_load_failed`. */
+    /**
+     * A video that fails before its first frame is a failed show: the host hears `onError` and not `onClose`, the
+     * event is `ad_show_failed` and not `ad_load_failed`, and nothing is counted as an impression.
+     */
     @Test
-    fun aVideoThatNeverPlaysCountsNoImpression() {
+    fun aVideoThatNeverPlaysFailsTheShowAndCountsNoImpression() {
         server.serve("/video.mp4", "video/mp4", "not a video".toByteArray())
         val events = Events()
 
         showAd(vast("/video.mp4"), events) {
-            assertTrue("the ad did not close", events.closed.await(15, TimeUnit.SECONDS))
+            assertTrue("the show did not fail", events.failed.await(15, TimeUnit.SECONDS))
+            waitFor("the video screen to go") { Unit.takeIf { videoScreens().isEmpty() } }
             SystemClock.sleep(500)
 
             assertEquals(0, events.impressions.get())
+            assertEquals("closed an ad whose show failed", 0, events.closes.get())
             queued.assertShowRequested(queued.next())
             val failed = queued.next()
             val playerCode = failed.json.getString("external_error_code")
             assertTrue("no player error code", playerCode.toInt() > 0)
-            queued.assertShowFailed(failed, ErrorCode.PLAYER_ERROR, external = playerCode to "media3")
             val exceptionClass = failed.json.getString("exception_class")
             assertTrue("not the player's exception: $exceptionClass", exceptionClass.startsWith("androidx.media3."))
+            queued.assertShowFailed(
+                failed,
+                ErrorCode.PLAYER_ERROR,
+                external = playerCode to "media3",
+                exceptionClass = exceptionClass,
+            )
             queued.assertNoMore()
             assertEquals(0, server.requestCount("/impression/dsp"))
             assertEquals(0, server.requestCount("/impression/verifier"))
         }
     }
 
+    /** The media answers 404: the player's own code for a bad HTTP status travels with 7002. */
+    @Test
+    fun aMediaFileThatAnswers404FailsTheShowWithThePlayersCode() {
+        server.respondWith("/video.mp4", 404)
+        val events = Events()
+
+        showAd(vast("/video.mp4"), events) {
+            assertTrue("the show did not fail", events.failed.await(15, TimeUnit.SECONDS))
+            waitFor("the video screen to go") { Unit.takeIf { videoScreens().isEmpty() } }
+            SystemClock.sleep(500)
+
+            assertEquals(0, events.impressions.get())
+            assertEquals("closed an ad whose show failed", 0, events.closes.get())
+            queued.assertShowRequested(queued.next())
+            val failed = queued.next()
+            val exceptionClass = failed.json.getString("exception_class")
+            queued.assertShowFailed(
+                failed,
+                ErrorCode.PLAYER_ERROR,
+                external = PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS.toString() to "media3",
+                exceptionClass = exceptionClass,
+            )
+            assertTrue(exceptionClass.startsWith("androidx.media3."))
+            assertTrue(failed.json.getString("exception_cause_class").endsWith("InvalidResponseCodeException"))
+            queued.assertNoMore()
+            assertEquals(0, server.requestCount("/impression/dsp"))
+        }
+    }
+
     /**
      * A playback error after the impression is not a show failure: the show ended in its impression, so no
-     * `ad_show_failed` and no `ad_load_failed` follow. The error is made by handing the playing player a media file
-     * that answers 404.
+     * `ad_show_failed` and no `ad_load_failed` follow, and the host hears the ad close, not fail. The error is made by
+     * handing the playing player a media file that answers 404.
      */
     @Test
     fun aPlaybackErrorAfterTheImpressionEmitsNoShowFailure() {
@@ -443,6 +483,8 @@ class VideoAdTrackingTest {
             waitFor("the video screen to go") { Unit.takeIf { videoScreens().isEmpty() } }
             SystemClock.sleep(500)
             assertEquals(1, events.impressions.get())
+            assertEquals("the ad seen did not close", 1, events.closes.get())
+            assertEquals("an error reached the host", 1L, events.failed.count)
             queued.assertShowRequested(queued.next())
             queued.assertImpression(queued.next())
             queued.assertNoMore()

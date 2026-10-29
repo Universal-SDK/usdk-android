@@ -125,7 +125,10 @@ internal class VastRenderer(
             }
             override fun onClicked() = run { listener?.onClick(); Unit }
             // The end card, the only WebView, goes with the screen, which forgets this presentation as it closes.
-            override fun onClosed() = run { listener?.onClose(); Unit }
+            override fun onClosed() {
+                events?.closed()
+                listener?.onClose()
+            }
             override fun onRewarded() = run { listener?.onReward(); Unit }
             override fun onFailed(error: Throwable) = run { listener?.onError(error); Unit }
         })

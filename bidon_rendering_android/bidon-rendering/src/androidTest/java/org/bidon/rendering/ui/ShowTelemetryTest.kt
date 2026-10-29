@@ -2,7 +2,9 @@ package org.bidon.rendering.ui
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.os.SystemClock
+import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -19,6 +21,7 @@ import org.bidon.rendering.telemetry.ErrorCode
 import org.bidon.rendering.telemetry.EventClass
 import org.bidon.rendering.telemetry.QueuedEvents
 import org.bidon.rendering.telemetry.Renderer
+import org.bidon.rendering.telemetry.ShowStage
 import org.bidon.rendering.vast.VastRenderer
 import org.bidon.rendering.vast.ui.VideoAdActivity
 import org.junit.After
@@ -370,6 +373,79 @@ class ShowTelemetryTest {
         assertOneErrorPerShowFailure(events, showFailures = 1)
     }
 
+    // 7006
+
+    /**
+     * The creative closes itself after the show was asked for and before its screen started. The screen closes as soon
+     * as it starts: the show ends once, closed before its impression, and the host hears one close and no impression.
+     */
+    @Test
+    fun anMraidAdThatClosesItselfBeforeItsScreenStartsClosesOnceWith7006() {
+        val events = Events()
+        val renderer = load(Kind.MRAID, events)
+
+        ActivityScenario.launch(HoldingActivity::class.java).use { scenario ->
+            var held: Intent? = null
+            scenario.onActivity {
+                renderer.showFullscreen(it)
+                held = it.held
+            }
+            onMain { (renderer.getView() as WebView).evaluateJavascript("mraid.close()", null) }
+            // The bridge hands the close to the main thread; nothing may close before the screen does.
+            SystemClock.sleep(1_000)
+            assertEquals("closed before the screen started", 0, events.closes.get())
+
+            context.startActivity(held!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+
+            waitFor("the ad to close") { (events.closes.get() == 1).takeIf { it } }
+            SystemClock.sleep(500)
+            assertTrue("a screen stayed", adScreens().isEmpty())
+        }
+        onMain { renderer.destroy() }
+
+        queued.assertShowRequested(queued.next())
+        queued.assertShowFailed(queued.next(), ErrorCode.CLOSED_BEFORE_IMPRESSION, stage = ShowStage.VIEW_ATTACH)
+        queued.assertNoMore()
+        assertEquals(1, events.closes.get())
+        assertEquals(0, events.impressions.get())
+        assertOneErrorPerShowFailure(events, showFailures = 0)
+    }
+
+    /**
+     * The video never starts (its media is held), and its screen is recreated, as a configuration change does, and then
+     * closed. The recreation is not a close; the close ends the show as closed before its impression, at playback.
+     */
+    @Test
+    fun aVideoScreenRecreatedAndThenClosedBeforeItsFirstFrameEndsTheShowOnceWith7006() {
+        server.stall("/video.mp4")
+        val events = Events()
+        val renderer = newRenderer(Kind.VAST)
+        instrumentation.runOnMainSync { renderer.load(vast("video/mp4", "/video.mp4"), events) }
+        assertTrue("the ad did not load", events.loaded.await(10, TimeUnit.SECONDS))
+
+        ActivityScenario.launch(BlankActivity::class.java).use { scenario ->
+            scenario.onActivity { renderer.showFullscreen(it) }
+            val screen = waitFor("the video screen") { resumedAdScreen() }
+            queued.assertShowRequested(queued.next())
+
+            onMain { screen.recreate() }
+
+            val recreated = waitFor("the recreated screen") { resumedAdScreen()?.takeIf { it !== screen } }
+            queued.assertNoMore(500)
+            assertEquals("a recreation closed the ad", 0, events.closes.get())
+
+            onMain { recreated.finish() }
+
+            waitFor("the ad to close") { (events.closes.get() == 1).takeIf { it } }
+        }
+        onMain { renderer.destroy() }
+
+        queued.assertShowFailed(queued.next(), ErrorCode.CLOSED_BEFORE_IMPRESSION, stage = ShowStage.PLAYBACK_START)
+        queued.assertNoMore()
+        assertEquals(0, events.impressions.get())
+        assertOneErrorPerShowFailure(events, showFailures = 0)
+    }
+
     // AC 9: the host hears of every failure, and of nothing else
 
     /** A show that works emits no failure and calls no `onError`. */
@@ -438,6 +514,12 @@ class ShowTelemetryTest {
         </Linear></Creative></Creatives>
         </InLine></Ad></VAST>
     """.trimIndent()
+
+    /** The ad screen in front, if one is. */
+    private fun resumedAdScreen(): Activity? = onMain {
+        ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+            .firstOrNull { it is FullscreenAdActivity || it is MraidAdActivity || it is VideoAdActivity }
+    }
 
     /** Every ad screen that has not been destroyed yet. */
     private fun adScreens(): List<Activity> = onMain {

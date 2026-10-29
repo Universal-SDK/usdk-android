@@ -9,6 +9,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
+import org.bidon.rendering.telemetry.ErrorCode
 
 /**
  * Hosts a fullscreen HTML creative.
@@ -62,6 +63,7 @@ internal class FullscreenAdActivity : AppCompatActivity() {
             // fails, and is not also reported as closed. One that was, on a screen restored after the system destroyed
             // it in the background, closes, like an ad whose renderer dies while it shows.
             if (!impressionReported) {
+                ad.events?.showFailed(ErrorCode.AD_SCREEN_NO_VIEW)
                 ad.onFailed(IllegalStateException("Ad has no view to display"))
                 presentation = null
             }

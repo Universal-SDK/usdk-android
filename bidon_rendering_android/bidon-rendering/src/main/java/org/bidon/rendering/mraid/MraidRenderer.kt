@@ -49,6 +49,11 @@ internal class MraidRenderer(
     private var presentationKey: String? = null
     private var presentation: PresentedAd? = null
 
+    /**
+     * The creative closed itself after the show and before its screen started: the screen closes as soon as it starts.
+     */
+    private var isClosedBeforeScreen = false
+
     private val mraidJs: String by lazy {
         context.assets.open("mraid.js").bufferedReader().use { it.readText() }
     }
@@ -72,15 +77,17 @@ internal class MraidRenderer(
             placement = MraidPlacementType.INLINE,
             closeButton = rendering.closeButton,
             // mraid.close() from the creative. While it is fullscreen the hosting activity has to
-            // dismiss itself; inline there is no activity, so it is reported straight up. This
-            // used to be wired to onImpression, so a creative closing itself counted as a view.
+            // dismiss itself, and reports the close; a screen still starting does so as soon as it
+            // can. Inline there is no activity, so it is reported straight up. This used to be
+            // wired to onImpression, so a creative closing itself counted as a view.
             onClose = {
-                val requestClose = presentation?.closeRequester
-                if (requestClose != null) {
-                    requestClose()
-                } else {
+                val shown = presentation
+                if (shown == null) {
                     events?.closed()
                     listener.onClose()
+                } else {
+                    val requestClose = shown.closeRequester
+                    if (requestClose != null) requestClose() else isClosedBeforeScreen = true
                 }
             }
         )
@@ -209,6 +216,10 @@ internal class MraidRenderer(
             override val closeButton: CloseButtonConfig get() = rendering.closeButton
             override val lockedOrientation: Int = orientation
             override var closeRequester: (() -> Unit)? = null
+                set(value) {
+                    field = value
+                    if (value != null && isClosedBeforeScreen) value()
+                }
             override val events: AdEvents? get() = this@MraidRenderer.events
             private var rewarded = false
             override fun onImpression() = reportImpression()
@@ -224,6 +235,7 @@ internal class MraidRenderer(
             }
             override fun onFailed(error: Throwable) = run { listener?.onError(error); Unit }
         }
+        isClosedBeforeScreen = false
         presentation = presented
         presentationKey = PresentedAds.register(presented)
 
