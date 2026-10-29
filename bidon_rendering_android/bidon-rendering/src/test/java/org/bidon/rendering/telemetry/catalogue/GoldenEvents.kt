@@ -31,6 +31,14 @@ internal object GoldenEvents {
             advance(WAIT_MILLIS)
             showRequested()
         }
+        EventName.AD_SHOW_FAILED -> adEvent(name) {
+            showRequested()
+            showFailed(
+                ErrorCode.PLAYER_ERROR,
+                "2004",
+                IllegalStateException("never sent", IOException("never sent")),
+            )
+        }
         EventName.AD_IMPRESSION -> adEvent(name) { advance ->
             showRequested()
             advance(RENDER_MILLIS)

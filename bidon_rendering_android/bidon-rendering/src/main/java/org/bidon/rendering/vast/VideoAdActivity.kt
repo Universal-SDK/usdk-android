@@ -233,7 +233,7 @@ internal class VideoAdActivity : AppCompatActivity() {
 
             override fun onError(error: Throwable) {
                 val playerCode = (error as? PlaybackException)?.errorCode
-                presentation?.events?.loadFailed(ErrorCode.PLAYER_ERROR, playerCode?.toString(), error)
+                presentation?.events?.showFailed(ErrorCode.PLAYER_ERROR, playerCode?.toString(), error)
                 finish()
             }
         })

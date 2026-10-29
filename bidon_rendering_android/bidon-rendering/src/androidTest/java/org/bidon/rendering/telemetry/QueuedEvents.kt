@@ -72,6 +72,41 @@ internal class QueuedEvents(directory: File) {
         }
     }
 
+    /**
+     * Asserts [event] is the `ad_show_failed` of this test's ad of [adType] for [code]: an ERROR kept at rate 1,
+     * without a renderer or a load time, whose number, owner and stage are [code]'s ([stage] for the one code
+     * whose stage is the creative's). It carries the external pair [external] (code, source) when that is given and
+     * none otherwise, and the exception class [exceptionClass] when that is given and none otherwise.
+     */
+    fun assertShowFailed(
+        event: Stored,
+        code: ErrorCode,
+        external: Pair<String, String>? = null,
+        exceptionClass: String? = null,
+        stage: ShowStage? = code.showStage,
+        adType: AdType = AdType.INTERSTITIAL,
+    ) {
+        assertAdEvent(event, "ad_show_failed", EventClass.ERROR, renderer = null, adType)
+        assertEquals(1.0, event.json.getJSONObject("envelope").getDouble("sampling_rate"), 0.0)
+        assertEquals(code.number.toString(), event.json.getString("error_code"))
+        assertEquals(code.domain.wireName, event.json.getString("error_domain"))
+        assertEquals(stage!!.wireName, event.json.getString("failed_stage"))
+        assertFalse("a show failure has no load time", event.json.has("duration_ms"))
+        if (external != null) {
+            assertEquals(external.first, event.json.getString("external_error_code"))
+            assertEquals(external.second, event.json.getString("external_error_source"))
+        } else {
+            assertFalse(event.json.has("external_error_code"))
+            assertFalse(event.json.has("external_error_source"))
+        }
+        if (exceptionClass != null) {
+            assertEquals(exceptionClass, event.json.getString("exception_class"))
+        } else {
+            assertFalse(event.json.has("exception_class"))
+            assertFalse(event.json.has("exception_cause_class"))
+        }
+    }
+
     /** Asserts [event] carries a render duration. */
     fun assertRenderDuration(event: Stored) {
         assertTrue("no render duration in ${event.json}", event.json.optLong("render_duration_ms", -1) >= 0)

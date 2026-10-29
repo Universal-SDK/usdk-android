@@ -101,7 +101,7 @@ internal class VastRenderer(
                 mediaFiles = ad.mediaFiles
             )
             .getOrElse { error ->
-                events?.loadFailed(ErrorCode.NO_PLAYABLE_MEDIA, VAST_NO_SUPPORTED_MEDIA, error)
+                events?.showFailed(ErrorCode.NO_PLAYABLE_MEDIA, VAST_NO_SUPPORTED_MEDIA, error)
                 listener?.onError(error)
                 return
             }

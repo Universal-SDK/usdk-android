@@ -6,6 +6,7 @@ package org.bidon.rendering.telemetry
  */
 internal enum class EventName(val wireName: String) {
     AD_SHOW_REQUESTED("ad_show_requested"),
+    AD_SHOW_FAILED("ad_show_failed"),
     AD_IMPRESSION("ad_impression"),
     AD_LOAD_FAILED("ad_load_failed"),
     RENDER_CRASHED("render_crashed"),

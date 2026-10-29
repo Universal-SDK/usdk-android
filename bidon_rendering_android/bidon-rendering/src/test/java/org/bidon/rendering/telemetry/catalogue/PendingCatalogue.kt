@@ -43,5 +43,25 @@ internal object PendingCatalogue {
             "ad_load_failed", "exception_cause_class", Rule.UNKNOWN_FIELD,
             removedBy = "Telemetry: crash, drop and exception-class data survive ingest on staging",
         ),
+        Entry(
+            "ad_show_failed", "error_domain", Rule.UNKNOWN_FIELD,
+            removedBy = "Telemetry: show, WebView, video and init failure fields survive ingest on staging",
+        ),
+        Entry(
+            "ad_show_failed", "external_error_code", Rule.UNKNOWN_FIELD,
+            removedBy = "Telemetry: show, WebView, video and init failure fields survive ingest on staging",
+        ),
+        Entry(
+            "ad_show_failed", "external_error_source", Rule.UNKNOWN_FIELD,
+            removedBy = "Telemetry: show, WebView, video and init failure fields survive ingest on staging",
+        ),
+        Entry(
+            "ad_show_failed", "exception_class", Rule.UNKNOWN_FIELD,
+            removedBy = "Telemetry: show, WebView, video and init failure fields survive ingest on staging",
+        ),
+        Entry(
+            "ad_show_failed", "exception_cause_class", Rule.UNKNOWN_FIELD,
+            removedBy = "Telemetry: show, WebView, video and init failure fields survive ingest on staging",
+        ),
     )
 }
