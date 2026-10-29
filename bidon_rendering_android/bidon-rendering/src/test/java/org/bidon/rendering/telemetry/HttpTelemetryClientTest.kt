@@ -15,7 +15,6 @@ import org.junit.Test
 import org.junit.rules.Timeout
 import java.io.OutputStream
 import java.net.HttpURLConnection
-import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
 
 /** Every row of the retry table of D-028, against a real HTTP server. */
@@ -154,9 +153,8 @@ class HttpTelemetryClientTest {
 
     @Test
     fun `a server that cannot be reached is retried`() {
-        val closedPort = ServerSocket(0).use { it.localPort }
-
-        assertTrue(HttpTelemetryClient(endpoint("http://127.0.0.1:$closedPort/v2/telemetry")).post(BODY) is PostResult.Retry)
+        // Nothing can listen on port 0 (binding to it picks another port), so no other test can take it.
+        assertTrue(HttpTelemetryClient(endpoint("http://127.0.0.1:0/v2/telemetry")).post(BODY) is PostResult.Retry)
     }
 
     @Test

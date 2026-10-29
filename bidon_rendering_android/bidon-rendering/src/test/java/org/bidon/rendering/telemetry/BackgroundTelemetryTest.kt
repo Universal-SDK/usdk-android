@@ -215,6 +215,7 @@ class BackgroundTelemetryTest {
 
     @Test
     fun `once telemetry is off it holds on to no event, waiting or new`() {
+        failureExpected = true
         store.blockAppends(release)
         store.failAppends(IllegalStateException("store"))
         val telemetry = start()
@@ -230,6 +231,8 @@ class BackgroundTelemetryTest {
             System.gc()
             (waiting + late).all { it.get() == null }
         }
+        assertEquals(1, failures.size)
+        assertTrue(failures.single() is IllegalStateException)
     }
 
     @Test
