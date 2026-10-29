@@ -10,6 +10,7 @@ import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
+import org.bidon.rendering.failShow
 import org.bidon.rendering.html.ContentProbe
 import org.bidon.rendering.html.forWebViewError
 import org.bidon.rendering.ui.AdWindow
@@ -35,6 +36,16 @@ internal class MraidRenderer(
     private var isPageFinished = false
     private var isLoaded = false
 
+    /** The render process died after the ad loaded, which [onWebViewGone] tells apart from a load that never ended. */
+    private var isGoneAfterLoad = false
+
+    /** The host showed the view in its own window, where it had its impression, so the ad has been shown. */
+    private var isShownInline = false
+
+    /**
+     * Key the fullscreen activity uses to find its way back here. Stays set after the screen closes, since an ad is
+     * shown once; cleared only when the screen could not start, or by [destroy].
+     */
     private var presentationKey: String? = null
     private var presentation: PresentedAd? = null
 
@@ -48,6 +59,8 @@ internal class MraidRenderer(
         cancelProbe()
         isPageFinished = false
         isLoaded = false
+        isGoneAfterLoad = false
+        isShownInline = false
         events?.loadStarted()
 
         val wv = MraidWebView(context.applicationContext)
@@ -106,7 +119,12 @@ internal class MraidRenderer(
         )
 
         // Shown inline once the host puts the view in a window; a fullscreen screen reports its own impression.
-        wv.doOnAttach { if (presentation == null && !isDestroyed) reportImpression() }
+        wv.doOnAttach {
+            if (presentation == null && !isDestroyed) {
+                isShownInline = true
+                reportImpression()
+            }
+        }
 
         // Read apart from the markup: the bridge script missing from our own package is not the creative's failure.
         val script = try {
@@ -176,10 +194,8 @@ internal class MraidRenderer(
 
     override fun showFullscreen(activity: Activity) {
         events?.showRequested()
-        if (webView == null || isDestroyed) {
-            listener?.onError(IllegalStateException("MRAID not loaded"))
-            return
-        }
+        readyCheckFailure()?.let { return failShow(events, listener, it) }
+        events?.showStarted()
 
         // Fullscreen means interstitial placement, which forbids expand and resize. Only the
         // permitted transitions change; the loaded creative is reused as it is.
@@ -211,10 +227,30 @@ internal class MraidRenderer(
         presentation = presented
         presentationKey = PresentedAds.register(presented)
 
-        activity.startActivity(
-            Intent(activity, MraidAdActivity::class.java)
-                .putExtra(PresentedAds.EXTRA_KEY, presentationKey)
-        )
+        try {
+            activity.startActivity(
+                Intent(activity, MraidAdActivity::class.java)
+                    .putExtra(PresentedAds.EXTRA_KEY, presentationKey)
+            )
+        } catch (e: Exception) {
+            PresentedAds.unregister(presentationKey)
+            presentationKey = null
+            presentation = null
+            failShow(events, listener, ErrorCode.AD_SCREEN_NOT_STARTED, cause = e)
+        }
+    }
+
+    /**
+     * Why the ad cannot be shown now, or `null` when it can. A destroyed ad, one shown before, on a full screen or in
+     * the host's own window, and one whose render process died after it loaded are told apart from one that has not
+     * loaded, in that order.
+     */
+    private fun readyCheckFailure(): ErrorCode? = when {
+        isDestroyed -> ErrorCode.SHOW_NOT_READY
+        presentationKey != null || isShownInline -> ErrorCode.SHOW_TWICE
+        isGoneAfterLoad -> ErrorCode.WEBVIEW_GONE_AT_SHOW
+        !isLoaded || webView == null -> ErrorCode.SHOW_NOT_READY
+        else -> null
     }
 
     override fun getView(): View? = webView?.also { events?.viewRequested() }
@@ -232,6 +268,7 @@ internal class MraidRenderer(
         controller?.destroy()
         controller = null
         webView = null
+        isGoneAfterLoad = isLoaded
         val shown = presentation
         if (shown == null) {
             listener?.onError(IllegalStateException("The WebView's renderer process is gone"))

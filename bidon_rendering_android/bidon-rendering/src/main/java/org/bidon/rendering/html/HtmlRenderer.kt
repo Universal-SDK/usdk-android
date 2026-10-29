@@ -9,6 +9,7 @@ import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
+import org.bidon.rendering.failShow
 import org.bidon.rendering.telemetry.AdEvents
 import org.bidon.rendering.telemetry.ErrorCode
 import org.bidon.rendering.telemetry.ProcessExit
@@ -34,9 +35,18 @@ internal class HtmlRenderer(
     private var isLoaded = false
     private var isDestroyed = false
 
+    /** The render process died after the ad loaded, which [onWebViewGone] tells apart from a load that never ended. */
+    private var isGoneAfterLoad = false
+
+    /** The host showed the view in its own window, where it had its impression, so the ad has been shown. */
+    private var isShownInline = false
+
     private var lastHtml: String? = null
 
-    /** Key the fullscreen activity uses to find its way back here. */
+    /**
+     * Key the fullscreen activity uses to find its way back here. Stays set after the screen closes, since an ad is
+     * shown once; cleared only when the screen could not start, or by [destroy].
+     */
     private var presentationKey: String? = null
 
     override fun load(
@@ -48,6 +58,8 @@ internal class HtmlRenderer(
         cancelProbe()
         isPageFinished = false
         isLoaded = false
+        isGoneAfterLoad = false
+        isShownInline = false
         events?.loadStarted()
 
         val html = injectViewportMetaTag(adm)
@@ -88,7 +100,12 @@ internal class HtmlRenderer(
             webChromeClient = WebChromeClient()
 
             // Shown inline once the host puts the view in a window; a fullscreen screen reports its own impression.
-            doOnAttach { if (presentationKey == null && !isDestroyed) reportImpression() }
+            doOnAttach {
+                if (presentationKey == null && !isDestroyed) {
+                    isShownInline = true
+                    reportImpression()
+                }
+            }
         }
         webView = view
 
@@ -147,10 +164,8 @@ internal class HtmlRenderer(
 
     override fun showFullscreen(activity: Activity) {
         events?.showRequested()
-        if (webView == null || isDestroyed) {
-            listener?.onError(IllegalStateException("Ad not loaded"))
-            return
-        }
+        readyCheckFailure()?.let { return failShow(events, listener, it) }
+        events?.showStarted()
 
         // Locked to whatever the publisher's activity allows, resolved now rather than in
         // the ad activity, which cannot see the app that asked for the ad.
@@ -181,12 +196,31 @@ internal class HtmlRenderer(
             override fun onFailed(error: Throwable) = run { listener?.onError(error); Unit }
         })
 
-        activity.startActivity(
-            Intent(activity, FullscreenAdActivity::class.java)
-                .putExtra(PresentedAds.EXTRA_KEY, presentationKey)
-        )
+        try {
+            activity.startActivity(
+                Intent(activity, FullscreenAdActivity::class.java)
+                    .putExtra(PresentedAds.EXTRA_KEY, presentationKey)
+            )
+        } catch (e: Exception) {
+            PresentedAds.unregister(presentationKey)
+            presentationKey = null
+            failShow(events, listener, ErrorCode.AD_SCREEN_NOT_STARTED, cause = e)
+        }
 
         // The impression is reported by the activity once the ad is actually on screen, not here.
+    }
+
+    /**
+     * Why the ad cannot be shown now, or `null` when it can. A destroyed ad, one shown before, on a full screen or in
+     * the host's own window, and one whose render process died after it loaded are told apart from one that has not
+     * loaded, in that order.
+     */
+    private fun readyCheckFailure(): ErrorCode? = when {
+        isDestroyed -> ErrorCode.SHOW_NOT_READY
+        presentationKey != null || isShownInline -> ErrorCode.SHOW_TWICE
+        isGoneAfterLoad -> ErrorCode.WEBVIEW_GONE_AT_SHOW
+        !isLoaded || webView == null -> ErrorCode.SHOW_NOT_READY
+        else -> null
     }
 
     /**
@@ -199,6 +233,7 @@ internal class HtmlRenderer(
         cancelProbe()
         events?.processGone(exit)
         webView = null
+        isGoneAfterLoad = isLoaded
         isLoaded = false
         if (presentationKey == null) {
             listener?.onError(IllegalStateException("The WebView's renderer process is gone"))

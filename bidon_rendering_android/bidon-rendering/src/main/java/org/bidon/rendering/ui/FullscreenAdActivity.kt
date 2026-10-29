@@ -136,8 +136,8 @@ internal class FullscreenAdActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
 
-        // Detach but never destroy: the WebView belongs to the renderer, which reuses it if the
-        // ad is shown again and tears it down in its own destroy().
+        // Detach but never destroy: the WebView belongs to the renderer, which tears it down in its
+        // own destroy(). An ad is shown once; a second show fails before any screen starts.
         (adView?.parent as? ViewGroup)?.removeView(adView)
         adView = null
 

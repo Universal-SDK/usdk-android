@@ -15,6 +15,7 @@ import org.bidon.rendering.CloseButtonConfig
 import org.bidon.rendering.PresentedAd
 import org.bidon.rendering.PresentedAds
 import org.bidon.rendering.AdRenderingConfig
+import org.bidon.rendering.failShow
 import org.bidon.rendering.telemetry.AdEvents
 import org.bidon.rendering.telemetry.ErrorCode
 import org.bidon.rendering.ui.AdWindow
@@ -45,7 +46,10 @@ internal class VastRenderer(
     private var listener: AdRenderer.Listener? = null
     private var loadJob: Job? = null
 
-    /** Key the video activity uses to find its way back here. */
+    /**
+     * Key the video activity uses to find its way back here. Stays set after the screen closes, since an ad is shown
+     * once; cleared only when the screen could not start, or by [destroy].
+     */
     private var presentationKey: String? = null
     private val scope = CoroutineScope(Dispatchers.Main)
 
@@ -88,12 +92,10 @@ internal class VastRenderer(
 
     override fun showFullscreen(activity: Activity) {
         events?.showRequested()
-        val ad = vastAd
-
-        if (ad == null) {
-            listener?.onError(IllegalStateException("VAST not loaded"))
-            return
-        }
+        // A destroyed renderer has dropped its ad, so it fails here as one that never loaded.
+        val ad = vastAd ?: return failShow(events, listener, ErrorCode.SHOW_NOT_READY)
+        if (presentationKey != null) return failShow(events, listener, ErrorCode.SHOW_TWICE)
+        events?.showStarted()
 
         val media = MediaFileSelector
             .select(
@@ -101,9 +103,7 @@ internal class VastRenderer(
                 mediaFiles = ad.mediaFiles
             )
             .getOrElse { error ->
-                events?.showFailed(ErrorCode.NO_PLAYABLE_MEDIA, VAST_NO_SUPPORTED_MEDIA, error)
-                listener?.onError(error)
-                return
+                return failShow(events, listener, ErrorCode.NO_PLAYABLE_MEDIA, VAST_NO_SUPPORTED_MEDIA, error)
             }
 
         val orientation = AdWindow.orientationInheritedFrom(activity)
@@ -132,13 +132,20 @@ internal class VastRenderer(
         presentationKey = key
         adRegistry[key] = ad
 
-        VideoAdActivity.start(
-            context = activity,
-            mediaUrl = media.url,
-            clickThroughUrl = ad.videoClicks?.clickThroughUrl,
-            fallbackSkipOffsetMs = rendering.skipOffsetMs,
-            adKey = key
-        )
+        try {
+            VideoAdActivity.start(
+                context = activity,
+                mediaUrl = media.url,
+                clickThroughUrl = ad.videoClicks?.clickThroughUrl,
+                fallbackSkipOffsetMs = rendering.skipOffsetMs,
+                adKey = key
+            )
+        } catch (e: Exception) {
+            PresentedAds.unregister(key)
+            adRegistry.remove(key)
+            presentationKey = null
+            failShow(events, listener, ErrorCode.AD_SCREEN_NOT_STARTED, cause = e)
+        }
 
         // The impression is reported by the activity once the video starts playing, not here.
     }

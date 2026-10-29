@@ -21,6 +21,7 @@ import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.AdRenderingConfig
+import org.bidon.rendering.mraid.ui.MraidAdActivity
 import org.bidon.rendering.TestCreatives.PAINTED
 import org.bidon.rendering.TestCreatives.SETTLE_MILLIS
 import org.bidon.rendering.tap
@@ -469,19 +470,42 @@ class MraidExpandTest {
         assertStillInline()
     }
 
+    /** A fullscreen ad is on its own screen already: it has no inline place to expand from. */
     @Test
     fun aFullscreenAdFiresAnErrorOnExpand() {
-        scenario.onActivity { renderer.showFullscreen(it) }
+        val fullscreenLoaded = CountDownLatch(1)
+        val listener = object : AdRenderer.Listener {
+            override fun onLoaded() = fullscreenLoaded.countDown()
+            override fun onImpression() = Unit
+            override fun onClick() = Unit
+            override fun onClose() = Unit
+            override fun onReward() = Unit
+            override fun onError(error: Throwable) = Unit
+        }
+        // Its own renderer, never placed inline: showing the inline banner fullscreen is refused (11002).
+        val fullscreen = MraidRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Renderer.MRAID))
+        instrumentation.runOnMainSync { fullscreen.load(PAINTED + STATES, listener) }
+        assertTrue("the fullscreen ad did not load", fullscreenLoaded.await(10, TimeUnit.SECONDS))
+        scenario.onActivity { fullscreen.showFullscreen(it) }
+        instrumentation.waitUntil("the MRAID screen did not start") {
+            ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                .any { it is MraidAdActivity }
+        }
         SystemClock.sleep(SETTLE_MILLIS)
+        val page = fullscreen.getView() as WebView
+        // The screen's own move to default is not what the test is about, as with the banner in placeBanner().
+        run("events.length = 0", page)
         try {
-            expand()
+            run("mraid.expand()", page)
+            SystemClock.sleep(SETTLE_MILLIS)
 
-            assertEquals("\"error expand\"", run("events.join()"))
-            assertEquals("\"default\"", run("mraid.getState()"))
+            assertEquals("\"error expand\"", run("events.join()", page))
+            assertEquals("\"default\"", run("mraid.getState()", page))
         } finally {
             // Ends the fullscreen screen, so it does not stay up over the next test.
-            run("mraid.close()")
+            run("mraid.close()", page)
             SystemClock.sleep(SETTLE_MILLIS)
+            instrumentation.runOnMainSync { fullscreen.destroy() }
         }
     }
 
@@ -607,11 +631,11 @@ class MraidExpandTest {
         return null
     }
 
-    private fun run(script: String): String {
+    private fun run(script: String, page: WebView = banner): String {
         val done = CountDownLatch(1)
         var result = ""
         instrumentation.runOnMainSync {
-            banner.evaluateJavascript(script) {
+            page.evaluateJavascript(script) {
                 result = it
                 done.countDown()
             }

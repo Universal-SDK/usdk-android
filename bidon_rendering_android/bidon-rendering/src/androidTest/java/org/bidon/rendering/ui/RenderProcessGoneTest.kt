@@ -31,6 +31,7 @@ import org.bidon.rendering.mraid.MraidWebView
 import org.bidon.rendering.mraid.ui.MraidAdActivity
 import org.bidon.rendering.vast.CompanionResource
 import org.bidon.rendering.vast.ui.EndCardView
+import org.bidon.rendering.telemetry.ErrorCode
 import org.bidon.rendering.telemetry.Renderer
 import org.bidon.rendering.telemetry.EventClass
 import org.bidon.rendering.telemetry.ProcessExit
@@ -111,6 +112,22 @@ class RenderProcessGoneTest {
 
     @Test
     fun mraidFullscreenAdKilledOnScreenCloses() = fullscreenAdGoneOnScreenCloses(Kind.MRAID, KILL)
+
+    @Test
+    fun htmlAdDestroyedAfterItsRendererDiedFailsAShowWith11001() =
+        adDestroyedAfterItsRendererDiedFailsAShowWith11001(Kind.HTML)
+
+    @Test
+    fun mraidAdDestroyedAfterItsRendererDiedFailsAShowWith11001() =
+        adDestroyedAfterItsRendererDiedFailsAShowWith11001(Kind.MRAID)
+
+    @Test
+    fun htmlAdShownBeforeItsRendererDiedFailsASecondShowWith11002() =
+        adShownBeforeItsRendererDiedFailsASecondShowWith11002(Kind.HTML)
+
+    @Test
+    fun mraidAdShownBeforeItsRendererDiedFailsASecondShowWith11002() =
+        adShownBeforeItsRendererDiedFailsASecondShowWith11002(Kind.MRAID)
 
     @Test
     fun htmlAdClosedBeforeItsRendererDiesReportsNothingMore() =
@@ -240,16 +257,69 @@ class RenderProcessGoneTest {
         assertNull(onMain { renderer.getView() })
         assertProcessGone(kind, how, afterImpression = false)
 
-        // Showing it now fails the usual way for an ad that is not loaded, and starts no screen.
+        // Showing it now fails the show, not the load: the ad had loaded, and its WebView went away after. The host
+        // hears of it, and no screen starts.
         ActivityScenario.launch(BlankActivity::class.java).use { scenario ->
             scenario.onActivity { renderer.showFullscreen(it) }
             assertEquals(2, events.errors.get())
             assertTrue(adScreens().isEmpty())
         }
         onMain { renderer.destroy() }
-        // Neither the error that ended the ad nor the show of a dead ad is a second event.
         queued.assertShowRequested(queued.next())
+        queued.assertShowFailed(queued.next(), ErrorCode.WEBVIEW_GONE_AT_SHOW)
+        // Neither the error that ended the ad nor the destroy after the failed show is another event.
         queued.assertNoMore()
+    }
+
+    /** A destroyed ad is the host's mistake to show, whatever happened to its WebView before: 11001, not 7003. */
+    private fun adDestroyedAfterItsRendererDiedFailsAShowWith11001(kind: Kind) {
+        val events = Events()
+        val renderer = load(kind, events)
+        killRenderer(renderer, KILL)
+        assertTrue("no error", events.failed.await(RENDERER_GONE_SECONDS, TimeUnit.SECONDS))
+        assertProcessGone(kind, KILL, afterImpression = false)
+        onMain { renderer.destroy() }
+
+        ActivityScenario.launch(BlankActivity::class.java).use { scenario ->
+            scenario.onActivity { renderer.showFullscreen(it) }
+            SystemClock.sleep(500)
+            assertTrue("a screen started", adScreens().isEmpty())
+        }
+
+        queued.assertShowRequested(queued.next())
+        queued.assertShowFailed(queued.next(), ErrorCode.SHOW_NOT_READY)
+        queued.assertNoMore()
+        assertEquals("a callback after destroy", 1, events.errors.get())
+    }
+
+    /** An ad shown once was shown, even when its WebView died after its screen closed: 11002, not 7003. */
+    private fun adShownBeforeItsRendererDiedFailsASecondShowWith11002(kind: Kind) {
+        val events = Events()
+        val renderer = load(kind, events)
+        ActivityScenario.launch(BlankActivity::class.java).use { scenario ->
+            scenario.onActivity { renderer.showFullscreen(it) }
+            assertTrue("not shown", events.shown.await(10, TimeUnit.SECONDS))
+            val screen = waitFor("the ad screen") { adScreens().firstOrNull() }
+            onMain { screen.finish() }
+            assertTrue("not closed", events.closed.await(10, TimeUnit.SECONDS))
+            killRenderer(renderer, CRASH)
+            waitFor("the renderer to let the WebView go", RENDERER_GONE_SECONDS * 1000) {
+                Unit.takeIf { onMain { renderer.getView() } == null }
+            }
+
+            scenario.onActivity { renderer.showFullscreen(it) }
+
+            assertEquals(1, events.errors.get())
+            SystemClock.sleep(500)
+            assertTrue("a second screen started", adScreens().isEmpty())
+        }
+        onMain { renderer.destroy() }
+        queued.assertShowRequested(queued.next())
+        assertImpressionCounted()
+        queued.assertShowRequested(queued.next())
+        queued.assertShowFailed(queued.next(), ErrorCode.SHOW_TWICE)
+        queued.assertNoMore()
+        assertEquals(1, events.closes.get())
     }
 
     private fun bannerGoneOnScreenIsRemovedAndFails(kind: Kind, how: String) {
