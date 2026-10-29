@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
@@ -253,15 +254,24 @@ class TelemetryGateTest {
             }
         }
 
+        // Admit until the config has been replaced many times, however long the busy machine takes to schedule the
+        // flipper, and fail with a clear message if it never gets there.
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIME_LIMIT_SECONDS)
         var admitted = 0
+        var attempts = 0
         try {
-            repeat(2_000_000) { if (gate.admit("load", EventClass.DIAGNOSTIC) != null) admitted++ }
+            while (attempts < MIN_ADMITS || flips.get() < MIN_FLIPS) {
+                check(System.nanoTime() < deadline) {
+                    "the config was replaced ${flips.get()} times in $attempts admits, expected $MIN_FLIPS in $TIME_LIMIT_SECONDS s"
+                }
+                if (gate.admit("load", EventClass.DIAGNOSTIC) != null) admitted++
+                attempts++
+            }
         } finally {
             stop.set(true)
             flipper.join()
         }
 
-        assertTrue("the config was never replaced", flips.get() > 0)
         assertEquals(0, admitted)
     }
 
@@ -350,6 +360,10 @@ class TelemetryGateTest {
     }
 
     private companion object {
+        const val MIN_ADMITS = 2_000_000
+        const val MIN_FLIPS = 10_000L
+        const val TIME_LIMIT_SECONDS = 20L
+
         /** Not in (0, 1]: no event can carry them, so each switches its name off for diagnostics. */
         val INVALID_RATES = listOf(Double.NaN, -0.5, 0.0, 1.0000001, 10.0)
     }
