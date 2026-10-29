@@ -87,22 +87,60 @@ class ContentProbeTest {
         assertTrue("took $took ms", took >= ContentProbe.EMPTY_PAGE_WAIT_MILLIS - EARLY_MARGIN_MILLIS)
     }
 
-    /** A page too busy to answer is not blank: it counts as content once the wait is over, and not before. */
+    /** A page that answers after the watchdog is alive: any answer, a "no" included, finishes it as content, and not before. */
     @Test
-    fun aPageThatNeverAnswersCountsAsContentOnceTheWaitEnds() {
+    fun anAnswerAfterTheWatchdogFinishesAsContent() {
+        val results = Results()
+        val view = webView { null }
+        val probe = probe(view, results)
+
+        onMain { probe.start() }
+        SystemClock.sleep(WATCHDOG_MILLIS + LATE_MARGIN_MILLIS)
+        assertTrue("reported before the page answered", results.values.isEmpty())
+
+        val answeredAt = SystemClock.elapsedRealtime()
+        onMain { view.held.single().onReceiveValue("false") }
+
+        waitUntil("the probe never answered") { results.values.isNotEmpty() }
+        SystemClock.sleep(IDLE_MILLIS)
+        assertEquals(listOf(true), results.values.toList())
+        assertTrue("reported before the page answered", results.at >= answeredAt)
+        val lag = results.at - answeredAt
+        assertTrue("reported $lag ms after the page answered", lag < IDLE_MILLIS)
+    }
+
+    /** A page that stays silent past the watchdog counts as content once the limit runs out, and not before. */
+    @Test
+    fun aPageThatStaysSilentCountsAsContentOnceTheLimitRunsOut() {
         val results = Results()
         val probe = probe(webView { null }, results)
 
         val start = SystemClock.elapsedRealtime()
         onMain { probe.start() }
-        SystemClock.sleep(ContentProbe.EMPTY_PAGE_WAIT_MILLIS - EARLY_MARGIN_MILLIS)
-        assertTrue("answered before the wait ended", results.values.isEmpty())
+        SystemClock.sleep(ContentProbe.SILENT_PAGE_LIMIT_MILLIS - EARLY_MARGIN_MILLIS)
+        assertTrue("reported before the limit", results.values.isEmpty())
 
         waitUntil("the probe never answered") { results.values.isNotEmpty() }
         SystemClock.sleep(IDLE_MILLIS)
         assertEquals(listOf(true), results.values.toList())
         val took = results.at - start
-        assertTrue("took $took ms", took >= ContentProbe.EMPTY_PAGE_WAIT_MILLIS - EARLY_MARGIN_MILLIS)
+        assertTrue("took $took ms", took >= ContentProbe.SILENT_PAGE_LIMIT_MILLIS - EARLY_MARGIN_MILLIS)
+    }
+
+    /** The renderer cancels the probe when the render process dies: a silent page then reports nothing at all. */
+    @Test
+    fun cancelAfterTheWatchdogReportsNothing() {
+        val results = Results()
+        val view = webView { null }
+        val probe = probe(view, results)
+
+        onMain { probe.start() }
+        SystemClock.sleep(WATCHDOG_MILLIS + LATE_MARGIN_MILLIS)
+        onMain { probe.cancel() }
+        onMain { view.held.single().onReceiveValue("true") }
+
+        SystemClock.sleep(ContentProbe.SILENT_PAGE_LIMIT_MILLIS - WATCHDOG_MILLIS + IDLE_MILLIS)
+        assertTrue("reported after cancel", results.values.isEmpty())
     }
 
     @Test
@@ -155,7 +193,7 @@ class ContentProbeTest {
     }
 
     private fun waitUntil(message: String, condition: () -> Boolean) {
-        val deadline = SystemClock.elapsedRealtime() + ContentProbe.EMPTY_PAGE_WAIT_MILLIS + 5_000
+        val deadline = SystemClock.elapsedRealtime() + ContentProbe.SILENT_PAGE_LIMIT_MILLIS + 5_000
         while (!condition()) {
             assertTrue(message, SystemClock.elapsedRealtime() < deadline)
             SystemClock.sleep(20)
@@ -168,5 +206,11 @@ class ContentProbeTest {
 
         /** More than three poll periods. */
         const val IDLE_MILLIS = 500L
+
+        /** When a page that has not answered starts to count as content: the probe's 2 s wait plus its 0.5 s grace. */
+        const val WATCHDOG_MILLIS = 2_500L
+
+        /** Slack for the watchdog running late; the answer still comes well before the 12 s limit. */
+        const val LATE_MARGIN_MILLIS = 1_000L
     }
 }

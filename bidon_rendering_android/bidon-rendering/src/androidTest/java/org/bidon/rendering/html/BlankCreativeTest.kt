@@ -443,7 +443,7 @@ class BlankCreativeTest {
 
     // A page that stops answering
 
-    /** A page the probe cannot read at all is given the benefit of the doubt once the wait is over. */
+    /** A page the probe cannot read at all is given the benefit of the doubt once it answers again. */
     @Test
     fun anHtmlPageThatBusyLoopsAfterLoadingStillGetsAnAnswer() = aBusyPageStillGetsAnAnswer(Kind.HTML)
 
@@ -496,12 +496,15 @@ class BlankCreativeTest {
     @Test
     fun anMraidMainFrameErrorBeforeThePageFinishesIsReportedOnceAndNeverLoads() = anErrorBeforeThePageFinishes(Kind.MRAID)
 
-    /** Nothing on the page and the script holds the thread, so a page that was read would be blank: only the watchdog can answer. */
+    /**
+     * Nothing on the page and the script holds the thread past the watchdog, so a page that was read would be blank: it
+     * counts as content, and loads once it lets go, which shows its render process is alive.
+     */
     @Test
-    fun anHtmlEmptyPageThatBlocksItsThreadInTheLoadEventLoadsOnTheWatchdog() = aBlockedEmptyPageLoadsOnTheWatchdog(Kind.HTML)
+    fun anHtmlEmptyPageThatBlocksItsThreadInTheLoadEventLoadsOnceItLetsGo() = aBlockedEmptyPageLoadsOnceItLetsGo(Kind.HTML)
 
     @Test
-    fun anMraidEmptyPageThatBlocksItsThreadInTheLoadEventLoadsOnTheWatchdog() = aBlockedEmptyPageLoadsOnTheWatchdog(Kind.MRAID)
+    fun anMraidEmptyPageThatBlocksItsThreadInTheLoadEventLoadsOnceItLetsGo() = aBlockedEmptyPageLoadsOnceItLetsGo(Kind.MRAID)
 
     private fun isBlank(kind: Kind, document: String) {
         val events = Events()
@@ -556,18 +559,22 @@ class BlankCreativeTest {
         assertEquals("onLoaded count on the first listener", 1, first.loadedCalls.get())
     }
 
-    private fun aBlockedEmptyPageLoadsOnTheWatchdog(kind: Kind) {
+    private fun aBlockedEmptyPageLoadsOnceItLetsGo(kind: Kind) {
         val events = Events()
         val renderer = renderer(kind)
+        val start = SystemClock.elapsedRealtime()
         load(renderer, BLOCKS_IN_LOAD_EVENT, events)
         try {
-            val loaded = events.loaded.await(ContentProbe.EMPTY_PAGE_WAIT_MILLIS + BUSY_MARGIN_MILLIS, TimeUnit.MILLISECONDS)
+            val loaded = events.loaded.await(BLOCKED_LOAD_LIMIT_MILLIS, TimeUnit.MILLISECONDS)
+            val took = SystemClock.elapsedRealtime() - start
             assertTrue("a page that does not answer was never given an answer", loaded)
+            assertTrue("loaded after $took ms, before the page let go", took >= BLOCK_HOLD_MILLIS)
+            assertTrue("loaded after $took ms, long after the page let go", took < BLOCKED_LOAD_LIMIT_MILLIS)
             assertEquals("onError count", 0, events.errorCalls.get())
             assertEquals("onLoaded count", 1, events.loadedCalls.get())
         } finally {
             // The render process is shared, and a blocked page would hold up the tests after this one until it lets go.
-            SystemClock.sleep(BUSY_LOOP_MILLIS)
+            SystemClock.sleep(BLOCK_HOLD_MILLIS)
         }
     }
 
@@ -679,14 +686,18 @@ class BlankCreativeTest {
     private fun aBusyPageStillGetsAnAnswer(kind: Kind) {
         val events = Events()
         val renderer = renderer(kind)
+        val start = SystemClock.elapsedRealtime()
         load(renderer, BUSY_AFTER_LOAD, events)
         try {
-            val loaded = events.loaded.await(ContentProbe.EMPTY_PAGE_WAIT_MILLIS + BUSY_MARGIN_MILLIS, TimeUnit.MILLISECONDS)
+            val loaded = events.loaded.await(BUSY_LOAD_LIMIT_MILLIS, TimeUnit.MILLISECONDS)
+            val took = SystemClock.elapsedRealtime() - start
             assertTrue("a page that does not answer was never given an answer", loaded)
+            assertTrue("loaded after $took ms, long after the page let go", took < BUSY_LOAD_LIMIT_MILLIS)
             assertEquals("onError count", 0, events.errorCalls.get())
+            assertEquals("onLoaded count", 1, events.loadedCalls.get())
         } finally {
             // The render process is shared, and a blocked page would hold up the tests after this one until it lets go.
-            SystemClock.sleep(BUSY_LOOP_MILLIS)
+            SystemClock.sleep(BLOCK_HOLD_MILLIS)
         }
     }
 
@@ -865,17 +876,23 @@ class BlankCreativeTest {
     )
 
     private companion object {
-        /** How long a busy page holds its thread: well past the wait, and short enough to wait out after the test. */
-        const val BUSY_LOOP_MILLIS = 5_000L
+        /**
+         * How long a page holds its thread: well past the watchdog (2.5 s) even when the WebView starts slowly, and well
+         * short of the 12 s limit, so it lets go while it is still waited for.
+         */
+        const val BLOCK_HOLD_MILLIS = 6_000L
+
+        /** When the blocking page starts to hold its thread, after its load event. */
+        const val BLOCK_DELAY_MILLIS = 300L
         const val BUSY_AFTER_LOAD = "<html><body><p>ad</p><script>window.onload = function () { setTimeout(function () {" +
-            "var end = Date.now() + $BUSY_LOOP_MILLIS; while (Date.now() < end) {} }, 0) }</script></body></html>"
+            "var end = Date.now() + $BLOCK_HOLD_MILLIS; while (Date.now() < end) {} }, 0) }</script></body></html>"
         /**
          * Empty, and holding its thread from 300 ms after the load event: the page has finished by then and the probe has
-         * read it, but it can never read the page again before the wait is over, so only the watchdog can answer. A block
+         * read it, but it cannot read the page again until the watchdog has fired, so the next answer is a late one. A block
          * inside the load event itself would keep the page from ever finishing.
          */
         const val BLOCKS_IN_LOAD_EVENT = "<html><body><script>window.addEventListener('load', function () {" +
-            "setTimeout(function () { var end = Date.now() + $BUSY_LOOP_MILLIS; while (Date.now() < end) {} }, 300) })" +
+            "setTimeout(function () { var end = Date.now() + $BLOCK_HOLD_MILLIS; while (Date.now() < end) {} }, $BLOCK_DELAY_MILLIS) })" +
             "</script></body></html>"
         const val CLOSED_SHADOW_ROOT = "<html><body><script>" +
             "customElements.define('x-ad', class extends HTMLElement {" +
@@ -951,7 +968,10 @@ class BlankCreativeTest {
         /** The window, plus the page's own load and the WebView's start. */
         const val FAILURE_MARGIN_MILLIS = 6_000L
         const val LOAD_MARGIN_MILLIS = 6_000L
-        const val BUSY_MARGIN_MILLIS = 1_500L
+        /** The page's own load and the WebView's start, on top of what the page holds. */
+        const val BLOCK_LOAD_ALLOWANCE_MILLIS = 3_000L
+        const val BLOCKED_LOAD_LIMIT_MILLIS = BLOCK_DELAY_MILLIS + BLOCK_HOLD_MILLIS + BLOCK_LOAD_ALLOWANCE_MILLIS
+        const val BUSY_LOAD_LIMIT_MILLIS = BLOCK_HOLD_MILLIS + BLOCK_LOAD_ALLOWANCE_MILLIS
         const val FAST_LOAD_MILLIS = 1_500L
         const val SECOND_PAGE_SETTLE_MILLIS = 500L
         /** When the second of two loads lets its page finish: well after the first page has. */
