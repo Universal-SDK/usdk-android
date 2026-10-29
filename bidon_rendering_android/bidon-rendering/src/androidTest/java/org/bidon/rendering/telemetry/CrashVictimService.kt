@@ -11,12 +11,15 @@ import android.os.IBinder
 import android.os.Message
 import android.os.Messenger
 import android.os.Process
+import com.example.host.ThrowingListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.RendererTelemetry
 import org.bidon.rendering.TelemetryDirectory
+import org.bidon.rendering.vast.VastRenderer
 import org.json.JSONObject
 import java.io.File
 import kotlin.system.exitProcess
@@ -56,7 +59,7 @@ class CrashVictimService : Service() {
     private fun handle(message: Message) {
         val reply = Message.obtain(null, message.what, Process.myPid(), 0)
         when (message.what) {
-            CRASH_IN_OUR_THREAD, CRASH_IN_HOST_CODE, CRASH_IN_OUR_COROUTINE -> {
+            CRASH_IN_OUR_THREAD, CRASH_IN_HOST_CODE, CRASH_IN_OUR_COROUTINE, CRASH_IN_VAST_LISTENER -> {
                 directory.deleteRecursively()
                 hostReport.delete()
                 HostCrashReporter.install(hostReport)
@@ -114,6 +117,7 @@ class CrashVictimService : Service() {
             CRASH_IN_OUR_THREAD, CONFIGURE_THEN_CRASH -> Thread({ throw IllegalStateException("ours") }, "renderer-work").start()
             CRASH_IN_HOST_CODE -> Thread({ throw hostException() }, "game-loop").start()
             CRASH_IN_OUR_COROUTINE -> CoroutineScope(Dispatchers.Main).launch { throw IllegalStateException("ours") }
+            CRASH_IN_VAST_LISTENER -> VastRenderer(this, AdRenderingConfig(), events = null).load(VALID_VAST, ThrowingListener)
         }
     }
 
@@ -193,6 +197,7 @@ class CrashVictimService : Service() {
         const val CONFIGURE_THEN_CRASH = 5
         const val START = 6
         const val CONFIGURE = 7
+        const val CRASH_IN_VAST_LISTENER = 8
 
         const val ERRORS = "errors"
         const val HOST_REPORT = "host_report"
@@ -202,6 +207,18 @@ class CrashVictimService : Service() {
         const val CERTIFICATE = "certificate"
         const val STORED = "stored"
         const val DIRECTORY_CREATED = "directory_created"
+
+        /** A VAST document that parses without a network: the load succeeds and calls `onLoaded`. */
+        private val VALID_VAST = """
+            <VAST version="4.2"><Ad id="1"><InLine>
+            <AdSystem>test</AdSystem><AdTitle>test</AdTitle>
+            <Impression><![CDATA[https://localhost:1/impression]]></Impression>
+            <Creatives><Creative><Linear>
+            <Duration>00:00:10</Duration>
+            <MediaFiles><MediaFile delivery="progressive" type="video/mp4" width="64" height="64"><![CDATA[https://localhost:1/video.mp4]]></MediaFile></MediaFiles>
+            </Linear></Creative></Creatives>
+            </InLine></Ad></VAST>
+        """.trimIndent()
 
         /** The SDK version the configured process sends with its batches. */
         const val SDK_VERSION = "9.9.9-test"
