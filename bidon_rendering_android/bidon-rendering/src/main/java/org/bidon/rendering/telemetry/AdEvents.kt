@@ -21,6 +21,7 @@ internal enum class Renderer(val wireName: String) {
  * Safe to call from any thread, and never throws.
  *
  * @param auctionId the auction the ad won; a blank one is left out of the events
+ * @param declaredType the creative type the DSP declared, left out of the events when `null`
  */
 internal class AdEvents(
     private val telemetry: Telemetry,
@@ -28,6 +29,7 @@ internal class AdEvents(
     private val auctionId: String?,
     private val adType: AdType?,
     private val renderer: Renderer,
+    private val declaredType: String?,
     private val clock: Clock,
     private val monotonicClock: MonotonicClock,
 ) {
@@ -105,10 +107,11 @@ internal class AdEvents(
     }
 
     /**
-     * The WebView's render process died: emits `render_crashed` with the renderer and what [exit] knows of the cause
-     * and the priority, unless the ad was [closed] first. Only the first death of an ad is reported, with its own
-     * detail. `was_shown` tells whether [rendered] had been called by then. The load failure the WebView reports after
-     * a death is the same failure, so it is not reported again, even when the death itself is not.
+     * The WebView's render process died: emits `render_crashed` with the renderer, the declared `crtype` and what
+     * [exit] knows of the cause and the priority, unless the ad was [closed] first. Only the first death of an ad is
+     * reported, with its own detail. `was_shown` tells whether [rendered] had been called by then. The load failure
+     * the WebView reports after a death is the same failure, so it is not reported again, even when the death itself
+     * is not.
      */
     fun processGone(exit: ProcessExit) {
         val wasShown = renderReported.get()
@@ -116,6 +119,7 @@ internal class AdEvents(
         if (!processGoneReported.compareAndSet(false, true)) return
         emit(EventName.RENDER_CRASHED, EventClass.ERROR) {
             put("renderer", renderer.wireName)
+            if (declaredType != null) put("crtype", declaredType)
             exit.didCrash?.let { put("did_crash", it) }
             exit.priorityAtExit?.let { put("renderer_priority_at_exit", it.wireName) }
             put("was_shown", wasShown)

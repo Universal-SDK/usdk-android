@@ -74,7 +74,7 @@ internal object GoldenEvents {
             override fun sync() = Unit
         }
         var elapsed = 10_000L
-        AdEvents(telemetry, SESSION, AUCTION, AdType.INTERSTITIAL, Renderer.HTML, CLOCK, MonotonicClock { elapsed })
+        AdEvents(telemetry, SESSION, AUCTION, AdType.INTERSTITIAL, Renderer.HTML, "html", CLOCK, MonotonicClock { elapsed })
             .actions { elapsed += it }
         return emitted.getValue(name.wireName)
     }

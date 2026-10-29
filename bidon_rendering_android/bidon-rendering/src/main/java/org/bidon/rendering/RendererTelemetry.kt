@@ -110,7 +110,7 @@ internal object RendererTelemetry {
      * The telemetry events of one ad of [type], labelled with [ad], or none when [telemetry] is off, so an app with
      * telemetry off never mints a session (D-026).
      */
-    fun adEvents(telemetry: Telemetry, type: CreativeType, ad: AdInfo?): AdEvents? {
+    fun adEvents(telemetry: Telemetry, type: CreativeType, ad: AdInfo?, rendering: AdRenderingConfig): AdEvents? {
         if (telemetry === Telemetry.Disabled) return null
         return AdEvents(
             telemetry = telemetry,
@@ -118,6 +118,7 @@ internal object RendererTelemetry {
             auctionId = ad?.auctionId,
             adType = ad?.type?.let(::wireAdType),
             renderer = renderer(type),
+            declaredType = rendering.declaredType,
             clock = Clock.System,
             monotonicClock = MonotonicClock.System,
         )

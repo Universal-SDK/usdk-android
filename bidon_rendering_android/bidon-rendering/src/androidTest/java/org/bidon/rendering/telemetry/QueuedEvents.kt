@@ -33,7 +33,7 @@ internal class QueuedEvents(directory: File) {
 
     /** The events of one ad, labelled as the adapter labels an interstitial. */
     fun adEvents(renderer: Renderer, adType: AdType = AdType.INTERSTITIAL): AdEvents =
-        AdEvents(telemetry, sessionId, AUCTION_ID, adType, renderer, Clock.System, MonotonicClock.System)
+        AdEvents(telemetry, sessionId, AUCTION_ID, adType, renderer, declaredType = null, Clock.System, MonotonicClock.System)
 
     /** The next event stored; fails when none is within [seconds]. */
     fun next(seconds: Long = 10): Stored {

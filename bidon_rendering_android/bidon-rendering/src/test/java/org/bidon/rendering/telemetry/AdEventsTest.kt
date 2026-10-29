@@ -48,8 +48,9 @@ class AdEventsTest {
         auctionId: String? = AUCTION,
         adType: AdType? = AdType.INTERSTITIAL,
         renderer: Renderer = Renderer.HTML,
+        declaredType: String? = null,
         telemetry: Telemetry = this.telemetry,
-    ) = AdEvents(telemetry, session, auctionId, adType, renderer, clock, monotonic)
+    ) = AdEvents(telemetry, session, auctionId, adType, renderer, declaredType, clock, monotonic)
 
     private val crashed = ProcessExit(didCrash = true, priorityAtExit = null)
     private val killed = ProcessExit(didCrash = false, priorityAtExit = null)
@@ -278,6 +279,76 @@ class AdEventsTest {
         assertEnvelope(json.envelope, "render_crashed", rate = 0.125)
         assertEquals("html", json.getString("renderer"))
         assertEquals(false, json.get("was_shown"))
+    }
+
+    @Test
+    fun `render_crashed with everything it can carry is the envelope plus the renderer, crtype, did_crash, priority and was_shown, for each renderer`() {
+        Renderer.entries.forEach { renderer ->
+            val recording = RecordingTelemetry()
+            val events = adEvents(renderer = renderer, declaredType = "static_image", telemetry = recording)
+            events.rendered()
+
+            events.processGone(ProcessExit(didCrash = true, priorityAtExit = RendererPriority.BOUND))
+
+            val json = recording.single("render_crashed")
+            assertEquals(
+                "$renderer",
+                setOf("envelope", "renderer", "crtype", "did_crash", "renderer_priority_at_exit", "was_shown"),
+                json.keyNames(),
+            )
+            assertEquals("$renderer", renderer.wireName, json.getString("renderer"))
+            assertEquals("$renderer", "static_image", json.getString("crtype"))
+            assertEquals("$renderer", true, json.get("did_crash"))
+            assertEquals("$renderer", "bound", json.get("renderer_priority_at_exit"))
+            assertEquals("$renderer", true, json.get("was_shown"))
+            assertEnvelope(json.envelope, "render_crashed", rate = 1.0)
+        }
+    }
+
+    @Test
+    fun `render_crashed without a declared crtype leaves the key out for each renderer`() {
+        Renderer.entries.forEach { renderer ->
+            val recording = RecordingTelemetry()
+
+            adEvents(renderer = renderer, declaredType = null, telemetry = recording)
+                .processGone(ProcessExit(didCrash = false, priorityAtExit = RendererPriority.WAIVED))
+
+            val json = recording.single("render_crashed")
+            assertEquals(
+                "$renderer",
+                setOf("envelope", "renderer", "did_crash", "renderer_priority_at_exit", "was_shown"),
+                json.keyNames(),
+            )
+            assertEquals("$renderer", renderer.wireName, json.getString("renderer"))
+        }
+    }
+
+    @Test
+    fun `render_crashed carries the crtype as it was declared, whatever the renderer`() {
+        listOf("html", "mraid", "vast", "static_image", "native", "playable").forEach { declaredType ->
+            val recording = RecordingTelemetry()
+
+            adEvents(renderer = Renderer.HTML, declaredType = declaredType, telemetry = recording)
+                .processGone(crashed)
+
+            assertEquals(declaredType, recording.single("render_crashed").getString("crtype"))
+            assertEquals("html", recording.single("render_crashed").getString("renderer"))
+        }
+    }
+
+    @Test
+    fun `render_crashed carries no creative_type, URL, message or description`() {
+        Renderer.entries.forEach { renderer ->
+            val recording = RecordingTelemetry()
+
+            adEvents(renderer = renderer, declaredType = "vast", telemetry = recording)
+                .processGone(ProcessExit(didCrash = true, priorityAtExit = RendererPriority.IMPORTANT))
+
+            val json = recording.single("render_crashed")
+            listOf("creative_type", "url", "message", "error_message", "description", "reason", "error_code")
+                .forEach { assertFalse("$renderer $it", json.has(it)) }
+            assertFalse("$renderer", json.envelope.has("creative_type"))
+        }
     }
 
     // rule 3

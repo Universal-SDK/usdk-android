@@ -77,12 +77,13 @@ class CatalogueConformanceTest {
     }
 
     @Test
-    fun `no sample reports creative_type, the WebView death names its renderer instead`() {
+    fun `no sample reports creative_type, the WebView death names its renderer and crtype instead`() {
         val reported = violationsBySample().values.flatten().filter { it.key == "creative_type" }
         assertEquals(emptyList<Violation>(), reported)
 
         val sample = JSONObject(CatalogueTestSupport.resourceText(GoldenEvents.samplePath(EventName.RENDER_CRASHED))!!)
         assertEquals("html", sample.getString("renderer"))
+        assertEquals("html", sample.getString("crtype"))
         assertFalse(sample.has("creative_type"))
     }
 

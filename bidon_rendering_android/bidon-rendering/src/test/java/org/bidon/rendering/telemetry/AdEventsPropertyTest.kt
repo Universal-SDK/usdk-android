@@ -51,7 +51,7 @@ class AdEventsPropertyTest {
         telemetry: Telemetry,
         auctionId: String? = "a",
         monotonicClock: MonotonicClock = MonotonicClock { 0L },
-    ) = AdEvents(telemetry, session, auctionId, AdType.BANNER, Renderer.HTML, { 0L }, monotonicClock)
+    ) = AdEvents(telemetry, session, auctionId, AdType.BANNER, Renderer.HTML, null, { 0L }, monotonicClock)
 
     // rule 5
 

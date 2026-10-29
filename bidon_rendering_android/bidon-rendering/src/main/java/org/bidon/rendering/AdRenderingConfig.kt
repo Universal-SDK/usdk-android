@@ -29,20 +29,30 @@ data class AdRenderingConfig internal constructor(
     val skipOffsetMs: Long = DEFAULT_SKIP_OFFSET_MS,
 
     /**
-     * The creative type the DSP declared, when it is one that settles what the markup cannot:
-     * HTML or MRAID. VAST markup is recognised on its own. The server fills in `static_image` when
-     * the DSP says nothing, so that value counts as none, and so does anything else.
+     * The creative type the DSP declared, spelled as the bid carries it: one of `html`, `mraid`,
+     * `vast`, `static_image`, `native` and `playable`, or `null` when it declared none of them.
      */
-    internal val declaredCreativeType: CreativeType? = null,
+    internal val declaredType: String? = null,
 
     internal val impressionTracking: ImpressionTracking = ImpressionTracking()
 ) {
     init {
         require(skipOffsetMs >= 0) { "skipOffsetMs must not be negative, was $skipOffsetMs" }
-        require(declaredCreativeType != CreativeType.VAST) {
-            "VAST is recognised from the markup and cannot be declared"
+        require(declaredType == null || declaredType in DECLARABLE_TYPES) {
+            "declaredType must be one of $DECLARABLE_TYPES, was $declaredType"
         }
     }
+
+    /**
+     * The renderer the declared type settles when the markup cannot: HTML or MRAID. VAST markup is
+     * recognised on its own, and any other type counts as none.
+     */
+    internal val declaredCreativeType: CreativeType?
+        get() = when (declaredType) {
+            "mraid" -> CreativeType.MRAID
+            "html" -> CreativeType.HTML
+            else -> null
+        }
 
     companion object {
         /** The server's default, used when neither the VAST document nor the DSP sets one. */
@@ -65,7 +75,7 @@ data class AdRenderingConfig internal constructor(
                     default = DEFAULT_SKIP_OFFSET_MS,
                     max = Long.MAX_VALUE
                 ),
-                declaredCreativeType = declaredTypeOf(creative?.optString("type").orEmpty()),
+                declaredType = (creative?.opt("type") as? String)?.takeIf { it in DECLARABLE_TYPES },
                 impressionTracking = impressionTrackingFrom(
                     container?.optJSONObject("impression_tracking")
                 )
@@ -211,11 +221,8 @@ private fun impressionTrackingFrom(json: JSONObject?): ImpressionTracking {
     )
 }
 
-private fun declaredTypeOf(type: String): CreativeType? = when (type) {
-    "mraid" -> CreativeType.MRAID
-    "html" -> CreativeType.HTML
-    else -> null
-}
+/** The creative types a DSP can declare in a bid, spelled as the bid carries them. */
+private val DECLARABLE_TYPES = setOf("html", "mraid", "vast", "static_image", "native", "playable")
 
 /** `#RGB` or `#RRGGBB`, the two forms the server accepts, as an opaque ARGB int. */
 internal fun parseHexColor(value: String): Int? {
