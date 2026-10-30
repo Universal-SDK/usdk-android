@@ -2958,6 +2958,24 @@ class AdEventsTest {
     }
 
     @Test
+    fun `the 7006 a close sends for an open show carries the integration labels and the uptime`() {
+        val events = adEvents(integration = WireIntegration.MAX_CUSTOM)
+        events.showRequested()
+        uptimeNow = 5_678L
+
+        events.closed()
+
+        assertEquals(listOf("ad_show_requested", "ad_show_failed"), telemetry.emitted.map { it.name })
+        val failed = telemetry.single("ad_show_failed")
+        assertEquals("7006", failed.get("error_code"))
+        val envelope = failed.envelope
+        assertEquals("max_adapter", envelope.getString("host"))
+        assertEquals("bidon", envelope.getString("auction_owner"))
+        assertJsonInteger(5_678L, envelope, "sdk_uptime_ms")
+        assertEquals(ENVELOPE_KEYS + setOf("host", "auction_owner"), envelope.keyNames())
+    }
+
+    @Test
     fun `an ad with no integration sends no labels, and still sends the uptime`() {
         val events = adEvents(integration = null)
 

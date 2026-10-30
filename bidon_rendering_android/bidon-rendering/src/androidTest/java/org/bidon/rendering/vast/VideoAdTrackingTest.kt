@@ -21,6 +21,7 @@ import androidx.test.runner.lifecycle.Stage
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.LocalHttpServer
+import org.bidon.rendering.telemetry.AdType
 import org.bidon.rendering.telemetry.ErrorCode
 import org.bidon.rendering.telemetry.Renderer
 import org.bidon.rendering.telemetry.EventClass
@@ -50,7 +51,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * is counted when playback starts, not when the screen opens, and only once for the ad, even when
  * the screen is recreated and the video starts over. A click sends the trackers of what was
  * clicked: the video's for the video, the end card's for the end card. A tap that opens nothing is
- * not a click at all, and neither is a tap on a video that has not started playing.
+ * not a click at all, and neither is a tap on a video that has not started playing. A rewarded video
+ * pays once, when it plays to its end, and never when it is skipped.
  */
 @RunWith(AndroidJUnit4::class)
 class VideoAdTrackingTest {
@@ -68,6 +70,7 @@ class VideoAdTrackingTest {
         val clicks = AtomicInteger()
         val failed = CountDownLatch(1)
         val closes = AtomicInteger()
+        val rewards = AtomicInteger()
 
         override fun onLoaded() = loaded.countDown()
         override fun onImpression() {
@@ -81,7 +84,9 @@ class VideoAdTrackingTest {
             closes.incrementAndGet()
             closed.countDown()
         }
-        override fun onReward() = Unit
+        override fun onReward() {
+            rewards.incrementAndGet()
+        }
         override fun onError(error: Throwable) = failed.countDown()
     }
 
@@ -116,9 +121,14 @@ class VideoAdTrackingTest {
         </InLine></Ad></VAST>
     """.trimIndent()
 
-    /** Loads [vast], shows it over a blank screen, runs [block], and tears everything down. */
-    private fun showAd(vast: String, events: Events, block: () -> Unit) {
-        val renderer = VastRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Renderer.VAST))
+    /** [vast] without its end card, so the screen closes as soon as the video ends or is skipped. */
+    private fun withoutEndCard(vast: String) =
+        vast.replace(Regex("<Creative><CompanionAds>.*?</CompanionAds></Creative>", RegexOption.DOT_MATCHES_ALL), "")
+            .also { check("CompanionAds" !in it) { "the end card is still in the fixture" } }
+
+    /** Loads [vast] as an ad of [adType], shows it over a blank screen, runs [block], and tears everything down. */
+    private fun showAd(vast: String, events: Events, adType: AdType = AdType.INTERSTITIAL, block: () -> Unit) {
+        val renderer = VastRenderer(instrumentation.targetContext, AdRenderingConfig(), queued.adEvents(Renderer.VAST, adType))
         instrumentation.runOnMainSync { renderer.load(vast, events) }
         assertTrue("the ad did not load", events.loaded.await(10, TimeUnit.SECONDS))
 
@@ -168,6 +178,53 @@ class VideoAdTrackingTest {
             assertEquals(1, server.requestCount("/impression/dsp"))
             assertEquals(1, server.requestCount("/impression/verifier"))
             assertMacrosFilledIn("/impression/dsp")
+        }
+    }
+
+    /**
+     * A rewarded video played to its end pays the user once, and the screen closes after it. The reward does not
+     * depend on the ad type: the renderer reports it for every video and the rewarded placement is the one that acts
+     * on it, so the ad is labelled rewarded here as the adapter labels it.
+     */
+    @Test
+    fun aRewardedVideoPlayedToItsEndRewardsOnce() {
+        server.serve("/video.mp4", "video/mp4", testVideo())
+        val events = Events()
+
+        showAd(withoutEndCard(vast("/video.mp4")), events, AdType.REWARDED) {
+            assertTrue("the ad did not close", events.closed.await(30, TimeUnit.SECONDS))
+            // A late, second reward would come from the same screen; give it time to arrive.
+            SystemClock.sleep(1_000)
+
+            assertEquals(1, events.impressions.get())
+            assertEquals(1, events.rewards.get())
+            assertEquals(1, events.closes.get())
+            assertEquals("an error reached the host", 1L, events.failed.count)
+            queued.assertShowRequested(queued.next(), adType = AdType.REWARDED)
+            queued.assertImpression(queued.next(), adType = AdType.REWARDED)
+            queued.assertNoMore()
+        }
+    }
+
+    /** A rewarded video skipped long before its end closes without paying the user. */
+    @Test
+    fun aRewardedVideoSkippedBeforeItsEndClosesWithoutAReward() {
+        server.serve("/video.mp4", "video/mp4", testVideo())
+        val events = Events()
+
+        showAd(withoutEndCard(vast("/video.mp4")), events, AdType.REWARDED) {
+            val screen = waitFor("the video to play") { resumedVideoScreen()?.takeIf { it.isPlaying() } }
+            val skip = waitFor("Skip") {
+                onMain { screen.window.decorView.find(TextView::class.java) { it.text == "Skip" && it.isShown } }
+            }
+            onMain { skip.performClick() }
+
+            assertTrue("the ad did not close", events.closed.await(10, TimeUnit.SECONDS))
+            SystemClock.sleep(1_000)
+
+            assertEquals(1, events.impressions.get())
+            assertEquals("a skipped video paid the user", 0, events.rewards.get())
+            assertEquals(1, events.closes.get())
         }
     }
 
