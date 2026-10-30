@@ -35,7 +35,10 @@ class ErrorCodeTest {
         val rows = ErrorCodeTable.parse(table)
 
         assertEquals(
-            listOf(6001, 6002, 6003, 6004, 6005, 6006, 6014, 6015, 7001, 7002, 8001, 8002, 8003),
+            listOf(
+                6001, 6002, 6003, 6004, 6005, 6006, 6014, 6015, 7001, 7002, 7003, 7004, 7005, 7006, 8001, 8002, 8003,
+                11001, 11002,
+            ),
             rows.filter { it.status == "active" }.map { it.code },
         )
         assertEquals(emptyList<Int>(), rows.filter { it.status == "retired" }.map { it.code })
@@ -53,7 +56,7 @@ class ErrorCodeTest {
             listOf(
                 1001, 1002, 1101, 1102, 1901, 1902, 2001, 2002, 5001, 5002, 5003, 5004, 5005, 6001, 6002, 6003, 6004,
                 6005, 6006, 6007, 6008, 6009, 6010, 6011, 6012, 6013, 6014, 6015, 7001, 7002, 7003, 7004, 7005, 7006,
-                7101, 7102, 7103, 8001, 8002, 8003, 8004, 11001, 11002,
+                7101, 7102, 7103, 8001, 8002, 8003, 8004, 11001, 11002, 11003,
             ),
             ErrorCode.entries.map { it.number },
         )
@@ -90,7 +93,63 @@ class ErrorCodeTest {
             if (row.showStage != ErrorCodeTable.NONE) {
                 assertEquals("${code.name} has a load stage", null, code.stage)
             }
+            assertEquals(code.name, ErrorCodeTable.showStageCell(code), row.showStage)
         }
+    }
+
+    @Test
+    fun `the show stage of every code is the one the spec gives its site`() {
+        val expected = mapOf(
+            ErrorCode.NO_PLAYABLE_MEDIA to ShowStage.MEDIA_SELECT,
+            ErrorCode.PLAYER_ERROR to ShowStage.PLAYBACK_START,
+            ErrorCode.WEBVIEW_GONE_AT_SHOW to ShowStage.READY_CHECK,
+            ErrorCode.AD_SCREEN_NOT_STARTED to ShowStage.ACTIVITY_LAUNCH,
+            ErrorCode.AD_SCREEN_NO_VIEW to ShowStage.VIEW_ATTACH,
+            ErrorCode.PLAYER_NETWORK to ShowStage.PLAYBACK_START,
+            ErrorCode.PLAYER_DECODE to ShowStage.PLAYBACK_START,
+            ErrorCode.SHOW_NOT_READY to ShowStage.READY_CHECK,
+            ErrorCode.SHOW_TWICE to ShowStage.READY_CHECK,
+            ErrorCode.SHOWN_FROM_OTHER_PROCESS to ShowStage.READY_CHECK,
+        )
+
+        ErrorCode.entries.forEach { code -> assertEquals(code.name, expected[code], code.showStage) }
+        assertEquals(null, ErrorCode.CLOSED_BEFORE_IMPRESSION.showStage)
+    }
+
+    @Test
+    fun `the show stages are the five of the spec, spelled as they go on the wire`() {
+        assertEquals(
+            listOf("ready_check", "media_select", "activity_launch", "view_attach", "playback_start"),
+            ShowStage.entries.map { it.wireName },
+        )
+    }
+
+    @Test
+    fun `the new show code is a publisher code with no external source, raised at the ready check`() {
+        val code = ErrorCode.SHOWN_FROM_OTHER_PROCESS
+
+        assertEquals(11003, code.number)
+        assertEquals(ErrorDomain.PUBLISHER, code.domain)
+        assertEquals(null, code.stage)
+        assertEquals(ShowStage.READY_CHECK, code.showStage)
+        assertEquals(null, code.externalSource)
+        assertEquals(false, code.retired)
+    }
+
+    @Test
+    fun `a show stage belongs to a display or publisher code only`() {
+        ErrorCode.entries.filter { it.showStage != null }.forEach { code ->
+            assertTrue(code.name, code.number in 7000..7999 || code.number in 11000..11999)
+        }
+    }
+
+    @Test
+    fun `the table keeps the show stage of the two player codes that only the video ticket raises`() {
+        val rows = ErrorCodeTable.parse(table).associateBy { it.code }
+
+        assertEquals("playback_start", rows.getValue(7101).showStage)
+        assertEquals("playback_start", rows.getValue(7102).showStage)
+        assertEquals("reserved", rows.getValue(7101).status)
     }
 
     @Test
@@ -147,7 +206,11 @@ class ErrorCodeTest {
         val stage = table.replace("| 6004 | VAST_INVALID | creative | parse |", "| 6004 | VAST_INVALID | creative | webview_load |")
         val source = table.replace("| 8002 | VAST_WRAPPER_HTTP_STATUS | dsp | asset_fetch | – | http |", "| 8002 | VAST_WRAPPER_HTTP_STATUS | dsp | asset_fetch | – | vast |")
 
-        listOf(domain, stage, source).forEach { changed ->
+        val showStage = table.replace("| 7001 | NO_PLAYABLE_MEDIA | creative | – | media_select |", "| 7001 | NO_PLAYABLE_MEDIA | creative | – | ready_check |")
+        val noShowStage = table.replace("| 11003 | SHOWN_FROM_OTHER_PROCESS | publisher | – | ready_check |", "| 11003 | SHOWN_FROM_OTHER_PROCESS | publisher | – | – |")
+        val byCreative = table.replace("| 7006 | CLOSED_BEFORE_IMPRESSION | device | – | by creative |", "| 7006 | CLOSED_BEFORE_IMPRESSION | device | – | view_attach |")
+
+        listOf(domain, stage, source, showStage, noShowStage, byCreative).forEach { changed ->
             assertTrue("the replacement matched nothing", changed != table)
             assertThrows(AssertionError::class.java) { ErrorCodeTable.assertMatches(ErrorCodeTable.parse(changed)) }
         }
@@ -180,10 +243,11 @@ class ErrorCodeTest {
         val shortRow = table.replace("| 6003 | BLANK_CREATIVE | creative | webview_load | – | – | ad_load_failed | active | BID-136 |", "| 6003 | BLANK_CREATIVE | creative | webview_load | – | – | ad_load_failed | active |")
         val badCode = table.replace("| 6003 |", "| 60O3 |")
         val badStatus = table.replace("| active | BID-136 |\n| 6004", "| live | BID-136 |\n| 6004")
+        val unknownShowStage = table.replace("| 7001 | NO_PLAYABLE_MEDIA | creative | – | media_select |", "| 7001 | NO_PLAYABLE_MEDIA | creative | – | media_pick |")
         val unknownDomain = table.replace("| 6003 | BLANK_CREATIVE | creative |", "| 6003 | BLANK_CREATIVE | creatve |")
         val duplicate = table.trimEnd() + "\n| 6003 | BLANK_CREATIVE | creative | webview_load | – | – | ad_load_failed | active | BID-136 |\n"
 
-        listOf(shortRow, badCode, badStatus, unknownDomain, duplicate).forEach { broken ->
+        listOf(shortRow, badCode, badStatus, unknownShowStage, unknownDomain, duplicate).forEach { broken ->
             assertTrue("the replacement matched nothing", broken != table)
             assertThrows(IllegalArgumentException::class.java) { ErrorCodeTable.parse(broken) }
         }
@@ -262,6 +326,9 @@ internal object ErrorCodeTable {
 
     const val NONE = "–"
 
+    /** The show stage cell of the code whose stage is the point the ad screen had reached. */
+    const val BY_CREATIVE = "by creative"
+
     const val HEADER = "| Code | Name | Domain | Load stage | Show stage | External source | Event | Status | Raised by |"
 
     private val STATUSES = setOf("active", "reserved", "retired")
@@ -292,12 +359,20 @@ internal object ErrorCodeTable {
             val code = requireNotNull(cells[0].takeIf { it.all(Char::isDigit) }?.toIntOrNull()) { "not a code: ${cells[0]}" }
             require(cells[2] in ErrorDomain.entries.map { it.wireName }) { "unknown domain ${cells[2]}" }
             require(cells[3] == NONE || cells[3] in FailedStage.entries.map { it.wireName }) { "unknown load stage ${cells[3]}" }
+            require(cells[4] == NONE || cells[4] == BY_CREATIVE || cells[4] in ShowStage.entries.map { it.wireName }) { "unknown show stage ${cells[4]}" }
             require(cells[5] == NONE || cells[5] in ExternalErrorSource.entries.map { it.wireName }) { "unknown source ${cells[5]}" }
             require(cells[7] in STATUSES) { "unknown status ${cells[7]}" }
             Row(code, cells[1], cells[2], cells[3], cells[4], cells[5], cells[6], cells[7], cells[8])
         }
         require(rows.map { it.code }.toSet().size == rows.size) { "a code is listed twice" }
         return rows
+    }
+
+    /** What the show stage cell of [code] must say. */
+    fun showStageCell(code: ErrorCode): String = when {
+        code.showStage != null -> code.showStage.wireName
+        code == ErrorCode.CLOSED_BEFORE_IMPRESSION -> BY_CREATIVE
+        else -> NONE
     }
 
     /** Fails unless [rows] and the [ErrorCode] enum list the same codes with the same name, domain, stage and source. */
@@ -313,6 +388,7 @@ internal object ErrorCodeTable {
             assertEquals("name of ${code.number}", code.name, row.name)
             assertEquals("domain of ${code.name}", code.domain.wireName, row.domain)
             assertEquals("load stage of ${code.name}", code.stage?.wireName ?: NONE, row.loadStage)
+            assertEquals("show stage of ${code.name}", showStageCell(code), row.showStage)
             assertEquals("external source of ${code.name}", code.externalSource?.wireName ?: NONE, row.externalSource)
             assertEquals("retired state of ${code.name}", code.retired, row.status == "retired")
         }

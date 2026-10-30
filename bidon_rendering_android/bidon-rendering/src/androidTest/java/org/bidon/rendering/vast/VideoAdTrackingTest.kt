@@ -9,6 +9,8 @@ import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.ui.PlayerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -19,6 +21,7 @@ import androidx.test.runner.lifecycle.Stage
 import org.bidon.rendering.AdRenderer
 import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.LocalHttpServer
+import org.bidon.rendering.telemetry.ErrorCode
 import org.bidon.rendering.telemetry.Renderer
 import org.bidon.rendering.telemetry.EventClass
 import org.bidon.rendering.telemetry.QueuedEvents
@@ -64,6 +67,7 @@ class VideoAdTrackingTest {
         val impressions = AtomicInteger()
         val clicks = AtomicInteger()
         val failed = CountDownLatch(1)
+        val closes = AtomicInteger()
 
         override fun onLoaded() = loaded.countDown()
         override fun onImpression() {
@@ -73,7 +77,10 @@ class VideoAdTrackingTest {
         override fun onClick() {
             clicks.incrementAndGet()
         }
-        override fun onClose() = closed.countDown()
+        override fun onClose() {
+            closes.incrementAndGet()
+            closed.countDown()
+        }
         override fun onReward() = Unit
         override fun onError(error: Throwable) = failed.countDown()
     }
@@ -153,6 +160,7 @@ class VideoAdTrackingTest {
             SystemClock.sleep(1_000)
 
             assertEquals(1, events.impressions.get())
+            queued.assertShowRequested(queued.next())
             val impression = queued.next()
             queued.assertImpression(impression)
             queued.assertRenderDuration(impression)
@@ -360,7 +368,10 @@ class VideoAdTrackingTest {
         queued.assertNoMore()
     }
 
-    /** A video in a format the device cannot play loads, and fails when it is shown. */
+    /**
+     * A video in a format the device cannot play loads, and fails when it is shown: a show failure (7001, in the
+     * `media_select` stage), not a load failure, preceded by the `ad_show_requested` of the call that failed.
+     */
     @Test
     fun aVideoWithNoPlayableMediaFileFailsWhenShown() {
         val events = Events()
@@ -369,44 +380,114 @@ class VideoAdTrackingTest {
         showAd(vast, events) {
             assertTrue("the show did not fail", events.failed.await(5, TimeUnit.SECONDS))
 
+            queued.assertShowRequested(queued.next())
             val failed = queued.next()
-            queued.assertAdEvent(failed, "ad_load_failed", EventClass.ERROR, null)
-            assertEquals("7001", failed.json.getString("error_code"))
-            assertEquals("creative", failed.json.getString("error_domain"))
-            assertFalse(failed.json.has("failed_stage"))
-            assertFalse("a show failure has no load time", failed.json.has("duration_ms"))
-            assertEquals("vast", failed.json.getString("external_error_source"))
-            assertEquals("403", failed.json.getString("external_error_code"))
             // The class of what the media file selection failed with.
-            assertEquals("java.lang.IllegalStateException", failed.json.getString("exception_class"))
+            queued.assertShowFailed(
+                failed,
+                ErrorCode.NO_PLAYABLE_MEDIA,
+                external = "403" to "vast",
+                exceptionClass = "java.lang.IllegalStateException",
+            )
             queued.assertNoMore()
             assertTrue(videoScreens().isEmpty())
+            assertEquals(0, events.closes.get())
+            assertEquals(0, events.impressions.get())
         }
     }
 
+    /**
+     * A video that fails before its first frame is a failed show: the host hears `onError` and not `onClose`, the
+     * event is `ad_show_failed` and not `ad_load_failed`, and nothing is counted as an impression.
+     */
     @Test
-    fun aVideoThatNeverPlaysCountsNoImpression() {
+    fun aVideoThatNeverPlaysFailsTheShowAndCountsNoImpression() {
         server.serve("/video.mp4", "video/mp4", "not a video".toByteArray())
         val events = Events()
 
         showAd(vast("/video.mp4"), events) {
-            assertTrue("the ad did not close", events.closed.await(15, TimeUnit.SECONDS))
+            assertTrue("the show did not fail", events.failed.await(15, TimeUnit.SECONDS))
+            waitFor("the video screen to go") { Unit.takeIf { videoScreens().isEmpty() } }
             SystemClock.sleep(500)
 
             assertEquals(0, events.impressions.get())
+            assertEquals("closed an ad whose show failed", 0, events.closes.get())
+            queued.assertShowRequested(queued.next())
             val failed = queued.next()
-            queued.assertAdEvent(failed, "ad_load_failed", EventClass.ERROR, null)
-            assertEquals("7002", failed.json.getString("error_code"))
-            assertEquals("creative", failed.json.getString("error_domain"))
-            assertFalse(failed.json.has("failed_stage"))
-            assertFalse("a show failure has no load time", failed.json.has("duration_ms"))
-            assertEquals("media3", failed.json.getString("external_error_source"))
-            assertTrue("no player error code", failed.json.getString("external_error_code").toInt() > 0)
+            val playerCode = failed.json.getString("external_error_code")
+            assertTrue("no player error code", playerCode.toInt() > 0)
             val exceptionClass = failed.json.getString("exception_class")
             assertTrue("not the player's exception: $exceptionClass", exceptionClass.startsWith("androidx.media3."))
+            queued.assertShowFailed(
+                failed,
+                ErrorCode.PLAYER_ERROR,
+                external = playerCode to "media3",
+                exceptionClass = exceptionClass,
+            )
             queued.assertNoMore()
             assertEquals(0, server.requestCount("/impression/dsp"))
             assertEquals(0, server.requestCount("/impression/verifier"))
+        }
+    }
+
+    /** The media answers 404: the player's own code for a bad HTTP status travels with 7002. */
+    @Test
+    fun aMediaFileThatAnswers404FailsTheShowWithThePlayersCode() {
+        server.respondWith("/video.mp4", 404)
+        val events = Events()
+
+        showAd(vast("/video.mp4"), events) {
+            assertTrue("the show did not fail", events.failed.await(15, TimeUnit.SECONDS))
+            waitFor("the video screen to go") { Unit.takeIf { videoScreens().isEmpty() } }
+            SystemClock.sleep(500)
+
+            assertEquals(0, events.impressions.get())
+            assertEquals("closed an ad whose show failed", 0, events.closes.get())
+            queued.assertShowRequested(queued.next())
+            val failed = queued.next()
+            val exceptionClass = failed.json.getString("exception_class")
+            queued.assertShowFailed(
+                failed,
+                ErrorCode.PLAYER_ERROR,
+                external = PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS.toString() to "media3",
+                exceptionClass = exceptionClass,
+            )
+            assertTrue(exceptionClass.startsWith("androidx.media3."))
+            assertTrue(failed.json.getString("exception_cause_class").endsWith("InvalidResponseCodeException"))
+            queued.assertNoMore()
+            assertEquals(0, server.requestCount("/impression/dsp"))
+        }
+    }
+
+    /**
+     * A playback error after the impression is not a show failure: the show ended in its impression, so no
+     * `ad_show_failed` and no `ad_load_failed` follow, and the host hears the ad close, not fail. The error is made by
+     * handing the playing player a media file that answers 404.
+     */
+    @Test
+    fun aPlaybackErrorAfterTheImpressionEmitsNoShowFailure() {
+        server.serve("/video.mp4", "video/mp4", testVideo())
+        server.respondWith("/gone.mp4", 404)
+        val events = Events()
+
+        showAd(vast("/video.mp4"), events) {
+            val screen = waitFor("the video to play") { resumedVideoScreen()?.takeIf { it.isPlaying() } }
+            assertTrue(events.impressionReported.await(5, TimeUnit.SECONDS))
+
+            onMain {
+                val player = screen.window.decorView.find(PlayerView::class.java)!!.player!!
+                player.setMediaItem(MediaItem.fromUri(server.url("/gone.mp4")))
+                player.prepare()
+            }
+
+            waitFor("the video screen to go") { Unit.takeIf { videoScreens().isEmpty() } }
+            SystemClock.sleep(500)
+            assertEquals(1, events.impressions.get())
+            assertEquals("the ad seen did not close", 1, events.closes.get())
+            assertEquals("an error reached the host", 1L, events.failed.count)
+            queued.assertShowRequested(queued.next())
+            queued.assertImpression(queued.next())
+            queued.assertNoMore()
         }
     }
 
@@ -488,6 +569,7 @@ class VideoAdTrackingTest {
 
             assertTrue("the ad did not close", events.closed.await(30, TimeUnit.SECONDS))
             waitFor("the video screen to go") { Unit.takeIf { videoScreens().isEmpty() } }
+            queued.assertShowRequested(queued.next())
             queued.assertImpression(queued.next())
             val gone = queued.next()
             queued.assertAdEvent(gone, "render_crashed", EventClass.ERROR, Renderer.VAST)

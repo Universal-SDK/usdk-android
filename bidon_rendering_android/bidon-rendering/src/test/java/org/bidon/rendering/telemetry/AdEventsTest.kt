@@ -155,7 +155,7 @@ class AdEventsTest {
     @Test
     fun `an event's own fields sit next to the envelope, not inside it`() {
         val events = adEvents(renderer = Renderer.MRAID)
-        events.showRequested()
+        events.viewRequested()
 
         events.rendered()
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
@@ -596,7 +596,10 @@ class AdEventsTest {
 
         events.rendered()
 
-        assertEquals(1, telemetry.emitted.size)
+        assertEquals(
+            listOf("ad_show_requested" to EventClass.DIAGNOSTIC, "ad_impression" to EventClass.COUNTED),
+            telemetry.calls(),
+        )
         assertJsonInteger(250L, telemetry.single("ad_impression"), "render_duration_ms")
     }
 
@@ -724,7 +727,10 @@ class AdEventsTest {
         events.rendered()
 
         assertFalse(telemetry.single("ad_impression").has("render_duration_ms"))
-        assertEquals(1, telemetry.emitted.size)
+        assertEquals(
+            listOf("ad_impression" to EventClass.COUNTED, "ad_show_requested" to EventClass.DIAGNOSTIC),
+            telemetry.calls(),
+        )
     }
 
     @Test
@@ -758,6 +764,8 @@ class AdEventsTest {
     fun `marks that land between the render and the capture add no render duration`() {
         val events = adEvents()
         telemetry.beforeCapture = {
+            // Once: the show request emits too, and must not run the hook again.
+            telemetry.beforeCapture = {}
             elapsed = 100
             events.showRequested()
             events.viewRequested()
@@ -775,6 +783,8 @@ class AdEventsTest {
         events.viewRequested()
         elapsed = 250
         telemetry.beforeCapture = {
+            // Once: the show request emits too, and must not run the hook again.
+            telemetry.beforeCapture = {}
             elapsed = 900
             events.showRequested()
         }
@@ -791,6 +801,8 @@ class AdEventsTest {
         events.showRequested()
         elapsed = 250
         telemetry.beforeCapture = {
+            // Once: the show request emits too, and must not run the hook again.
+            telemetry.beforeCapture = {}
             elapsed = 900
             events.showRequested()
             events.viewRequested()
@@ -847,7 +859,7 @@ class AdEventsTest {
     @Test
     fun `only ad_impression carries the render duration and the OM flag`() {
         val events = adEvents()
-        events.showRequested()
+        events.viewRequested()
         elapsed += 20
 
         events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
@@ -861,12 +873,14 @@ class AdEventsTest {
     }
 
     @Test
-    fun `the marks emit nothing and touch nothing else on telemetry`() {
+    fun `the view mark, the load marks and the show start emit nothing and touch nothing else on telemetry`() {
         val events = adEvents()
 
         repeat(3) {
-            events.showRequested()
             events.viewRequested()
+            events.loadStarted()
+            events.loadSucceeded()
+            events.showStarted()
         }
 
         assertEquals(emptyList<Pair<String, EventClass>>(), telemetry.calls())
@@ -1378,7 +1392,10 @@ class AdEventsTest {
 
         events.rendered()
 
-        assertEquals(1, telemetry.emitted.size)
+        assertEquals(
+            listOf("ad_impression" to EventClass.COUNTED, "ad_show_requested" to EventClass.DIAGNOSTIC),
+            telemetry.calls(),
+        )
         assertFalse(telemetry.single("ad_impression").has("render_duration_ms"))
     }
 
@@ -1752,7 +1769,10 @@ class AdEventsTest {
 
         events.rendered()
 
-        assertEquals(listOf("ad_impression" to EventClass.COUNTED), telemetry.calls())
+        assertEquals(
+            listOf("ad_show_requested" to EventClass.DIAGNOSTIC, "ad_impression" to EventClass.COUNTED),
+            telemetry.calls(),
+        )
     }
 
     // rule 28
@@ -1911,6 +1931,8 @@ class AdEventsTest {
             { it.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR, Int.MIN_VALUE.toString()) },
             { it.processGone(crashed) },
             { it.closed() },
+            { it.loadSucceeded() },
+            { it.showFailed(ErrorCode.PLAYER_ERROR, Int.MIN_VALUE.toString(), IllegalStateException("never sent")) },
         )
         permutations(calls).forEach { order ->
             val events = adEvents(telemetry = Telemetry.Disabled)
@@ -1931,7 +1953,7 @@ class AdEventsTest {
                     val events = adEvents(telemetry = recording)
                     elapsed = start
                     events.loadStarted()
-                    events.showRequested()
+                    events.viewRequested()
                     elapsed = end
 
                     events.rendered()
@@ -1979,19 +2001,950 @@ class AdEventsTest {
         }
     }
 
+    // BID-140 AC 1: ad_show_requested and the time since the load ended
+
+    @Test
+    fun `a show request emits one ad_show_requested as a diagnostic event`() {
+        val events = adEvents()
+        events.loadSucceeded()
+
+        events.showRequested()
+
+        assertEquals(listOf("ad_show_requested" to EventClass.DIAGNOSTIC), telemetry.calls())
+        assertEquals(0, telemetry.syncs)
+    }
+
+    @Test
+    fun `ad_show_requested is the envelope plus the time since the load ended, and nothing else`() {
+        telemetry.rate = SamplingRate.of(0.25)!!
+        val events = adEvents(renderer = Renderer.VAST)
+        events.loadSucceeded()
+        elapsed += 2_500
+
+        events.showRequested()
+
+        val json = telemetry.single("ad_show_requested")
+        assertEquals(setOf("envelope", "time_since_loaded_ms"), json.keyNames())
+        assertEnvelope(json.envelope, "ad_show_requested", rate = 0.25)
+        assertJsonInteger(2_500L, json, "time_since_loaded_ms")
+    }
+
+    @Test
+    fun `the time since the load ended is read from the monotonic clock, not the wall clock`() {
+        val events = adEvents()
+        events.loadSucceeded()
+        elapsed += 2_500
+        now -= 3_600_000
+
+        events.showRequested()
+
+        val json = telemetry.single("ad_show_requested")
+        assertJsonInteger(2_500L, json, "time_since_loaded_ms")
+        assertEquals(now, json.envelope.getLong("event_ts"))
+    }
+
+    @Test
+    fun `a wall clock moved forward in between does not change the time since the load ended`() {
+        val events = adEvents()
+        events.loadSucceeded()
+        elapsed += 700
+        now += 86_400_000
+
+        events.showRequested()
+
+        assertJsonInteger(700L, telemetry.single("ad_show_requested"), "time_since_loaded_ms")
+    }
+
+    @Test
+    fun `a show request with no load leaves the time since the load ended out`() {
+        adEvents().showRequested()
+
+        assertEquals(setOf("envelope"), telemetry.single("ad_show_requested").keyNames())
+    }
+
+    @Test
+    fun `the start of the load is not the end of it`() {
+        val events = adEvents()
+        events.loadStarted()
+        elapsed += 900
+
+        events.showRequested()
+
+        assertFalse(telemetry.single("ad_show_requested").has("time_since_loaded_ms"))
+    }
+
+    @Test
+    fun `the time since the load ended counts from the first loadSucceeded, not a later one`() {
+        val events = adEvents()
+        events.loadSucceeded()
+        elapsed += 100
+        events.loadSucceeded()
+        elapsed += 400
+
+        events.showRequested()
+
+        assertJsonInteger(500L, telemetry.single("ad_show_requested"), "time_since_loaded_ms")
+    }
+
+    @Test
+    fun `each show request measures from the load to its own call`() {
+        val events = adEvents()
+        events.loadSucceeded()
+        elapsed += 2_500
+        events.showRequested()
+        elapsed += 1_500
+
+        events.showRequested()
+
+        val times = telemetry.emitted.filter { it.name == "ad_show_requested" }.map { it.json().getLong("time_since_loaded_ms") }
+        assertEquals(listOf(2_500L, 4_000L), times)
+    }
+
+    @Test
+    fun `a show request at the very moment the load ended is zero`() {
+        val events = adEvents()
+        events.loadSucceeded()
+
+        events.showRequested()
+
+        assertJsonInteger(0L, telemetry.single("ad_show_requested"), "time_since_loaded_ms")
+    }
+
+    @Test
+    fun `a show request before the load ended has no time, and a later one measures from the end of the load`() {
+        val events = adEvents()
+        elapsed = 5_000
+        events.showRequested()
+        elapsed = 6_000
+        events.loadSucceeded()
+        elapsed = 9_000
+
+        events.showRequested()
+
+        val times = telemetry.emitted.filter { it.name == "ad_show_requested" }
+        assertFalse(times[0].json().has("time_since_loaded_ms"))
+        assertJsonInteger(3_000L, times[1].json(), "time_since_loaded_ms")
+    }
+
+    @Test
+    fun `the time since the load ended is left out when the clock reads earlier at the show or overflows, and written when widest`() {
+        listOf(
+            500L to 300L,
+            Long.MAX_VALUE to Long.MIN_VALUE,
+            Long.MIN_VALUE to Long.MAX_VALUE,
+            -1L to Long.MAX_VALUE,
+        ).forEach { (loaded, shown) ->
+            val recording = RecordingTelemetry()
+            val events = adEvents(telemetry = recording)
+            elapsed = loaded
+            events.loadSucceeded()
+            elapsed = shown
+
+            events.showRequested()
+
+            assertFalse("$loaded..$shown", recording.single("ad_show_requested").has("time_since_loaded_ms"))
+        }
+        val recording = RecordingTelemetry()
+        val events = adEvents(telemetry = recording)
+        elapsed = 0
+        events.loadSucceeded()
+        elapsed = Long.MAX_VALUE
+
+        events.showRequested()
+
+        assertJsonInteger(Long.MAX_VALUE, recording.single("ad_show_requested"), "time_since_loaded_ms")
+    }
+
+    // BID-140 AC 2: one ad_show_requested per call
+
+    @Test
+    fun `every show request emits one ad_show_requested, whatever came before it`() {
+        Renderer.entries.forEach { renderer ->
+            val recording = RecordingTelemetry()
+            val events = adEvents(renderer = renderer, telemetry = recording)
+            events.loadSucceeded()
+
+            events.showRequested()
+            events.showRequested()
+            events.rendered()
+            events.showRequested()
+            events.showFailed(ErrorCode.SHOW_TWICE)
+            events.showRequested()
+
+            assertEquals(renderer.name, 4, recording.emitted.count { it.name == "ad_show_requested" })
+        }
+    }
+
+    @Test
+    fun `a show request after a failed load, a death or a close still emits ad_show_requested`() {
+        val events = adEvents()
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
+        events.processGone(killed)
+        events.closed()
+
+        events.showRequested()
+
+        assertEquals(
+            listOf(
+                "ad_load_failed" to EventClass.ERROR,
+                "render_crashed" to EventClass.ERROR,
+                "ad_show_requested" to EventClass.DIAGNOSTIC,
+            ),
+            telemetry.calls(),
+        )
+    }
+
+    @Test
+    fun `a view request emits no ad_show_requested`() {
+        val events = adEvents()
+        events.loadSucceeded()
+
+        repeat(3) { events.viewRequested() }
+
+        assertEquals(emptyList<Pair<String, EventClass>>(), telemetry.calls())
+    }
+
+    @Test
+    fun `a show request that telemetry did not keep still opens a show for the failure that follows`() {
+        telemetry.rate = null
+        val events = adEvents()
+
+        events.showRequested()
+        events.showFailed(ErrorCode.SHOW_NOT_READY)
+        events.showFailed(ErrorCode.SHOW_NOT_READY)
+
+        assertEquals(
+            listOf("ad_show_requested" to EventClass.DIAGNOSTIC, "ad_show_failed" to EventClass.ERROR),
+            telemetry.calls(),
+        )
+        assertEquals(0, telemetry.captures)
+    }
+
+    // BID-140 AC 3: ad_show_failed
+
+    @Test
+    fun `a show failure emits one ad_show_failed as an error`() {
+        val events = adEvents()
+        events.showRequested()
+        telemetry.emitted.clear()
+
+        events.showFailed(ErrorCode.AD_SCREEN_NO_VIEW)
+
+        assertEquals(listOf("ad_show_failed" to EventClass.ERROR), telemetry.calls())
+        assertEquals(0, telemetry.syncs)
+    }
+
+    @Test
+    fun `ad_show_failed with everything it can carry is the envelope plus the code, owner, stage, external pair and exception classes, and nothing else`() {
+        telemetry.rate = SamplingRate.of(0.5)!!
+        val events = adEvents(renderer = Renderer.VAST)
+        events.loadStarted()
+        events.loadSucceeded()
+        events.showRequested()
+        elapsed += 420
+
+        events.showFailed(
+            ErrorCode.PLAYER_ERROR,
+            "2004",
+            IllegalStateException("never sent", IOException("never sent either")),
+        )
+
+        val json = telemetry.single("ad_show_failed")
+        assertEquals(
+            setOf(
+                "envelope", "error_code", "error_domain", "failed_stage", "external_error_code",
+                "external_error_source", "exception_class", "exception_cause_class",
+            ),
+            json.keyNames(),
+        )
+        assertEnvelope(json.envelope, "ad_show_failed", rate = 0.5)
+        assertEquals("7002", json.get("error_code"))
+        assertEquals("creative", json.getString("error_domain"))
+        assertEquals("playback_start", json.getString("failed_stage"))
+        assertEquals("2004", json.get("external_error_code"))
+        assertEquals("media3", json.getString("external_error_source"))
+        assertEquals("java.lang.IllegalStateException", json.getString("exception_class"))
+        assertEquals("java.io.IOException", json.getString("exception_cause_class"))
+    }
+
+    @Test
+    fun `ad_show_failed with only a code is the envelope plus the code, owner and stage`() {
+        val events = adEvents()
+        events.showRequested()
+
+        events.showFailed(ErrorCode.WEBVIEW_GONE_AT_SHOW)
+
+        val json = telemetry.single("ad_show_failed")
+        assertEquals(setOf("envelope", "error_code", "error_domain", "failed_stage"), json.keyNames())
+        assertEquals("7003", json.get("error_code"))
+        assertEquals("device", json.getString("error_domain"))
+        assertEquals("ready_check", json.getString("failed_stage"))
+    }
+
+    @Test
+    fun `ad_show_failed carries no load time, however long the load took`() {
+        val events = adEvents()
+        events.loadStarted()
+        elapsed += 60_000
+        events.showRequested()
+
+        events.showFailed(ErrorCode.NO_PLAYABLE_MEDIA, "403")
+
+        val json = telemetry.single("ad_show_failed")
+        assertFalse(json.has("duration_ms"))
+        assertFalse(json.has("time_since_loaded_ms"))
+    }
+
+    @Test
+    fun `error_code of ad_show_failed is a JSON string`() {
+        val events = adEvents()
+        events.showRequested()
+
+        events.showFailed(ErrorCode.AD_SCREEN_NOT_STARTED)
+
+        val value = telemetry.single("ad_show_failed").get("error_code")
+        assertTrue("error_code is $value", value is String)
+        assertEquals("7004", value)
+    }
+
+    @Test
+    fun `each show failure goes out with the number, owner and stage the table promises for its site`() {
+        val expected = mapOf(
+            ErrorCode.NO_PLAYABLE_MEDIA to Site("7001", "creative", "media_select", "vast"),
+            ErrorCode.PLAYER_ERROR to Site("7002", "creative", "playback_start", "media3"),
+            ErrorCode.WEBVIEW_GONE_AT_SHOW to Site("7003", "device", "ready_check", null),
+            ErrorCode.AD_SCREEN_NOT_STARTED to Site("7004", "bidon_sdk", "activity_launch", null),
+            ErrorCode.AD_SCREEN_NO_VIEW to Site("7005", "device", "view_attach", null),
+            ErrorCode.PLAYER_NETWORK to Site("7101", "network", "playback_start", "media3"),
+            ErrorCode.PLAYER_DECODE to Site("7102", "device", "playback_start", "media3"),
+            ErrorCode.SHOW_NOT_READY to Site("11001", "publisher", "ready_check", null),
+            ErrorCode.SHOW_TWICE to Site("11002", "publisher", "ready_check", null),
+            ErrorCode.SHOWN_FROM_OTHER_PROCESS to Site("11003", "publisher", "ready_check", null),
+        )
+        expected.forEach { (code, site) ->
+            val recording = RecordingTelemetry()
+            val events = adEvents(telemetry = recording)
+            events.showRequested()
+
+            events.showFailed(code, "17")
+
+            val json = recording.single("ad_show_failed")
+            assertEquals(code.name, site.number, json.get("error_code"))
+            assertEquals(code.name, site.domain, json.getString("error_domain"))
+            assertEquals(code.name, site.stage, json.getString("failed_stage"))
+            if (site.source != null) {
+                assertEquals(code.name, "17", json.get("external_error_code"))
+                assertEquals(code.name, site.source, json.getString("external_error_source"))
+            } else {
+                assertFalse(code.name, json.has("external_error_code"))
+                assertFalse(code.name, json.has("external_error_source"))
+            }
+        }
+    }
+
+    @Test
+    fun `a code with an external source and no external error leaves both fields out of ad_show_failed`() {
+        val events = adEvents()
+        events.showRequested()
+
+        events.showFailed(ErrorCode.NO_PLAYABLE_MEDIA)
+
+        val json = telemetry.single("ad_show_failed")
+        assertEquals(setOf("envelope", "error_code", "error_domain", "failed_stage"), json.keyNames())
+    }
+
+    @Test
+    fun `an external code on a show code that has no external source is dropped, both fields`() {
+        val events = adEvents()
+        events.showRequested()
+
+        events.showFailed(ErrorCode.AD_SCREEN_NO_VIEW, "5")
+
+        val json = telemetry.single("ad_show_failed")
+        assertEquals(setOf("envelope", "error_code", "error_domain", "failed_stage"), json.keyNames())
+    }
+
+    @Test
+    fun `an external show code goes out as the text it came as, negative and extreme ones included`() {
+        listOf("0", "-1", Int.MIN_VALUE.toString(), Int.MAX_VALUE.toString(), "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED")
+            .forEach { external ->
+                val recording = RecordingTelemetry()
+                val events = adEvents(telemetry = recording)
+                events.showRequested()
+
+                events.showFailed(ErrorCode.PLAYER_ERROR, external)
+
+                assertEquals(external, recording.single("ad_show_failed").get("external_error_code"))
+            }
+    }
+
+    @Test
+    fun `the exception message of a show failure is never sent, and its class names are`() {
+        val events = adEvents()
+        events.showRequested()
+
+        events.showFailed(
+            ErrorCode.AD_SCREEN_NOT_STARTED,
+            cause = IllegalStateException("https://qx.example/a?token=zq9", IOException("host qx.example")),
+        )
+
+        val text = telemetry.emitted.last().event!!.encode().toString(Charsets.UTF_8)
+        assertFalse(text, "qx.example" in text)
+        assertFalse(text, "zq9" in text)
+        val json = telemetry.single("ad_show_failed")
+        assertEquals("java.lang.IllegalStateException", json.getString("exception_class"))
+        assertEquals("java.io.IOException", json.getString("exception_cause_class"))
+    }
+
+    @Test
+    fun `a show failure without an exception leaves both exception fields out`() {
+        val events = adEvents()
+        events.showRequested()
+
+        events.showFailed(ErrorCode.PLAYER_ERROR, "2001")
+
+        val json = telemetry.single("ad_show_failed")
+        assertFalse(json.has("exception_class"))
+        assertFalse(json.has("exception_cause_class"))
+    }
+
+    @Test
+    fun `a show failure takes its stage from the code, whatever the creative`() {
+        Renderer.entries.forEach { renderer ->
+            SHOW_CODES.forEach { code ->
+                val recording = RecordingTelemetry()
+                val events = adEvents(renderer = renderer, telemetry = recording)
+                events.showRequested()
+
+                events.showFailed(code)
+
+                assertEquals(
+                    "${renderer.name} ${code.name}",
+                    code.showStage!!.wireName,
+                    recording.single("ad_show_failed").getString("failed_stage"),
+                )
+            }
+        }
+    }
+
+    // BID-140 AC 4: errors are never sampled out
+
+    @Test
+    fun `the gate keeps a show failure at rate 1 for a day when sampling and the per-name rate are zero`() {
+        val gate = TelemetryGate(
+            session,
+            RateLimiter(monotonic),
+            TelemetryConfig(
+                samplingRate = 0.0,
+                eventRates = mapOf("ad_show_failed" to 0.0, "ad_show_requested" to 0.0),
+            ),
+        )
+        val captured = mutableListOf<Triple<String, EventClass, TelemetryEvent>>()
+        val gated = object : Telemetry {
+            override fun emit(eventName: String, eventClass: EventClass, capture: (SamplingRate) -> TelemetryEvent) {
+                gate.admit(eventName, eventClass)?.let { captured += Triple(eventName, eventClass, capture(it)) }
+            }
+
+            override fun sync() = Unit
+        }
+        val events = adEvents(telemetry = gated)
+
+        events.showRequested()
+        events.showFailed(ErrorCode.NO_PLAYABLE_MEDIA, "403")
+
+        val (name, eventClass, event) = captured.single()
+        assertEquals("ad_show_failed", name)
+        assertEquals(EventClass.ERROR, eventClass)
+        assertEquals(EventClass.ERROR, event.eventClass)
+        assertEquals(TimeUnit.HOURS.toMillis(24), eventClass.ttlMillis)
+        val json = JSONObject(event.encode().toString(Charsets.UTF_8))
+        assertEquals("ad_show_failed", json.envelope.getString("event_name"))
+        assertEquals(1.0, json.envelope.getDouble("sampling_rate"), 0.0)
+        assertEquals("7001", json.get("error_code"))
+    }
+
+    // BID-140: one terminal per show request
+
+    @Test
+    fun `a show failure after a show request emits, and a second one for the same request does not`() {
+        val events = adEvents()
+        events.showRequested()
+
+        events.showFailed(ErrorCode.PLAYER_ERROR, "2001")
+        events.showFailed(ErrorCode.AD_SCREEN_NO_VIEW)
+
+        assertEquals(1, telemetry.emitted.count { it.name == "ad_show_failed" })
+        assertEquals("7002", telemetry.single("ad_show_failed").get("error_code"))
+    }
+
+    @Test
+    fun `each show request opens a show of its own, so two requests allow two failures and no third`() {
+        val events = adEvents()
+        events.showRequested()
+        events.showRequested()
+
+        events.showFailed(ErrorCode.SHOW_NOT_READY)
+        events.showFailed(ErrorCode.SHOW_TWICE)
+        events.showFailed(ErrorCode.AD_SCREEN_NO_VIEW)
+
+        val codes = telemetry.emitted.filter { it.name == "ad_show_failed" }.map { it.json().get("error_code") }
+        assertEquals(listOf<Any>("11001", "11002"), codes)
+    }
+
+    @Test
+    fun `a show failure with no show request emits nothing`() {
+        val events = adEvents()
+
+        events.showFailed(ErrorCode.SHOW_NOT_READY)
+
+        assertEquals(emptyList<Pair<String, EventClass>>(), telemetry.calls())
+    }
+
+    @Test
+    fun `a show failure with no show request does not use up the failure of a later request`() {
+        val events = adEvents()
+        events.showFailed(ErrorCode.SHOW_NOT_READY)
+
+        events.showRequested()
+        events.showFailed(ErrorCode.SHOW_TWICE)
+
+        assertEquals(
+            listOf("ad_show_requested" to EventClass.DIAGNOSTIC, "ad_show_failed" to EventClass.ERROR),
+            telemetry.calls(),
+        )
+        assertEquals("11002", telemetry.single("ad_show_failed").get("error_code"))
+    }
+
+    @Test
+    fun `a show failure after the impression of the only request emits nothing`() {
+        val events = adEvents()
+        events.showRequested()
+        events.rendered()
+
+        events.showFailed(ErrorCode.PLAYER_ERROR, "2001")
+
+        assertEquals(
+            listOf("ad_show_requested" to EventClass.DIAGNOSTIC, "ad_impression" to EventClass.COUNTED),
+            telemetry.calls(),
+        )
+    }
+
+    @Test
+    fun `a second request after the impression opens a show that can fail`() {
+        val events = adEvents()
+        events.showRequested()
+        events.rendered()
+
+        events.showRequested()
+        events.showFailed(ErrorCode.SHOW_TWICE)
+
+        assertEquals(
+            listOf(
+                "ad_show_requested" to EventClass.DIAGNOSTIC,
+                "ad_impression" to EventClass.COUNTED,
+                "ad_show_requested" to EventClass.DIAGNOSTIC,
+                "ad_show_failed" to EventClass.ERROR,
+            ),
+            telemetry.calls(),
+        )
+        assertEquals("11002", telemetry.single("ad_show_failed").get("error_code"))
+    }
+
+    @Test
+    fun `the impression and a failure each close one of two open shows`() {
+        val events = adEvents()
+        events.showRequested()
+        events.showRequested()
+
+        events.rendered()
+        events.showFailed(ErrorCode.SHOW_TWICE)
+        events.showFailed(ErrorCode.SHOW_TWICE)
+
+        assertEquals(1, telemetry.emitted.count { it.name == "ad_impression" })
+        assertEquals(1, telemetry.emitted.count { it.name == "ad_show_failed" })
+    }
+
+    @Test
+    fun `an impression with no show request emits and closes nothing`() {
+        val events = adEvents()
+        events.rendered()
+
+        events.showFailed(ErrorCode.PLAYER_ERROR)
+        events.showRequested()
+        events.showFailed(ErrorCode.SHOW_TWICE)
+
+        assertEquals(
+            listOf(
+                "ad_impression" to EventClass.COUNTED,
+                "ad_show_requested" to EventClass.DIAGNOSTIC,
+                "ad_show_failed" to EventClass.ERROR,
+            ),
+            telemetry.calls(),
+        )
+    }
+
+    @Test
+    fun `a show failure does not stop the impression of the same ad`() {
+        val events = adEvents()
+        events.showRequested()
+        events.showFailed(ErrorCode.WEBVIEW_GONE_AT_SHOW)
+
+        events.rendered()
+
+        assertEquals(1, telemetry.emitted.count { it.name == "ad_impression" })
+    }
+
+    // BID-140: a load failure after a show started
+
+    @Test
+    fun `a load failure after a show started emits nothing`() {
+        val events = adEvents()
+        events.showRequested()
+        events.showStarted()
+        telemetry.emitted.clear()
+
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
+        events.loadFailed(ErrorCode.VAST_INVALID)
+
+        assertEquals(emptyList<Pair<String, EventClass>>(), telemetry.calls())
+    }
+
+    @Test
+    fun `a load failure after a show request that has not started yet is reported`() {
+        val events = adEvents()
+        events.showRequested()
+
+        events.loadFailed(ErrorCode.VAST_INVALID)
+
+        assertEquals(
+            listOf("ad_show_requested" to EventClass.DIAGNOSTIC, "ad_load_failed" to EventClass.ERROR),
+            telemetry.calls(),
+        )
+    }
+
+    @Test
+    fun `a load failure after a show refused at the ready check is still reported`() {
+        listOf(ErrorCode.SHOW_NOT_READY, ErrorCode.SHOW_TWICE, ErrorCode.WEBVIEW_GONE_AT_SHOW).forEach { refusal ->
+            val recording = RecordingTelemetry()
+            val events = adEvents(telemetry = recording)
+            events.showRequested()
+            events.showFailed(refusal)
+
+            events.loadFailed(ErrorCode.BLANK_CREATIVE)
+
+            assertEquals(
+                refusal.name,
+                listOf(
+                    "ad_show_requested" to EventClass.DIAGNOSTIC,
+                    "ad_show_failed" to EventClass.ERROR,
+                    "ad_load_failed" to EventClass.ERROR,
+                ),
+                recording.calls(),
+            )
+            assertEquals(refusal.name, "6003", recording.single("ad_load_failed").get("error_code"))
+        }
+    }
+
+    @Test
+    fun `a load failure before the show request is reported, and the request after it still emits`() {
+        val events = adEvents()
+
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
+        events.showRequested()
+        events.showFailed(ErrorCode.SHOW_NOT_READY)
+
+        assertEquals(
+            listOf(
+                "ad_load_failed" to EventClass.ERROR,
+                "ad_show_requested" to EventClass.DIAGNOSTIC,
+                "ad_show_failed" to EventClass.ERROR,
+            ),
+            telemetry.calls(),
+        )
+    }
+
+    @Test
+    fun `a show failure never uses up the load failure of an ad that was never asked to show`() {
+        val events = adEvents()
+
+        events.showFailed(ErrorCode.SHOW_NOT_READY)
+        events.loadFailed(ErrorCode.VAST_INVALID)
+
+        assertEquals(listOf("ad_load_failed" to EventClass.ERROR), telemetry.calls())
+    }
+
+    @Test
+    fun `a load success emits nothing and does not stop a load failure`() {
+        val events = adEvents()
+
+        events.loadSucceeded()
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
+
+        assertEquals(listOf("ad_load_failed" to EventClass.ERROR), telemetry.calls())
+    }
+
+    // BID-140: the render process and the show
+
+    @Test
+    fun `a death before the request and a failure after it are all reported, in the order they came`() {
+        val events = adEvents()
+        events.processGone(killed)
+
+        events.showRequested()
+        events.showFailed(ErrorCode.WEBVIEW_GONE_AT_SHOW)
+
+        assertEquals(
+            listOf(
+                "render_crashed" to EventClass.ERROR,
+                "ad_show_requested" to EventClass.DIAGNOSTIC,
+                "ad_show_failed" to EventClass.ERROR,
+            ),
+            telemetry.calls(),
+        )
+        assertEquals(false, telemetry.single("render_crashed").get("was_shown"))
+    }
+
+    @Test
+    fun `a death after the request does not close the show`() {
+        val events = adEvents()
+        events.showRequested()
+
+        events.processGone(crashed)
+        events.showFailed(ErrorCode.AD_SCREEN_NO_VIEW)
+
+        assertEquals(
+            listOf(
+                "ad_show_requested" to EventClass.DIAGNOSTIC,
+                "render_crashed" to EventClass.ERROR,
+                "ad_show_failed" to EventClass.ERROR,
+            ),
+            telemetry.calls(),
+        )
+    }
+
+    // BID-140: 7006, the screen closed before its impression
+
+    @Test
+    fun `closing the ad while a show is open emits 7006 as an error, in the stage the creative had reached`() {
+        mapOf(
+            Renderer.HTML to "view_attach",
+            Renderer.MRAID to "view_attach",
+            Renderer.VAST to "playback_start",
+        ).forEach { (renderer, stage) ->
+            val recording = RecordingTelemetry()
+            val events = adEvents(renderer = renderer, telemetry = recording)
+            events.showRequested()
+
+            events.closed()
+
+            assertEquals(
+                renderer.name,
+                listOf("ad_show_requested" to EventClass.DIAGNOSTIC, "ad_show_failed" to EventClass.ERROR),
+                recording.calls(),
+            )
+            val json = recording.single("ad_show_failed")
+            assertEquals(renderer.name, setOf("envelope", "error_code", "error_domain", "failed_stage"), json.keyNames())
+            assertEquals(renderer.name, "7006", json.get("error_code"))
+            assertEquals(renderer.name, "device", json.getString("error_domain"))
+            assertEquals(renderer.name, stage, json.getString("failed_stage"))
+        }
+    }
+
+    @Test
+    fun `closing the ad after the impression emits no 7006`() {
+        val events = adEvents()
+        events.showRequested()
+        events.rendered()
+
+        events.closed()
+
+        assertEquals(
+            listOf("ad_show_requested" to EventClass.DIAGNOSTIC, "ad_impression" to EventClass.COUNTED),
+            telemetry.calls(),
+        )
+    }
+
+    @Test
+    fun `closing the ad after a show failure emits no 7006`() {
+        val events = adEvents()
+        events.showRequested()
+        events.showFailed(ErrorCode.AD_SCREEN_NO_VIEW)
+
+        events.closed()
+
+        assertEquals(1, telemetry.emitted.count { it.name == "ad_show_failed" })
+        assertEquals("7005", telemetry.single("ad_show_failed").get("error_code"))
+    }
+
+    @Test
+    fun `closing the ad with two shows open fails one of them, and the other can still fail`() {
+        val events = adEvents()
+        events.showRequested()
+        events.showRequested()
+
+        events.closed()
+        events.showFailed(ErrorCode.SHOW_TWICE)
+
+        val codes = telemetry.emitted.filter { it.name == "ad_show_failed" }.map { it.json().get("error_code") }
+        assertEquals(listOf<Any>("7006", "11002"), codes)
+    }
+
+    @Test
+    fun `closing the ad again emits no second 7006`() {
+        val events = adEvents()
+        events.showRequested()
+
+        events.closed()
+        events.closed()
+
+        assertEquals(1, telemetry.emitted.count { it.name == "ad_show_failed" })
+    }
+
+    @Test
+    fun `closing the ad with no show request emits no 7006`() {
+        val events = adEvents()
+        events.loadSucceeded()
+
+        events.closed()
+
+        assertEquals(emptyList<Pair<String, EventClass>>(), telemetry.calls())
+    }
+
+    @Test
+    fun `closing the ad still blocks a later death, with or without an open show`() {
+        val events = adEvents()
+        events.showRequested()
+
+        events.closed()
+        events.processGone(crashed)
+
+        assertEquals(
+            listOf("ad_show_requested" to EventClass.DIAGNOSTIC, "ad_show_failed" to EventClass.ERROR),
+            telemetry.calls(),
+        )
+        assertEquals(0, telemetry.emitted.count { it.name == "render_crashed" })
+    }
+
+    @Test
+    fun `a failure after the 7006 emits nothing more`() {
+        val events = adEvents()
+        events.showRequested()
+        events.closed()
+
+        events.showFailed(ErrorCode.PLAYER_ERROR)
+
+        assertEquals(1, telemetry.emitted.count { it.name == "ad_show_failed" })
+        assertEquals("7006", telemetry.single("ad_show_failed").get("error_code"))
+    }
+
+    @Test
+    fun `a render process death during an open show, then the close, emits the crash and the 7006 once each`() {
+        val events = adEvents()
+        events.showRequested()
+
+        events.processGone(crashed)
+        events.closed()
+
+        assertEquals(
+            listOf(
+                "ad_show_requested" to EventClass.DIAGNOSTIC,
+                "render_crashed" to EventClass.ERROR,
+                "ad_show_failed" to EventClass.ERROR,
+            ),
+            telemetry.calls(),
+        )
+        assertEquals(false, telemetry.single("render_crashed").get("was_shown"))
+        val failed = telemetry.single("ad_show_failed")
+        assertEquals("7006", failed.get("error_code"))
+        assertEquals("view_attach", failed.getString("failed_stage"))
+    }
+
+    // BID-140: threads
+
+    @Test
+    fun `failures racing on many threads after one request emit once`() {
+        val outcomes = race(
+            rounds = ROUNDS,
+            setup = { it.showRequested() },
+        ) { events, _ -> events.showFailed(ErrorCode.PLAYER_ERROR, "2001") }
+
+        outcomes.forEach { calls ->
+            assertEquals(calls.toString(), 1, calls.count { it.first == "ad_show_failed" })
+        }
+    }
+
+    @Test
+    fun `failures and closes racing after one request emit exactly one failure`() {
+        val outcomes = race(
+            rounds = ROUNDS,
+            setup = { it.showRequested() },
+        ) { events, index -> if (index % 2 == 0) events.showFailed(ErrorCode.AD_SCREEN_NO_VIEW) else events.closed() }
+
+        outcomes.forEach { calls ->
+            assertEquals(calls.toString(), 1, calls.count { it.first == "ad_show_failed" })
+        }
+    }
+
+    @Test
+    fun `an impression racing a failure and a close after one request leaves at most one failure`() {
+        val outcomes = race(
+            rounds = ROUNDS,
+            setup = { it.showRequested() },
+        ) { events, index ->
+            when (index % 3) {
+                0 -> events.rendered()
+                1 -> events.showFailed(ErrorCode.WEBVIEW_GONE_AT_SHOW)
+                else -> events.closed()
+            }
+        }
+
+        outcomes.forEach { calls ->
+            assertEquals(calls.toString(), 1, calls.count { it.first == "ad_impression" })
+            assertTrue(calls.toString(), calls.count { it.first == "ad_show_failed" } <= 1)
+        }
+    }
+
+    @Test
+    fun `show requests racing on many threads each emit`() {
+        val outcomes = race(rounds = ROUNDS) { events, _ -> events.showRequested() }
+
+        outcomes.forEach { calls ->
+            assertEquals(calls.toString(), THREADS, calls.count { it.first == "ad_show_requested" })
+        }
+    }
+
+    @Test
+    fun `a show failure made while an event is being emitted neither waits for it nor is lost`() {
+        val events = adEvents()
+        events.showRequested()
+        events.showRequested()
+        telemetry.emitted.clear()
+        telemetry.whileEmitting = { onAnotherThread { events.showFailed(ErrorCode.AD_SCREEN_NO_VIEW) } }
+
+        events.rendered()
+
+        assertEquals(1, telemetry.emitted.count { it.name == "ad_show_failed" })
+        assertEquals(1, telemetry.emitted.count { it.name == "ad_impression" })
+    }
+
     // Helpers
 
     /**
-     * Runs [THREADS] calls of [call] at once on a fresh [AdEvents], [rounds] times, and returns what each round
-     * emitted. The threads are released together by a latch once all of them are waiting on it.
+     * Runs [THREADS] calls of [call] at once on a fresh [AdEvents] that [setup] has prepared, [rounds] times, and
+     * returns what each round emitted. The threads are released together by a latch once all of them are waiting on it.
      */
-    private fun race(rounds: Int, call: (AdEvents, Int) -> Unit): List<List<Pair<String, EventClass>>> {
+    private fun race(
+        rounds: Int,
+        setup: (AdEvents) -> Unit = {},
+        call: (AdEvents, Int) -> Unit,
+    ): List<List<Pair<String, EventClass>>> {
         val pool = Executors.newFixedThreadPool(THREADS)
         try {
             return List(rounds) {
                 val recording = RecordingTelemetry()
                 val events = adEvents(telemetry = recording)
                 elapsed = 0
+                setup(events)
                 val ready = CountDownLatch(THREADS)
                 val go = CountDownLatch(1)
                 val futures = List(THREADS) { index ->
@@ -2042,6 +2995,8 @@ class AdEventsTest {
     private class ThrowingCause : RuntimeException() {
         override val cause: Throwable? get() = throw IllegalStateException("getCause is not allowed")
     }
+
+    private class Site(val number: String, val domain: String, val stage: String, val source: String?)
 
     private val JSONObject.envelope get() = getJSONObject("envelope")
 

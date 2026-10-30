@@ -1,0 +1,18 @@
+{
+  "envelope": {
+    "ad_type": "interstitial",
+    "auction_id": "8b0f3c2e-5d4a-4e1b-9c7f-2a6d8e1b3f50",
+    "event_id": "9e4b2d6a-1c7f-4a3e-8f5b-0d2c6e9a1b47",
+    "event_name": "ad_show_failed",
+    "event_ts": 1790326698635,
+    "sampling_rate": 1,
+    "session_id": "550e8400-e29b-41d4-a716-446655440000"
+  },
+  "error_code": "7002",
+  "error_domain": "creative",
+  "exception_cause_class": "java.io.IOException",
+  "exception_class": "java.lang.IllegalStateException",
+  "external_error_code": "2004",
+  "external_error_source": "media3",
+  "failed_stage": "playback_start"
+}

@@ -30,7 +30,7 @@ import java.net.UnknownHostException
 
 /**
  * The rules of the BID-74 spec that hold for every value: the auction id (rule 5), the render duration (rule 10) and the
- * failure code (rule 11), and, for BID-136, that no exception message leaves the device (AC 5).
+ * failure code (rule 11), and, for BID-136 and BID-140, that no exception message leaves the device (AC 5, AC 3).
  */
 class AdEventsPropertyTest {
 
@@ -194,6 +194,83 @@ class AdEventsPropertyTest {
                 }
                 assertTrue(text, kinds.first().className in text)
                 assertTrue(text, kinds.last().className in text)
+            }
+        }
+    }
+
+    @Test
+    fun `any show failure goes out as its number in a string with its domain and show stage, and an external code as the text it was`() {
+        runBlocking {
+            checkAll(Arb.element(SHOW_CODES), Arb.int().orNull()) { code, externalCode ->
+                val telemetry = RecordingTelemetry()
+                val events = adEvents(telemetry)
+                events.showRequested()
+
+                events.showFailed(code, externalCode?.toString())
+
+                val json = telemetry.single("ad_show_failed")
+                assertEquals(code.number.toString(), json.get("error_code"))
+                assertEquals(code.domain.wireName, json.getString("error_domain"))
+                assertEquals(code.showStage?.wireName, json.getString("failed_stage"))
+                if (externalCode != null && code.externalSource != null) {
+                    assertEquals(externalCode.toString(), json.get("external_error_code"))
+                    assertEquals(code.externalSource.wireName, json.getString("external_error_source"))
+                } else {
+                    assertFalse(json.has("external_error_code"))
+                    assertFalse(json.has("external_error_source"))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `no message, URL or host of an exception chain is written by a show failure, and its class names are`() {
+        runBlocking {
+            checkAll(Arb.list(Arb.enum<Failure>(), 1..5), Arb.list(leak, 5..5), Arb.element(SHOW_CODES)) { kinds, leaks, code ->
+                val telemetry = RecordingTelemetry()
+                val chain = kinds.foldRightIndexed<Failure, Throwable?>(null) { index, kind, cause ->
+                    kind.create(leaks[index].message, cause)
+                }!!
+                val events = adEvents(telemetry)
+                events.showRequested()
+
+                events.showFailed(code, cause = chain)
+
+                val text = telemetry.emitted.single { it.name == "ad_show_failed" }.event!!.encode().toString(Charsets.UTF_8)
+                kinds.indices.forEach { index ->
+                    val leaked = leaks[index]
+                    listOf(
+                        leaked.url, JSONObject.quote(leaked.url).trim('"'), leaked.host, leaked.host.take(4), leaked.text,
+                        leaked.message, MESSAGE_PREFIX,
+                    ).forEach { assertFalse("<$it> in $text", it in text) }
+                }
+                assertTrue(text, kinds.first().className in text)
+                assertTrue(text, kinds.last().className in text)
+            }
+        }
+    }
+
+    @Test
+    fun `the time since the load ended is the show minus the load end when the show is not earlier, and left out otherwise`() {
+        runBlocking {
+            checkAll(reading, reading, Arb.boolean()) { loaded, shown, hasLoad ->
+                var now = 0L
+                val telemetry = RecordingTelemetry()
+                val events = adEvents(telemetry, monotonicClock = { now })
+
+                if (hasLoad) {
+                    now = loaded
+                    events.loadSucceeded()
+                }
+                now = shown
+                events.showRequested()
+
+                val json = telemetry.single("ad_show_requested")
+                if (hasLoad && shown >= loaded) {
+                    assertJsonInteger(shown - loaded, json, "time_since_loaded_ms")
+                } else {
+                    assertFalse("loaded=$loaded shown=$shown hasLoad=$hasLoad", json.has("time_since_loaded_ms"))
+                }
             }
         }
     }

@@ -14,6 +14,16 @@
             android:name="org.bidon.rendering.telemetry"
             android:value="true" />
 
+        <!-- A host screen that cannot start the ad screen, for tests of a show that fails to launch. -->
+        <activity
+            android:name="org.bidon.rendering.ui.RefusingActivity"
+            android:exported="false" />
+
+        <!-- A host screen that holds back the ad screen, for tests of what happens before the ad screen starts. -->
+        <activity
+            android:name="org.bidon.rendering.ui.HoldingActivity"
+            android:exported="false" />
+
         <!-- A host app screen in a process of its own, which hears when its UI is hidden. -->
         <activity
             android:name="org.bidon.rendering.TelemetryHostActivity"

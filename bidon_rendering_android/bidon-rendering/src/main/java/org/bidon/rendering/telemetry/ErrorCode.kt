@@ -1,11 +1,14 @@
 package org.bidon.rendering.telemetry
 
 /**
- * Every error code the renderer can send, as `error_code`, with who owns the failure and the load stage it failed in.
+ * Every error code the renderer can send, as `error_code`, with who owns the failure and the load or show stage it
+ * failed in.
  * A code is never renumbered or reused; one that stops being raised is marked [retired] and stays. The checked-in
  * table `error-codes.md` lists the same codes.
  *
  * @param stage the `failed_stage` of a load failure; `null` for a code that is not a load failure
+ * @param showStage the `failed_stage` of a show failure; `null` for a code that is not a show failure, and for
+ * [CLOSED_BEFORE_IMPRESSION], whose stage is the point the ad screen had reached
  * @param externalSource the system whose own code may come with this one as `external_error_code`
  */
 internal enum class ErrorCode(
@@ -14,6 +17,7 @@ internal enum class ErrorCode(
     val stage: FailedStage?,
     val externalSource: ExternalErrorSource?,
     val retired: Boolean = false,
+    val showStage: ShowStage? = null,
 ) {
     /** The mediation SDK's init threw. */
     SDK_INIT_THREW(1001, ErrorDomain.BIDON_SDK, null, null),
@@ -103,28 +107,28 @@ internal enum class ErrorCode(
     VAST_WRAPPER_CLEARTEXT_BLOCKED(6015, ErrorDomain.CREATIVE, FailedStage.ASSET_FETCH, ExternalErrorSource.VAST),
 
     /** The VAST ad has no media file the device can play, found when it is shown. */
-    NO_PLAYABLE_MEDIA(7001, ErrorDomain.CREATIVE, null, ExternalErrorSource.VAST),
+    NO_PLAYABLE_MEDIA(7001, ErrorDomain.CREATIVE, null, ExternalErrorSource.VAST, showStage = ShowStage.MEDIA_SELECT),
 
-    /** The player failed while the video ad was shown. */
-    PLAYER_ERROR(7002, ErrorDomain.CREATIVE, null, ExternalErrorSource.MEDIA3),
+    /** The player failed before the first frame of the video ad. */
+    PLAYER_ERROR(7002, ErrorDomain.CREATIVE, null, ExternalErrorSource.MEDIA3, showStage = ShowStage.PLAYBACK_START),
 
     /** The ad loaded, but its WebView was gone when it was shown. */
-    WEBVIEW_GONE_AT_SHOW(7003, ErrorDomain.DEVICE, null, null),
+    WEBVIEW_GONE_AT_SHOW(7003, ErrorDomain.DEVICE, null, null, showStage = ShowStage.READY_CHECK),
 
     /** The ad screen could not be started, when the ad is shown. */
-    AD_SCREEN_NOT_STARTED(7004, ErrorDomain.BIDON_SDK, null, null),
+    AD_SCREEN_NOT_STARTED(7004, ErrorDomain.BIDON_SDK, null, null, showStage = ShowStage.ACTIVITY_LAUNCH),
 
     /** The ad screen started and found no view to show. */
-    AD_SCREEN_NO_VIEW(7005, ErrorDomain.DEVICE, null, null),
+    AD_SCREEN_NO_VIEW(7005, ErrorDomain.DEVICE, null, null, showStage = ShowStage.VIEW_ATTACH),
 
     /** The ad screen closed before the impression, with no other failure. */
     CLOSED_BEFORE_IMPRESSION(7006, ErrorDomain.DEVICE, null, null),
 
     /** The player could not reach the media, while the video ad was shown. */
-    PLAYER_NETWORK(7101, ErrorDomain.NETWORK, null, ExternalErrorSource.MEDIA3),
+    PLAYER_NETWORK(7101, ErrorDomain.NETWORK, null, ExternalErrorSource.MEDIA3, showStage = ShowStage.PLAYBACK_START),
 
     /** The device could not decode or output the media, while the video ad was shown. */
-    PLAYER_DECODE(7102, ErrorDomain.DEVICE, null, ExternalErrorSource.MEDIA3),
+    PLAYER_DECODE(7102, ErrorDomain.DEVICE, null, ExternalErrorSource.MEDIA3, showStage = ShowStage.PLAYBACK_START),
 
     /** The video ad's end card image failed to load. */
     END_CARD_IMAGE_FAILED(7103, ErrorDomain.CREATIVE, null, null),
@@ -142,10 +146,13 @@ internal enum class ErrorCode(
     WEBVIEW_RESOURCE_NETWORK(8004, ErrorDomain.NETWORK, null, ExternalErrorSource.WEBVIEW),
 
     /** An ad was asked to show before it loaded, after a failed load or after a destroy. */
-    SHOW_NOT_READY(11001, ErrorDomain.PUBLISHER, null, null),
+    SHOW_NOT_READY(11001, ErrorDomain.PUBLISHER, null, null, showStage = ShowStage.READY_CHECK),
 
     /** An ad was asked to show a second time. */
-    SHOW_TWICE(11002, ErrorDomain.PUBLISHER, null, null),
+    SHOW_TWICE(11002, ErrorDomain.PUBLISHER, null, null, showStage = ShowStage.READY_CHECK),
+
+    /** An ad was asked to show from a process other than the one that hosts the ad screen. */
+    SHOWN_FROM_OTHER_PROCESS(11003, ErrorDomain.PUBLISHER, null, null, showStage = ShowStage.READY_CHECK),
     ;
 
     companion object

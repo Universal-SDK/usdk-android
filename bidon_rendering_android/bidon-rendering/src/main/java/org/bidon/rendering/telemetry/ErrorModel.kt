@@ -23,6 +23,15 @@ internal enum class FailedStage(val wireName: String) {
     TIMEOUT("timeout"),
 }
 
+/** Where a show failed, as it is written in `failed_stage` of an `ad_show_failed`. */
+internal enum class ShowStage(val wireName: String) {
+    READY_CHECK("ready_check"),
+    MEDIA_SELECT("media_select"),
+    ACTIVITY_LAUNCH("activity_launch"),
+    VIEW_ATTACH("view_attach"),
+    PLAYBACK_START("playback_start"),
+}
+
 /** A system outside the renderer whose own code can come with an [ErrorCode], as written in `external_error_source`. */
 internal enum class ExternalErrorSource(val wireName: String) {
     WEBVIEW("webview"),
