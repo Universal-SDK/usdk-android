@@ -2630,7 +2630,12 @@ class AdEventsTest {
 
     @Test
     fun `a load failure after a show refused at the ready check is still reported`() {
-        listOf(ErrorCode.SHOW_NOT_READY, ErrorCode.SHOW_TWICE, ErrorCode.WEBVIEW_GONE_AT_SHOW).forEach { refusal ->
+        listOf(
+            ErrorCode.SHOW_NOT_READY,
+            ErrorCode.SHOW_TWICE,
+            ErrorCode.WEBVIEW_GONE_AT_SHOW,
+            ErrorCode.SHOWN_FROM_OTHER_PROCESS,
+        ).forEach { refusal ->
             val recording = RecordingTelemetry()
             val events = adEvents(telemetry = recording)
             events.showRequested()

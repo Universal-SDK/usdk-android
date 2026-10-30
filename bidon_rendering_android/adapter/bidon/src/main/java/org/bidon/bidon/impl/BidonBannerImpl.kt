@@ -44,6 +44,7 @@ internal class BidonBannerImpl :
 
     private val scope = MainScope()
     private var loadDeadline: RendererLoadDeadline? = null
+    private var isShowCalled = false
 
     override fun getAuctionParam(
         auctionParamsScope: AdAuctionParamSource
@@ -65,6 +66,8 @@ internal class BidonBannerImpl :
 
     override fun load(adParams: BidonBannerAuctionParams) {
         Log.d(TAG, "load() creativeType=${adParams.creativeType}")
+        isShowCalled = false
+        isImpressionSent = false
 
         val ad = getAd()
 
@@ -97,7 +100,17 @@ internal class BidonBannerImpl :
             override fun onError(error: Throwable) {
                 Log.e(TAG, "Ad error: ${error.message}")
                 isAdReadyToShow = false
-                emitEvent(AdEvent.LoadFailed(BidonError.NoFill(BidonDemandId)))
+
+                if (isImpressionSent) {
+                    Log.w(TAG, "Ad runtime error after impression: ${error.message}", error)
+                    return
+                }
+
+                if (isShowCalled) {
+                    emitEvent(AdEvent.ShowFailed(BidonError.Unspecified(BidonDemandId, error)))
+                } else {
+                    emitEvent(AdEvent.LoadFailed(BidonError.NoFill(BidonDemandId)))
+                }
             }
         }
 
@@ -113,6 +126,8 @@ internal class BidonBannerImpl :
     }
 
     override fun getAdView(): AdViewHolder? {
+        isShowCalled = true
+
         val view = renderer?.getView() ?: return null
         return AdViewHolder(networkAdview = view)
     }
@@ -125,5 +140,6 @@ internal class BidonBannerImpl :
         renderer = null
         isAdReadyToShow = false
         isImpressionSent = false
+        isShowCalled = false
     }
 }

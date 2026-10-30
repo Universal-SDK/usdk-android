@@ -37,7 +37,7 @@ class ErrorCodeTest {
         assertEquals(
             listOf(
                 6001, 6002, 6003, 6004, 6005, 6006, 6014, 6015, 7001, 7002, 7003, 7004, 7005, 7006, 8001, 8002, 8003,
-                11001, 11002,
+                11001, 11002, 11003,
             ),
             rows.filter { it.status == "active" }.map { it.code },
         )

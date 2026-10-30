@@ -1,7 +1,15 @@
 package org.bidon.rendering
 
+import android.app.Application
+import android.content.ComponentName
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import android.util.Log
 import android.view.View
+import androidx.annotation.VisibleForTesting
 import org.bidon.rendering.telemetry.AdEvents
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -85,5 +93,54 @@ internal object PresentedAds {
 
     fun unregister(key: String?) {
         key?.let { entries.remove(it) }
+    }
+
+    private const val TAG = "BidonRenderer"
+
+    /** The name never changes while the process lives, so it is read once. Null when it cannot be read. */
+    private val currentProcessName: String? by lazy {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            Application.getProcessName()
+        } else {
+            try {
+                processNameFromCmdline(File("/proc/self/cmdline").readText())
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not read /proc/self/cmdline, skipping process check", e)
+                null
+            }
+        }
+    }
+
+    private val targetProcessNames = ConcurrentHashMap<Class<*>, String>()
+
+    /**
+     * Why an ad cannot be shown from this process, or `null` when it can: the error names both processes when
+     * [targetActivityClass] is declared to run in another one. The check is skipped when either name cannot be read.
+     */
+    fun crossProcessError(context: Context, targetActivityClass: Class<*>): IllegalStateException? {
+        val current = currentProcessName
+        val target = targetProcessNames[targetActivityClass] ?: try {
+            val component = ComponentName(context, targetActivityClass)
+            context.packageManager.getActivityInfo(component, 0).processName
+        } catch (e: PackageManager.NameNotFoundException) {
+            Log.w(TAG, "Target activity info not found in manifest", e)
+            return null
+        }.also { targetProcessNames[targetActivityClass] = it }
+
+        return evaluateProcessNames(current, target)
+    }
+
+    /** The first argument of a /proc/self/cmdline read: the process name is NUL-terminated, arguments may follow. */
+    @VisibleForTesting
+    internal fun processNameFromCmdline(raw: String): String = raw.substringBefore('\u0000').trim()
+
+    /** A null or blank [current] name, as /proc can give on API 24 to 27, is unknown, so it skips the check. */
+    @VisibleForTesting
+    internal fun evaluateProcessNames(current: String?, target: String): IllegalStateException? {
+        if (current.isNullOrBlank()) return null
+        if (current != target) {
+            return IllegalStateException("The ad cannot be shown from process '$current': its screen runs in '$target'")
+        }
+        return null
     }
 }

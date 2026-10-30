@@ -165,6 +165,9 @@ internal class HtmlRenderer(
     override fun showFullscreen(activity: Activity) {
         events?.showRequested()
         readyCheckFailure()?.let { return failShow(events, listener, it) }
+        PresentedAds.crossProcessError(activity, FullscreenAdActivity::class.java)?.let {
+            return failShow(events, listener, ErrorCode.SHOWN_FROM_OTHER_PROCESS, cause = it)
+        }
         events?.showStarted()
 
         // Locked to whatever the publisher's activity allows, resolved now rather than in

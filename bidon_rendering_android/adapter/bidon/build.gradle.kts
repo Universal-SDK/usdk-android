@@ -51,6 +51,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     // org.json in the Android jar is a stub on the JVM; tests need a real implementation.
     testImplementation("org.json:json:20240303")
+    testImplementation("io.mockk:mockk:1.14.11")
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation("androidx.test:runner:1.6.2")

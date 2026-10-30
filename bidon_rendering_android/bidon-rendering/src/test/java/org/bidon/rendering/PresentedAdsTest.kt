@@ -3,9 +3,11 @@ package org.bidon.rendering
 import org.bidon.rendering.telemetry.AdEvents
 import android.content.pm.ActivityInfo
 import android.view.View
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PresentedAdsTest {
@@ -64,5 +66,46 @@ class PresentedAdsTest {
         assertNull(PresentedAds.get(null))
         assertNull(PresentedAds.get("never-registered"))
         PresentedAds.unregister(null) // must not throw
+    }
+
+    @Test
+    fun `evaluateProcessNames returns IllegalStateException with both process names on mismatch`() {
+        val currentProcess = "com.demo.tetris:ads"
+        val targetProcess = "com.demo.tetris"
+
+        val error = PresentedAds.evaluateProcessNames(currentProcess, targetProcess)
+
+        assertNotNull(error)
+        assertTrue(error!!.message!!.contains("The ad cannot be shown from process 'com.demo.tetris:ads'"))
+        assertTrue(error.message!!.contains("its screen runs in 'com.demo.tetris'"))
+    }
+
+    @Test
+    fun `evaluateProcessNames returns null when process names are identical`() {
+        val currentProcess = "com.demo.tetris"
+        val targetProcess = "com.demo.tetris"
+
+        val error = PresentedAds.evaluateProcessNames(currentProcess, targetProcess)
+
+        assertNull(error)
+    }
+
+    @Test
+    fun `a blank current process name skips the check, as an unreadable one does`() {
+        assertNull(PresentedAds.evaluateProcessNames("", "com.demo.tetris"))
+        assertNull(PresentedAds.evaluateProcessNames("  ", "com.demo.tetris"))
+    }
+
+    @Test
+    fun `an unreadable current process name skips the check`() {
+        assertNull(PresentedAds.evaluateProcessNames(null, "com.demo.tetris"))
+    }
+
+    @Test
+    fun `the process name is the first NUL-terminated entry of the command line`() {
+        assertEquals("proc", PresentedAds.processNameFromCmdline("proc\u0000arg"))
+        assertEquals("proc", PresentedAds.processNameFromCmdline("proc\u0000"))
+        assertEquals("proc", PresentedAds.processNameFromCmdline(" proc \u0000arg\u0000"))
+        assertEquals("", PresentedAds.processNameFromCmdline("\u0000arg"))
     }
 }
