@@ -26,15 +26,18 @@ internal enum class Renderer(val wireName: String) {
  *
  * @param auctionId the auction the ad won; a blank one is left out of the events
  * @param declaredType the creative type the DSP declared, left out of the events when `null`
+ * @param integration which integration created the ad's renderer; left out of the events when `null`
  */
 internal class AdEvents(
     private val telemetry: Telemetry,
     private val sessionId: SessionId,
     private val auctionId: String?,
     private val adType: AdType?,
+    private val integration: WireIntegration?,
     private val renderer: Renderer,
     private val declaredType: String?,
     private val clock: Clock,
+    private val uptime: UptimeClock,
     private val monotonicClock: MonotonicClock,
 ) {
 
@@ -228,8 +231,10 @@ internal class AdEvents(
                 name,
                 sessionId,
                 clock,
+                uptime,
                 auctionId = auctionId?.takeIf { it.isNotBlank() },
                 adType = adType,
+                integration = integration,
                 samplingRate = rate,
             )
             val json = envelope.eventJson().apply(fields)

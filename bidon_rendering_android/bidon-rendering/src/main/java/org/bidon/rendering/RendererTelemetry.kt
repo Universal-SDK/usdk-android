@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import org.bidon.rendering.telemetry.AdEvents
 import org.bidon.rendering.telemetry.AdType as WireAdType
@@ -28,6 +29,8 @@ import org.bidon.rendering.telemetry.SettingsFile
 import org.bidon.rendering.telemetry.Telemetry
 import org.bidon.rendering.telemetry.TelemetryEndpoint
 import org.bidon.rendering.telemetry.TelemetryGate
+import org.bidon.rendering.telemetry.UptimeClock
+import org.bidon.rendering.telemetry.WireIntegration
 import java.io.File
 
 /**
@@ -60,6 +63,23 @@ internal object RendererTelemetry {
     val sessionId: SessionId by lazy { SessionId.random() }
 
     /**
+     * Milliseconds since telemetry started, for every event of this process. It reads zero until [start] puts the
+     * device's elapsed clock in its place, so the origin is the first `BidonRenderer.init`: a later one returns before
+     * it reaches [start]. No event is captured before then: renderers need `init`, and [start] installs the crash
+     * handler.
+     */
+    @Volatile
+    private var uptime: UptimeClock = UptimeClock { 0L }
+
+    /**
+     * The integration of the last renderer created in this process, or `null` when none was or it did not say. A
+     * crash, which belongs to no ad, is labelled with it.
+     */
+    @Volatile
+    var lastIntegration: WireIntegration? = null
+        private set
+
+    /**
      * Starts telemetry if the manifest asks for it, and [Telemetry.Disabled] otherwise. Does no disk work on the
      * calling thread: the store's directory is resolved on the telemetry thread, because resolving it creates it.
      *
@@ -69,6 +89,7 @@ internal object RendererTelemetry {
      */
     fun start(context: Context): Telemetry =
         try {
+            uptime = ElapsedUptimeClock()
             if (isEnabled(context)) startThread(context) else Telemetry.Disabled
         } catch (failure: Throwable) {
             reportFailure(failure)
@@ -101,27 +122,38 @@ internal object RendererTelemetry {
     }
 
     private fun installCrashCapture(directory: () -> File) {
-        val report = CrashReport(OWN_PACKAGES, sessionId, Clock.System)
+        val report = CrashReport(OWN_PACKAGES, sessionId, Clock.System, uptime, { lastIntegration })
         val mainThread = Looper.getMainLooper().thread
         CrashCapture.install { previous -> CrashCapture(previous, report, mainThread) { CrashSlot(directory()) } }
     }
 
     /**
      * The telemetry events of one ad of [type], labelled with [ad], or none when [telemetry] is off, so an app with
-     * telemetry off never mints a session (D-026).
+     * telemetry off never mints a session (D-026). Every renderer is created through here, so it also records the
+     * integration a crash is labelled with: this renderer's, or none when [ad] does not say.
      */
     fun adEvents(telemetry: Telemetry, type: CreativeType, ad: AdInfo?, rendering: AdRenderingConfig): AdEvents? {
         if (telemetry === Telemetry.Disabled) return null
+        val integration = ad?.integration?.let(::wireIntegration)
+        lastIntegration = integration
         return AdEvents(
             telemetry = telemetry,
             sessionId = sessionId,
             auctionId = ad?.auctionId,
             adType = ad?.type?.let(::wireAdType),
+            integration = integration,
             renderer = renderer(type),
             declaredType = rendering.declaredType,
             clock = Clock.System,
+            uptime = uptime,
             monotonicClock = MonotonicClock.System,
         )
+    }
+
+    private fun wireIntegration(integration: Integration): WireIntegration = when (integration) {
+        Integration.DIRECT -> WireIntegration.DIRECT
+        Integration.MAX_CUSTOM -> WireIntegration.MAX_CUSTOM
+        Integration.MAX_BIDDING -> WireIntegration.MAX_BIDDING
     }
 
     private fun wireAdType(type: AdType): WireAdType = when (type) {
@@ -176,4 +208,19 @@ internal object RendererTelemetry {
         @Deprecated("Deprecated in Java")
         override fun onLowMemory() = Unit
     }
+}
+
+/**
+ * Milliseconds since this clock was created, on `SystemClock.elapsedRealtime()`, which never goes back and keeps
+ * counting through deep sleep, unlike `System.nanoTime()`. The origin is the reading at creation and never moves.
+ *
+ * @param elapsedRealtime the reading of the elapsed-time clock, replaced in tests
+ */
+internal class ElapsedUptimeClock(
+    private val elapsedRealtime: () -> Long = SystemClock::elapsedRealtime,
+) : UptimeClock {
+
+    private val origin = elapsedRealtime()
+
+    override fun uptimeMillis(): Long = elapsedRealtime() - origin
 }

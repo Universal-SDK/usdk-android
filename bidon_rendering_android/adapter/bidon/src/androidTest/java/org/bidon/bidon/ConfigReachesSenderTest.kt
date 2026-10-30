@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.os.Build
+import android.os.Process
+import android.os.SystemClock
 import android.webkit.WebView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
@@ -15,6 +17,7 @@ import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.AdType
 import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.CreativeType
+import org.bidon.rendering.Integration
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -57,6 +60,9 @@ class ConfigReachesSenderTest {
     }
 
     companion object {
+        /** The wait between two events whose uptimes are compared. */
+        private const val WAIT_MILLIS = 300L
+
         /** Settings a run installed from an IDE left behind would otherwise reach the first test before its own. */
         @JvmStatic
         @BeforeClass
@@ -151,6 +157,56 @@ class ConfigReachesSenderTest {
         assertEquals("html", crashed.getString("renderer"))
     }
 
+    /**
+     * An event carries the integration the host named, and the milliseconds since the first `init`: two events a known
+     * wait apart are at least that far apart, and neither counts from before this process started.
+     */
+    @Test
+    fun labelsOfTheIntegrationReachTheBatch() {
+        val ingest = ingest()
+        initAdapter(section(ingest.url, appKey = "label-key"))
+        val first = auctionId("labelled")
+        val second = auctionId("labelled-later")
+
+        failBlankCreative(first, Integration.MAX_CUSTOM)
+        Thread.sleep(WAIT_MILLIS)
+        failBlankCreative(second, Integration.MAX_CUSTOM)
+
+        val earlier = ingest.awaitBatchWith(first, whileWaiting = ::goToBackground).envelopeOf(first)
+        val later = ingest.awaitBatchWith(second, whileWaiting = ::goToBackground).envelopeOf(second)
+        val sinceProcessStart = SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime()
+        assertEquals("max_adapter", earlier.getString("host"))
+        assertEquals("bidon", earlier.getString("auction_owner"))
+        val uptimes = earlier.getLong("sdk_uptime_ms") to later.getLong("sdk_uptime_ms")
+        assertTrue("$uptimes", uptimes.second - uptimes.first >= WAIT_MILLIS)
+        assertTrue("$uptimes, $sinceProcessStart ms since the process started", uptimes.second <= sinceProcessStart)
+    }
+
+    /** A second `init` returns early, so the uptime of a later event still counts from the first. */
+    @Test
+    fun uptimeKeepsGrowingFromTheFirstInit() {
+        val ingest = ingest()
+        initAdapter(section(ingest.url, appKey = "uptime-key"))
+        Thread.sleep(500)
+        BidonRenderer.init(context)
+        Thread.sleep(500)
+        val auctionId = auctionId("uptime")
+
+        failBlankCreative(auctionId)
+
+        val envelope = ingest.awaitBatchWith(auctionId, whileWaiting = ::goToBackground).envelopeOf(auctionId)
+        assertTrue(
+            "the uptime restarted at the second init: ${envelope.getLong("sdk_uptime_ms")}",
+            envelope.getLong("sdk_uptime_ms") >= 1_000,
+        )
+    }
+
+    private fun JSONObject.envelopeOf(auctionId: String): JSONObject {
+        val events = getJSONArray("events")
+        return (0 until events.length()).map { events.getJSONObject(it).getJSONObject("envelope") }
+            .first { it.optString("auction_id") == auctionId }
+    }
+
     private fun ingest() = FakeIngest().also { ingests += it }
 
     private fun auctionId(label: String) = "$label-${System.nanoTime()}"
@@ -171,11 +227,14 @@ class ConfigReachesSenderTest {
      * Loads a page with nothing on it through the renderer, which reports `ad_load_failed` for [auctionId]: an
      * error, so never sampled out.
      */
-    private fun failBlankCreative(auctionId: String) {
+    private fun failBlankCreative(auctionId: String, integration: Integration? = null) {
         val failed = CountDownLatch(1)
         lateinit var renderer: AdRenderer
         instrumentation.runOnMainSync {
-            renderer = BidonRenderer.createRenderer(CreativeType.HTML, ad = AdInfo(auctionId, AdType.BANNER))
+            renderer = BidonRenderer.createRenderer(
+                CreativeType.HTML,
+                ad = AdInfo(auctionId, AdType.BANNER, integration),
+            )
             renderer.load("<html><body></body></html>", object : AdRenderer.Listener {
                 override fun onLoaded() = Unit
                 override fun onImpression() = Unit

@@ -11,7 +11,16 @@ class CrashReportTest {
 
     private val session = SessionId.of("550e8400-e29b-41d4-a716-446655440000")!!
     private val clock = Clock { 1_790_000_000_000 }
-    private val report = CrashReport(listOf("org.bidon.rendering.", "org.bidon.bidon."), session, clock)
+    private var uptimeNow = 0L
+    private val uptime = UptimeClock { uptimeNow }
+    private var integration: WireIntegration? = null
+    private val report = CrashReport(
+        listOf("org.bidon.rendering.", "org.bidon.bidon."),
+        session,
+        clock,
+        uptime,
+        { integration },
+    )
 
     @Test
     fun `a crash with one of our frames anywhere in its stack is ours`() {
@@ -102,7 +111,7 @@ class CrashReportTest {
 
         assertEquals(setOf("envelope", "crashed_on_main_thread", "exceptions"), event.keyNames())
         assertEquals(
-            setOf("event_id", "event_name", "event_ts", "session_id", "sampling_rate"),
+            setOf("event_id", "event_name", "event_ts", "session_id", "sdk_uptime_ms", "sampling_rate"),
             event.getJSONObject("envelope").keyNames(),
         )
         assertTrue(event.getBoolean("crashed_on_main_thread"))
@@ -226,9 +235,76 @@ class CrashReportTest {
 
     @Test
     fun `an event that cannot fit even without frames is not made`() {
-        val tiny = CrashReport(listOf("org.bidon.rendering."), session, clock, maxBytes = 100)
+        val tiny = CrashReport(listOf("org.bidon.rendering."), session, clock, uptime, { null }, maxBytes = 100)
 
         assertNull(tiny.encode(crash(own("A", "a")), onMainThread = false))
+    }
+
+    // BID-123
+
+    @Test
+    fun `a crash after a renderer was created carries that renderer's integration`() {
+        integration = WireIntegration.MAX_CUSTOM
+
+        val envelope = decode(report.encode(crash(own("vast.VastRenderer", "load")), onMainThread = true)!!)
+            .getJSONObject("envelope")
+
+        assertEquals("max_adapter", envelope.getString("host"))
+        assertEquals("bidon", envelope.getString("auction_owner"))
+    }
+
+    @Test
+    fun `a crash is labelled with the integration the supplier gives at the moment of the crash`() {
+        integration = WireIntegration.DIRECT
+        val first = decode(report.encode(crash(own("A", "a")), onMainThread = true)!!).getJSONObject("envelope")
+        integration = WireIntegration.MAX_BIDDING
+        val second = decode(report.encode(crash(own("A", "a")), onMainThread = true)!!).getJSONObject("envelope")
+
+        assertEquals("publisher" to "bidon", first.getString("host") to first.getString("auction_owner"))
+        assertEquals("max_adapter" to "max", second.getString("host") to second.getString("auction_owner"))
+    }
+
+    @Test
+    fun `a crash before any renderer was created has no labels`() {
+        integration = null
+
+        val envelope = decode(report.encode(crash(own("A", "a")), onMainThread = true)!!).getJSONObject("envelope")
+
+        assertFalse(envelope.has("host"))
+        assertFalse(envelope.has("auction_owner"))
+    }
+
+    @Test
+    fun `a crash carries the uptime of the moment it was captured`() {
+        uptimeNow = 98_765L
+
+        val envelope = decode(report.encode(crash(own("A", "a")), onMainThread = false)!!).getJSONObject("envelope")
+
+        assertJsonInteger(98_765L, envelope, "sdk_uptime_ms")
+    }
+
+    /** A crash cut to fit is encoded several times; it is still one capture, with one uptime and one label. */
+    @Test
+    fun `a crash cut to fit keeps the uptime and the integration read when it was captured`() {
+        var uptimeReads = 0
+        var integrationReads = 0
+        val ticking = CrashReport(
+            listOf("org.bidon.rendering."),
+            session,
+            clock,
+            { 1_000L * ++uptimeReads },
+            { WireIntegration.entries[integrationReads++ % WireIntegration.entries.size] },
+        )
+        val crash = IllegalStateException().apply {
+            stackTrace = Array(5_000) { own("generated.${"Nested".repeat(50)}", "method$it", it) }
+        }
+
+        val envelope = decode(ticking.encode(crash, onMainThread = true)!!).getJSONObject("envelope")
+
+        assertJsonInteger(1_000L, envelope, "sdk_uptime_ms")
+        assertEquals("publisher" to "bidon", envelope.getString("host") to envelope.getString("auction_owner"))
+        assertEquals(1, uptimeReads)
+        assertEquals(1, integrationReads)
     }
 
     private fun crash(vararg frames: StackTraceElement) =

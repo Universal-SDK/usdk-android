@@ -25,6 +25,10 @@ internal class EventEnvelope private constructor(
     val adType: AdType?,
     /** The banner format, such as `BANNER` or `MREC`, when [adType] is [AdType.BANNER]. */
     val adFormat: String?,
+    /** Absent when the integration is unknown. */
+    val integration: WireIntegration?,
+    /** Milliseconds since telemetry started, read when the event was captured. */
+    val sdkUptimeMs: Long,
     val samplingRate: SamplingRate,
 ) : TelemetryEvent {
 
@@ -49,33 +53,42 @@ internal class EventEnvelope private constructor(
         put("session_id", sessionId.value)
         if (adType != null) put("ad_type", adType.wireName)
         if (adFormat != null) put("ad_format", adFormat)
+        if (integration != null) {
+            put("host", integration.host)
+            put("auction_owner", integration.auctionOwner)
+        }
+        put("sdk_uptime_ms", sdkUptimeMs)
         put("sampling_rate", samplingRate.fraction)
     }
 
     companion object {
 
-        /** Captures the event [name] as of now on [clock]. */
+        /** Captures the event [name] as of now on [clock] and [uptime]. */
         fun capture(
             name: EventName,
             sessionId: SessionId,
             clock: Clock,
+            uptime: UptimeClock,
             auctionId: String? = null,
             adType: AdType? = null,
             adFormat: String? = null,
+            integration: WireIntegration? = null,
             samplingRate: SamplingRate,
-        ) = capture(name.wireName, sessionId, clock, auctionId, adType, adFormat, samplingRate)
+        ) = capture(name.wireName, sessionId, clock, uptime, auctionId, adType, adFormat, integration, samplingRate)
 
         /**
-         * Captures an event named [eventName] as of now on [clock]. Production code calls the [EventName] overload,
-         * which delegates here; tests call this one for names the SDK never emits.
+         * Captures an event named [eventName] as of now on [clock] and [uptime]. Production code calls the [EventName]
+         * overload, which delegates here; tests call this one for names the SDK never emits.
          */
         fun capture(
             eventName: String,
             sessionId: SessionId,
             clock: Clock,
+            uptime: UptimeClock,
             auctionId: String? = null,
             adType: AdType? = null,
             adFormat: String? = null,
+            integration: WireIntegration? = null,
             samplingRate: SamplingRate,
         ) = EventEnvelope(
             eventId = UUID.randomUUID().toString(),
@@ -85,6 +98,8 @@ internal class EventEnvelope private constructor(
             sessionId = sessionId,
             adType = adType,
             adFormat = adFormat,
+            integration = integration,
+            sdkUptimeMs = uptime.uptimeMillis(),
             samplingRate = samplingRate,
         )
     }

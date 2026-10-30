@@ -15,12 +15,14 @@ import org.bidon.rendering.telemetry.SamplingRate
 import org.bidon.rendering.telemetry.SessionId
 import org.bidon.rendering.telemetry.Telemetry
 import org.bidon.rendering.telemetry.TelemetryEvent
+import org.bidon.rendering.telemetry.UptimeClock
+import org.bidon.rendering.telemetry.WireIntegration
 import java.io.IOException
 
 /**
- * Each event the SDK emits, encoded by its production encoder (`AdEvents`, `CrashReport`) with fixed clocks, a fixed
- * session and auction id, and every optional field the event can carry present. Only `envelope.event_id` differs from
- * run to run: it is a fresh UUID v4.
+ * Each event the SDK emits, encoded by its production encoder (`AdEvents`, `CrashReport`) with fixed clocks and
+ * uptime, a fixed session, auction id and integration, and every optional field the event can carry present. Only
+ * `envelope.event_id` differs from run to run: it is a fresh UUID v4.
  */
 internal object GoldenEvents {
 
@@ -58,7 +60,8 @@ internal object GoldenEvents {
             processGone(ProcessExit(didCrash = true, priorityAtExit = RendererPriority.IMPORTANT))
         }
         EventName.SDK_CRASHED -> String(
-            CrashReport(listOf("org.bidon.rendering."), SESSION, CLOCK).encode(crash(), onMainThread = true)!!,
+            CrashReport(listOf("org.bidon.rendering."), SESSION, CLOCK, UPTIME, { INTEGRATION })
+                .encode(crash(), onMainThread = true)!!,
             Charsets.UTF_8,
         )
     }
@@ -73,6 +76,8 @@ internal object GoldenEvents {
     private const val LOAD_MILLIS = 420L
     private const val WAIT_MILLIS = 2_500L
     private val CLOCK = Clock { NOW }
+    private val UPTIME = UptimeClock { 12_345L }
+    private val INTEGRATION = WireIntegration.DIRECT
 
     /**
      * Runs [actions] on a fresh ad's events and returns the one event named [name] they emitted. [actions] gets a
@@ -88,7 +93,10 @@ internal object GoldenEvents {
             override fun sync() = Unit
         }
         var elapsed = 10_000L
-        AdEvents(telemetry, SESSION, AUCTION, AdType.INTERSTITIAL, Renderer.HTML, "html", CLOCK, MonotonicClock { elapsed })
+        AdEvents(
+            telemetry, SESSION, AUCTION, AdType.INTERSTITIAL, INTEGRATION, Renderer.HTML, "html", CLOCK, UPTIME,
+            MonotonicClock { elapsed },
+        )
             .actions { elapsed += it }
         return emitted.getValue(name.wireName)
     }
