@@ -15,8 +15,12 @@ import com.example.host.ThrowingListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.bidon.rendering.AdInfo
 import org.bidon.rendering.AdRenderingConfig
+import org.bidon.rendering.AdType
 import org.bidon.rendering.BidonRenderer
+import org.bidon.rendering.CreativeType
+import org.bidon.rendering.Integration
 import org.bidon.rendering.RendererTelemetry
 import org.bidon.rendering.TelemetryDirectory
 import org.bidon.rendering.vast.VastRenderer
@@ -29,14 +33,14 @@ import kotlin.system.exitProcess
  * reporter of its own would crash.
  *
  * Every crash command starts from an empty telemetry directory, installs [HostCrashReporter] the way a host app
- * installs its crash reporter, before the SDK, then initialises the renderer and crashes. [READ] starts the renderer
- * in the next process and reports what reached its error queue.
+ * installs its crash reporter, before the SDK, then initialises the renderer, creates one for a MAX bidding ad, and
+ * crashes. [READ] starts the renderer in the next process and reports what reached its error queue.
  *
  * [CONFIGURE_THEN_CRASH] does the same, but first gives the renderer, before `init`, a telemetry block that sends to
- * [URL] as [APP_KEY], and waits until the telemetry thread has stored it before it replies. [START] trusts the test ingest's
- * [CERTIFICATE] and only initialises the renderer, with no telemetry block, as an app's next launch does before its
- * config arrives. [CONFIGURE] gives the renderer a telemetry block before and after `init`, with the manifest flag
- * on when `arg1` is 1 and off otherwise, and reports whether the settings were stored.
+ * [URL] as [APP_KEY], and waits until the telemetry thread has stored it before it replies. [START] trusts the test
+ * ingest's [CERTIFICATE] and only initialises the renderer, with no telemetry block, as an app's next launch does
+ * before its config arrives. [CONFIGURE] gives the renderer a telemetry block before and after `init`, with the
+ * manifest flag on when `arg1` is 1 and off otherwise, and reports whether the settings were stored.
  *
  * The process ends only once the test has unbound and the service is destroyed: the crash, or after [READ] a plain
  * exit. A bound service whose process dies is scheduled for a restart, with a delay that grows with each death, and
@@ -64,6 +68,11 @@ class CrashVictimService : Service() {
                 hostReport.delete()
                 HostCrashReporter.install(hostReport)
                 BidonRenderer.init(this)
+                // The crash, which belongs to no ad, is labelled with this renderer's integration.
+                BidonRenderer.createRenderer(
+                    CreativeType.VAST,
+                    ad = AdInfo(auctionId = null, AdType.REWARDED, Integration.MAX_BIDDING),
+                )
                 reply.data = Bundle().apply { putString(SESSION, RendererTelemetry.sessionId.value) }
             }
             READ -> reply.data = read()

@@ -33,7 +33,7 @@ class CrashCaptureTest {
     private val directory by lazy { temporary.newFolder() }
     private val previous = RecordingHandler()
     private val session = SessionId.of("550e8400-e29b-41d4-a716-446655440000")!!
-    private val report = CrashReport(listOf("org.bidon.rendering."), session, Clock { 1_000 })
+    private val report = CrashReport(listOf("org.bidon.rendering."), session, Clock { 1_000 }, { 0L }, { null })
     private val mainThread = Thread.currentThread()
 
     private val originalDefault = Thread.getDefaultUncaughtExceptionHandler()
@@ -99,6 +99,23 @@ class CrashCaptureTest {
         capture().uncaughtException(Thread.currentThread(), hostile)
 
         assertEquals(listOf(Thread.currentThread() to hostile), previous.calls)
+    }
+
+    @Test
+    fun `when the uptime source and the integration supplier throw, the previous handler still runs and nothing escapes`() {
+        val failing = CrashReport(
+            listOf("org.bidon.rendering."),
+            session,
+            Clock { 1_000 },
+            { throw IllegalStateException("no uptime") },
+            { throw IllegalStateException("no integration") },
+        )
+        val crash = ownCrash()
+
+        CrashCapture(previous, failing, mainThread) { CrashSlot(directory) }
+            .uncaughtException(Thread.currentThread(), crash)
+
+        assertEquals(listOf(Thread.currentThread() to crash), previous.calls)
     }
 
     @Test

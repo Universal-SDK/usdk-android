@@ -2,10 +2,13 @@
   "envelope": {
     "ad_type": "interstitial",
     "auction_id": "8b0f3c2e-5d4a-4e1b-9c7f-2a6d8e1b3f50",
+    "auction_owner": "bidon",
     "event_id": "5c1e9a7d-2f4b-4c8e-b6a3-8d0f1e2a7b93",
     "event_name": "ad_show_requested",
     "event_ts": 1790326698635,
+    "host": "publisher",
     "sampling_rate": 1,
+    "sdk_uptime_ms": 12345,
     "session_id": "550e8400-e29b-41d4-a716-446655440000"
   },
   "time_since_loaded_ms": 2500

@@ -3,6 +3,7 @@ package org.bidon.rendering.telemetry
 import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -17,6 +18,9 @@ class EventEnvelopeTest {
     private var now = 1_790_326_698_635L
     private val clock = Clock { now }
 
+    private var uptimeNow = 5_000L
+    private val uptime = UptimeClock { uptimeNow }
+
     private fun EventEnvelope.event() = JSONObject(encode().toString(Charsets.UTF_8))
 
     private fun EventEnvelope.json() = event().getJSONObject("envelope")
@@ -24,7 +28,7 @@ class EventEnvelopeTest {
     /** The ingest handler reads an event's name from `events[].envelope`; an event without one is not counted. */
     @Test
     fun `the envelope goes out as an object of its own, with nothing next to it`() {
-        val event = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.ALL).event()
+        val event = EventEnvelope.capture("ad_filled", session, clock, uptime, samplingRate = SamplingRate.ALL).event()
 
         assertEquals(setOf("envelope"), event.keyNames())
     }
@@ -35,9 +39,11 @@ class EventEnvelopeTest {
             eventName = "ad_filled",
             sessionId = session,
             clock = clock,
+            uptime = uptime,
             auctionId = "b622d42a-cab5-498f-9582-39e7f9da09e9",
             adType = AdType.BANNER,
             adFormat = "MREC",
+            integration = WireIntegration.MAX_BIDDING,
             samplingRate = SamplingRate.of(0.25)!!,
         )
 
@@ -46,7 +52,7 @@ class EventEnvelopeTest {
         assertEquals(
             setOf(
                 "event_id", "event_name", "event_ts", "auction_id", "session_id", "ad_type", "ad_format",
-                "sampling_rate",
+                "host", "auction_owner", "sdk_uptime_ms", "sampling_rate",
             ),
             json.keyNames(),
         )
@@ -57,20 +63,115 @@ class EventEnvelopeTest {
         assertEquals("550e8400-e29b-41d4-a716-446655440000", json.getString("session_id"))
         assertEquals("banner", json.getString("ad_type"))
         assertEquals("MREC", json.getString("ad_format"))
+        assertEquals("max_adapter", json.getString("host"))
+        assertEquals("max", json.getString("auction_owner"))
         assertEquals(0.25, json.getDouble("sampling_rate"), 0.0)
     }
 
     @Test
     fun `absent fields are left out rather than written as null`() {
-        val json = EventEnvelope.capture("session_started", session, clock, samplingRate = SamplingRate.ALL).json()
+        val json = EventEnvelope.capture("session_started", session, clock, uptime, samplingRate = SamplingRate.ALL).json()
 
-        assertEquals(setOf("event_id", "event_name", "event_ts", "session_id", "sampling_rate"), json.keyNames())
+        assertEquals(
+            setOf("event_id", "event_name", "event_ts", "session_id", "sdk_uptime_ms", "sampling_rate"),
+            json.keyNames(),
+        )
+    }
+
+    // BID-123
+
+    @Test
+    fun `every integration goes out as the two PRD labels, in lower case`() {
+        val wire = mapOf(
+            WireIntegration.DIRECT to ("publisher" to "bidon"),
+            WireIntegration.MAX_CUSTOM to ("max_adapter" to "bidon"),
+            WireIntegration.MAX_BIDDING to ("max_adapter" to "max"),
+        )
+
+        wire.forEach { (integration, expected) ->
+            val json = EventEnvelope.capture(
+                "ad_filled", session, clock, uptime, integration = integration, samplingRate = SamplingRate.ALL,
+            ).json()
+
+            assertEquals(expected, json.getString("host") to json.getString("auction_owner"))
+        }
+    }
+
+    @Test
+    fun `the wire spelling of each label is exactly the contract's`() {
+        assertEquals(
+            listOf("publisher" to "bidon", "max_adapter" to "bidon", "max_adapter" to "max"),
+            WireIntegration.entries.map { it.host to it.auctionOwner },
+        )
+    }
+
+    @Test
+    fun `the envelope never names an integration mode or a schema version`() {
+        val keys = EventEnvelope.capture(
+            "ad_filled", session, clock, uptime, integration = WireIntegration.DIRECT, samplingRate = SamplingRate.ALL,
+        ).json().keyNames()
+
+        assertEquals(
+            setOf(
+                "event_id", "event_name", "event_ts", "session_id", "host", "auction_owner", "sdk_uptime_ms",
+                "sampling_rate",
+            ),
+            keys,
+        )
+    }
+
+    @Test
+    fun `without an integration the labels are absent, not null, and the uptime is still there`() {
+        val json = EventEnvelope.capture("ad_filled", session, clock, uptime, integration = null, samplingRate = SamplingRate.ALL)
+            .json()
+
+        assertFalse(json.has("host"))
+        assertFalse(json.has("auction_owner"))
+        assertTrue(json.has("sdk_uptime_ms"))
+    }
+
+    @Test
+    fun `the uptime is the uptime clock's reading, as a whole number of milliseconds`() {
+        uptimeNow = 123_456L
+        val json = EventEnvelope.capture("ad_filled", session, clock, uptime, samplingRate = SamplingRate.ALL).json()
+
+        assertJsonInteger(123_456L, json, "sdk_uptime_ms")
+    }
+
+    @Test
+    fun `an uptime of zero is written as zero, not left out`() {
+        uptimeNow = 0L
+        val json = EventEnvelope.capture("ad_filled", session, clock, uptime, samplingRate = SamplingRate.ALL).json()
+
+        assertJsonInteger(0L, json, "sdk_uptime_ms")
+    }
+
+    @Test
+    fun `the uptime is the moment of capture, not of encoding`() {
+        uptimeNow = 1_000L
+        val envelope = EventEnvelope.capture("ad_filled", session, clock, uptime, samplingRate = SamplingRate.ALL)
+        uptimeNow = 5_000L
+
+        assertJsonInteger(1_000L, envelope.json(), "sdk_uptime_ms")
+        assertJsonInteger(1_000L, envelope.json(), "sdk_uptime_ms")
+    }
+
+    @Test
+    fun `the uptime keeps counting when the wall clock goes back`() {
+        uptimeNow = 1_000L
+        val first = EventEnvelope.capture("ad_filled", session, clock, uptime, samplingRate = SamplingRate.ALL)
+        now -= 3_600_000
+        uptimeNow = 2_000L
+        val second = EventEnvelope.capture("ad_filled", session, clock, uptime, samplingRate = SamplingRate.ALL)
+
+        assertTrue(second.json().getLong("event_ts") < first.json().getLong("event_ts"))
+        assertTrue(second.json().getLong("sdk_uptime_ms") > first.json().getLong("sdk_uptime_ms"))
     }
 
     @Test
     fun `every ad type goes out in the contract's spelling`() {
         val spelled = AdType.entries.map { type ->
-            EventEnvelope.capture("ad_filled", session, clock, adType = type, samplingRate = SamplingRate.ALL)
+            EventEnvelope.capture("ad_filled", session, clock, uptime, adType = type, samplingRate = SamplingRate.ALL)
                 .json()
                 .getString("ad_type")
         }
@@ -80,14 +181,14 @@ class EventEnvelopeTest {
 
     @Test
     fun `an event counts as kept at a rate of one unless told otherwise`() {
-        val json = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.ALL).json()
+        val json = EventEnvelope.capture("ad_filled", session, clock, uptime, samplingRate = SamplingRate.ALL).json()
 
         assertEquals(1.0, json.getDouble("sampling_rate"), 0.0)
     }
 
     @Test
     fun `the timestamp is the moment of capture, not of encoding`() {
-        val envelope = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.ALL)
+        val envelope = EventEnvelope.capture("ad_filled", session, clock, uptime, samplingRate = SamplingRate.ALL)
         now += 60_000
 
         assertEquals(1_790_326_698_635L, envelope.json().getLong("event_ts"))
@@ -96,7 +197,7 @@ class EventEnvelopeTest {
     @Test
     fun `the event id is a version 4 UUID, new for every event`() {
         val ids = List(1_000) {
-            EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.ALL).eventId
+            EventEnvelope.capture("ad_filled", session, clock, uptime, samplingRate = SamplingRate.ALL).eventId
         }
 
         ids.forEach { assertEquals(4, UUID.fromString(it).version()) }
@@ -109,6 +210,7 @@ class EventEnvelopeTest {
             "ad_filled",
             session,
             clock,
+            uptime,
             auctionId = "a",
             adType = AdType.REWARDED,
             samplingRate = SamplingRate.ALL,
@@ -119,8 +221,8 @@ class EventEnvelopeTest {
 
     @Test
     fun `two events captured at the same instant are still two events`() {
-        val first = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.ALL)
-        val second = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.ALL)
+        val first = EventEnvelope.capture("ad_filled", session, clock, uptime, samplingRate = SamplingRate.ALL)
+        val second = EventEnvelope.capture("ad_filled", session, clock, uptime, samplingRate = SamplingRate.ALL)
 
         assertNotEquals(first.json().getString("event_id"), second.json().getString("event_id"))
     }
@@ -131,7 +233,7 @@ class EventEnvelopeTest {
         try {
             // Eastern Arabic digits: the locale that once turned a VAST macro into "٥٠" (f259398).
             Locale.setDefault(Locale.forLanguageTag("ar-EG-u-nu-arab"))
-            val text = EventEnvelope.capture("ad_filled", session, clock, samplingRate = SamplingRate.of(0.25)!!)
+            val text = EventEnvelope.capture("ad_filled", session, clock, uptime, samplingRate = SamplingRate.of(0.25)!!)
                 .encode().toString(Charsets.UTF_8)
 
             assertTrue(text, text.contains("\"event_ts\":1790326698635"))
@@ -147,6 +249,7 @@ class EventEnvelopeTest {
             "ad_filled",
             SessionId.of("сесія-𓀀")!!,
             clock,
+            uptime,
             auctionId = "аукціон",
             samplingRate = SamplingRate.ALL,
         )

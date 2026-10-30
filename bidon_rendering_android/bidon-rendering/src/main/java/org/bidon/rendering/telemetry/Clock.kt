@@ -24,3 +24,12 @@ internal fun interface MonotonicClock {
         val System: MonotonicClock = MonotonicClock { java.lang.System.nanoTime() / 1_000_000 }
     }
 }
+
+/**
+ * Milliseconds since telemetry started, never decreasing. Unlike [Clock] it ignores what the user or the network does
+ * to the device's time, so it orders the events of one process even when the wall clock is wrong.
+ */
+internal fun interface UptimeClock {
+
+    fun uptimeMillis(): Long
+}

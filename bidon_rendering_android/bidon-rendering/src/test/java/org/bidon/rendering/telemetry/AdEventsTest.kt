@@ -40,6 +40,10 @@ class AdEventsTest {
     private var elapsed = 10_000L
     private val monotonic = MonotonicClock { elapsed }
 
+    @Volatile
+    private var uptimeNow = 3_000L
+    private val uptime = UptimeClock { uptimeNow }
+
     private val telemetry = RecordingTelemetry()
 
     private val otherThreadFailures = CopyOnWriteArrayList<Throwable>()
@@ -50,7 +54,9 @@ class AdEventsTest {
         renderer: Renderer = Renderer.HTML,
         declaredType: String? = null,
         telemetry: Telemetry = this.telemetry,
-    ) = AdEvents(telemetry, session, auctionId, adType, renderer, declaredType, clock, monotonic)
+        integration: WireIntegration? = null,
+        uptime: UptimeClock = this.uptime,
+    ) = AdEvents(telemetry, session, auctionId, adType, integration, renderer, declaredType, clock, uptime, monotonic)
 
     private val crashed = ProcessExit(didCrash = true, priorityAtExit = null)
     private val killed = ProcessExit(didCrash = false, priorityAtExit = null)
@@ -2927,7 +2933,105 @@ class AdEventsTest {
         assertEquals(1, telemetry.emitted.count { it.name == "ad_impression" })
     }
 
+    // BID-123
+
+    @Test
+    fun `every event carries the integration labels and the uptime when the ad has an integration`() {
+        val events = adEvents(integration = WireIntegration.MAX_BIDDING)
+        uptimeNow = 4_321L
+
+        events.everyAdEvent()
+
+        assertEquals(EVERY_AD_EVENT, telemetry.emitted.map { it.name })
+        telemetry.emitted.forEach { emit ->
+            val envelope = emit.json().envelope
+            assertEquals(emit.name, "max_adapter", envelope.getString("host"))
+            assertEquals(emit.name, "max", envelope.getString("auction_owner"))
+            assertJsonInteger(4_321L, envelope, "sdk_uptime_ms")
+            assertEquals(emit.name, ENVELOPE_KEYS + setOf("host", "auction_owner"), envelope.keyNames())
+        }
+    }
+
+    @Test
+    fun `an ad with no integration sends no labels, and still sends the uptime`() {
+        val events = adEvents(integration = null)
+
+        events.everyAdEvent()
+
+        assertEquals(EVERY_AD_EVENT, telemetry.emitted.map { it.name })
+        telemetry.emitted.forEach { emit ->
+            val envelope = emit.json().envelope
+            assertFalse(emit.name, envelope.has("host"))
+            assertFalse(emit.name, envelope.has("auction_owner"))
+            assertTrue(emit.name, envelope.has("sdk_uptime_ms"))
+        }
+    }
+
+    @Test
+    fun `the uptime is the reading when telemetry captures, not when the ad events were made`() {
+        val events = adEvents()
+        uptimeNow = 10_000L
+        telemetry.beforeCapture = { uptimeNow += 7 }
+
+        events.rendered()
+
+        assertJsonInteger(10_007L, telemetry.single("ad_impression").envelope, "sdk_uptime_ms")
+    }
+
+    @Test
+    fun `an event telemetry does not keep never reads the uptime`() {
+        var reads = 0
+        val events = adEvents(uptime = { reads++.toLong() })
+        telemetry.rate = null
+
+        events.everyAdEvent()
+
+        assertEquals(0, reads)
+    }
+
+    @Test
+    fun `an uptime source that throws never reaches the ad, and the event is dropped`() {
+        val failing = CatchingTelemetry()
+        val events = adEvents(telemetry = failing, uptime = { throw IllegalStateException("no uptime") })
+
+        events.showRequested()
+        events.rendered()
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
+        events.processGone(crashed)
+        events.closed()
+
+        // ad_show_requested, then the impression that closes its show, the load failure and the death.
+        assertEquals(4, failing.captureFailures.size)
+        assertEquals(emptyList<TelemetryEvent>(), failing.captured)
+    }
+
+    @Test
+    fun `an uptime source that throws once loses only that event`() {
+        val failing = CatchingTelemetry()
+        var calls = 0
+        val events = adEvents(telemetry = failing, uptime = { if (calls++ == 0) error("once") else 9L })
+
+        events.rendered()
+        events.loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
+
+        assertEquals(1, failing.captureFailures.size)
+        assertEquals(1, failing.captured.size)
+    }
+
     // Helpers
+
+    /**
+     * Calls what makes each event an ad emits, in an order where none silences another: a show request and its failure,
+     * a second request closed by the impression, a load failure and the render process's death.
+     */
+    private fun AdEvents.everyAdEvent() {
+        showRequested()
+        showFailed(ErrorCode.AD_SCREEN_NO_VIEW)
+        showRequested()
+        rendered()
+        loadFailed(ErrorCode.WEBVIEW_MAIN_FRAME_ERROR)
+        processGone(killed)
+    }
 
     /**
      * Runs [THREADS] calls of [call] at once on a fresh [AdEvents] that [setup] has prepared, [rounds] times, and
@@ -3021,10 +3125,15 @@ class AdEventsTest {
         const val ROUNDS = 500
 
         val ENVELOPE_KEYS = setOf(
-            "event_id", "event_name", "event_ts", "auction_id", "session_id", "ad_type", "sampling_rate",
+            "event_id", "event_name", "event_ts", "auction_id", "session_id", "ad_type", "sdk_uptime_ms",
+            "sampling_rate",
         )
 
         val RACED_NAMES = setOf("render_crashed", "ad_load_failed")
+
+        val EVERY_AD_EVENT = listOf(
+            "ad_show_requested", "ad_show_failed", "ad_show_requested", "ad_impression", "ad_load_failed", "render_crashed",
+        )
     }
 }
 
@@ -3033,6 +3142,26 @@ internal fun assertJsonInteger(expected: Long, json: JSONObject, key: String) {
     val value = json.get(key)
     assertTrue("$key is $value (${value::class.java.simpleName})", value is Int || value is Long)
     assertEquals(key, expected, (value as Number).toLong())
+}
+
+/**
+ * A telemetry that captures every event the way the real one does: a capture that throws loses its event and nothing
+ * else, and the exception stays inside.
+ */
+private class CatchingTelemetry : Telemetry {
+
+    val captured = mutableListOf<TelemetryEvent>()
+    val captureFailures = mutableListOf<Throwable>()
+
+    override fun emit(eventName: String, eventClass: EventClass, capture: (SamplingRate) -> TelemetryEvent) {
+        try {
+            captured += capture(SamplingRate.ALL)
+        } catch (failure: Throwable) {
+            captureFailures += failure
+        }
+    }
+
+    override fun sync() = Unit
 }
 
 /**

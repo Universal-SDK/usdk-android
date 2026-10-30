@@ -1,5 +1,6 @@
 package org.bidon.rendering.telemetry
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -26,6 +27,32 @@ class CrashSlotTest {
 
         assertEquals(listOf("crash" to EventClass.ERROR), store.appended)
         assertEquals(emptyList<String>(), directory.list()!!.toList())
+    }
+
+    @Test
+    fun `a crash moved in the next launch keeps the uptime and the session of the process that crashed`() {
+        val crashedProcess = CrashReport(
+            listOf("org.bidon.rendering."),
+            SessionId.of("crashed-session")!!,
+            { 1_000L },
+            { 4_242L },
+            { WireIntegration.MAX_BIDDING },
+        )
+        val record = crashedProcess.encode(
+            IllegalStateException().apply {
+                stackTrace = arrayOf(StackTraceElement("org.bidon.rendering.A", "a", "A.kt", 1))
+            },
+            onMainThread = false,
+        )!!
+        CrashSlot(directory).write(record)
+
+        CrashSlot(directory).moveInto(store)
+
+        val envelope = JSONObject(store.appended.single().first).getJSONObject("envelope")
+        assertEquals("crashed-session", envelope.getString("session_id"))
+        assertEquals(4_242L, envelope.getLong("sdk_uptime_ms"))
+        assertEquals("max_adapter", envelope.getString("host"))
+        assertEquals("max", envelope.getString("auction_owner"))
     }
 
     @Test

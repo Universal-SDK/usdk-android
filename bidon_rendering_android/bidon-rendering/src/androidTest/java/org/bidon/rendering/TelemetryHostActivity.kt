@@ -31,12 +31,12 @@ class TelemetryHostActivity : Activity() {
         val session = RendererTelemetry.sessionId
         repeat(3) { index ->
             telemetry.emit("event_$index", EventClass.DIAGNOSTIC) { rate ->
-                EventEnvelope.capture("event_$index", session, Clock.System, samplingRate = rate)
+                EventEnvelope.capture("event_$index", session, Clock.System, { 0L }, samplingRate = rate)
             }
         }
         // Encoded on the telemetry thread once the three before it are stored, and stored as the fourth event.
         telemetry.emit("ready", EventClass.DIAGNOSTIC) { rate ->
-            val ready = EventEnvelope.capture("ready", session, Clock.System, samplingRate = rate)
+            val ready = EventEnvelope.capture("ready", session, Clock.System, { 0L }, samplingRate = rate)
             TelemetryEvent {
                 File(directory, READY_FILE).writeText("${Process.myPid()}\n${session.value}")
                 ready.encode()

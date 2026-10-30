@@ -3,6 +3,7 @@ package org.bidon.rendering.telemetry
 import android.content.Context
 import android.os.Bundle
 import android.os.Messenger
+import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
@@ -39,6 +40,26 @@ class CrashCaptureOnDeviceTest {
         assertEquals("not the crashed process's session", crashed.session, event.getJSONObject("envelope").getString("session_id"))
         assertNotEquals(next.session, event.getJSONObject("envelope").getString("session_id"))
         assertEquals("renderer-work: java.lang.IllegalStateException: ours", next.hostReport)
+    }
+
+    /**
+     * The crash handler reads the uptime and the last renderer's integration of the process that crashed. The crash
+     * comes after a binder round trip and an unbind, so its uptime cannot still be zero. The victim process exists
+     * only inside the window the test measures, so an uptime counted from device boot would exceed it.
+     */
+    @Test
+    fun aCrashCarriesTheUptimeAndTheIntegrationOfTheProcessThatCrashed() {
+        val before = SystemClock.elapsedRealtime()
+        val (_, next) = crashAndRestart(CrashVictimService.CRASH_IN_OUR_THREAD)
+        val window = SystemClock.elapsedRealtime() - before
+
+        val event = JSONObject(next.getStringArrayList(CrashVictimService.ERRORS)!!.single())
+        val envelope = event.getJSONObject("envelope")
+        val uptime = envelope.getLong("sdk_uptime_ms")
+        assertTrue(envelope.toString(), uptime > 0)
+        assertTrue("uptime $uptime ms, but the crashed process lived at most $window ms", uptime <= window)
+        assertEquals("max_adapter", envelope.getString("host"))
+        assertEquals("max", envelope.getString("auction_owner"))
     }
 
     @Test

@@ -89,10 +89,14 @@ class CatalogueConformanceTest {
 
     @Test
     fun `no sample breaks a rule the pending list does not name even for a known event`() {
-        // render_crashed is a catalogue name, so the three fields the catalogue lacks must be the only thing it breaks.
+        // render_crashed is a catalogue name, so the three fields the catalogue lacks and the three pending envelope
+        // fields must be the only things it breaks.
         val crashed = violationsBySample().getValue(EventName.RENDER_CRASHED)
         assertEquals(
-            setOf("did_crash", "was_shown", "renderer_priority_at_exit"),
+            setOf(
+                "did_crash", "was_shown", "renderer_priority_at_exit",
+                "envelope.host", "envelope.auction_owner", "envelope.sdk_uptime_ms",
+            ),
             crashed.map { it.key }.toSet(),
         )
         assertEquals(setOf(Rule.UNKNOWN_FIELD), crashed.map { it.rule }.toSet())

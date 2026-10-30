@@ -15,11 +15,15 @@ import java.util.IdentityHashMap
  * what we called. An exception in the chain that never passed through our code keeps its class and no frames.
  *
  * @param ownPackages class name prefixes that mark a frame as ours, such as `org.bidon.rendering.`
+ * @param integration the integration of the last renderer created in this process, read when a crash is captured, or
+ * `null` when none was created or it did not say
  */
 internal class CrashReport(
     private val ownPackages: List<String>,
     private val sessionId: SessionId,
     private val clock: Clock,
+    private val uptime: UptimeClock,
+    private val integration: () -> WireIntegration?,
     private val maxBytes: Int = EventQueue.Limits().maxRecordBytes,
 ) {
 
@@ -32,7 +36,14 @@ internal class CrashReport(
      */
     fun encode(throwable: Throwable, onMainThread: Boolean): ByteArray? {
         // A crash bypasses the gate and is always kept (D-031).
-        val envelope = EventEnvelope.capture(EventName.SDK_CRASHED, sessionId, clock, samplingRate = SamplingRate.ALL)
+        val envelope = EventEnvelope.capture(
+            EventName.SDK_CRASHED,
+            sessionId,
+            clock,
+            uptime,
+            integration = integration(),
+            samplingRate = SamplingRate.ALL,
+        )
         val exceptions = chain(throwable)
         var maxFrames = MAX_FRAMES
         while (true) {

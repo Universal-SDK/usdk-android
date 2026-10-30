@@ -5,11 +5,16 @@ import org.bidon.rendering.telemetry.ProcessExit
 import org.bidon.rendering.telemetry.SamplingRate
 import org.bidon.rendering.telemetry.Telemetry
 import org.bidon.rendering.telemetry.TelemetryEvent
+import org.bidon.rendering.telemetry.WireIntegration
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotSame
+import org.junit.Before
 import org.junit.Test
+import java.io.File
+import java.net.URLClassLoader
 
 /** The glue that labels an ad's events with what the host told `createRenderer`. */
 class RendererTelemetryAdEventsTest {
@@ -22,9 +27,28 @@ class RendererTelemetryAdEventsTest {
         override fun sync() = Unit
     }
 
+    /** Every test starts as a process whose last renderer named no integration, whatever ran before it. */
+    @Before
+    fun forgetTheLastIntegration() {
+        RendererTelemetry.adEvents(Captured(), CreativeType.HTML, ad = null, AdRenderingConfig())
+    }
+
     @Test
     fun withTelemetryOffThereAreNoEventsToMake() {
         assertNull(RendererTelemetry.adEvents(Telemetry.Disabled, CreativeType.HTML, AdInfo("auction", AdType.BANNER), AdRenderingConfig()))
+    }
+
+    @Test
+    fun aRendererCreatedWithTelemetryOffLeavesNoIntegrationBehind() {
+        val events = RendererTelemetry.adEvents(
+            Telemetry.Disabled,
+            CreativeType.HTML,
+            AdInfo("auction", AdType.BANNER, Integration.MAX_BIDDING),
+            AdRenderingConfig(),
+        )
+
+        assertNull(events)
+        assertNull(RendererTelemetry.lastIntegration)
     }
 
     @Test
@@ -93,5 +117,91 @@ class RendererTelemetryAdEventsTest {
         assertFalse(event.getJSONObject("envelope").has("auction_id"))
         assertFalse(event.getJSONObject("envelope").has("ad_type"))
         assertEquals(RendererTelemetry.sessionId.value, event.getJSONObject("envelope").getString("session_id"))
+    }
+
+    @Test
+    fun everyIntegrationIsWrittenAsItsTwoLabels() {
+        val wire = mapOf(
+            Integration.DIRECT to ("publisher" to "bidon"),
+            Integration.MAX_CUSTOM to ("max_adapter" to "bidon"),
+            Integration.MAX_BIDDING to ("max_adapter" to "max"),
+        )
+        for ((integration, labels) in wire) {
+            val telemetry = Captured()
+            RendererTelemetry.adEvents(
+                telemetry, CreativeType.HTML, AdInfo("auction", AdType.BANNER, integration), AdRenderingConfig(),
+            )!!.rendered()
+
+            val envelope = telemetry.events.single().getJSONObject("envelope")
+            assertEquals("$integration", labels, envelope.getString("host") to envelope.getString("auction_owner"))
+        }
+    }
+
+    @Test
+    fun anAdWithNoIntegrationCarriesNoLabelsButStillTheUptime() {
+        val telemetry = Captured()
+        RendererTelemetry.adEvents(
+            telemetry, CreativeType.HTML, AdInfo("auction", AdType.BANNER, integration = null), AdRenderingConfig(),
+        )!!.rendered()
+
+        val envelope = telemetry.events.single().getJSONObject("envelope")
+        assertFalse(envelope.has("host"))
+        assertFalse(envelope.has("auction_owner"))
+        // Telemetry never starts in these tests, so the uptime is the placeholder that reads zero until it does.
+        assertEquals(0L, envelope.getLong("sdk_uptime_ms"))
+    }
+
+    @Test
+    fun theLastRendererCreatedLabelsWhatBelongsToNoAd() {
+        RendererTelemetry.adEvents(
+            Captured(), CreativeType.HTML, AdInfo("a", AdType.BANNER, Integration.MAX_CUSTOM), AdRenderingConfig(),
+        )
+        assertEquals(
+            WireIntegration.MAX_CUSTOM,
+            RendererTelemetry.lastIntegration,
+        )
+
+        RendererTelemetry.adEvents(
+            Captured(), CreativeType.VAST, AdInfo("b", AdType.REWARDED, Integration.MAX_BIDDING), AdRenderingConfig(),
+        )
+        assertEquals(
+            WireIntegration.MAX_BIDDING,
+            RendererTelemetry.lastIntegration,
+        )
+    }
+
+    @Test
+    fun aRendererCreatedWithoutAnIntegrationClearsTheLabelOfTheOneBefore() {
+        RendererTelemetry.adEvents(
+            Captured(), CreativeType.HTML, AdInfo("a", AdType.BANNER, Integration.DIRECT), AdRenderingConfig(),
+        )
+
+        RendererTelemetry.adEvents(Captured(), CreativeType.HTML, ad = null, AdRenderingConfig())
+        assertNull(RendererTelemetry.lastIntegration)
+
+        RendererTelemetry.adEvents(
+            Captured(), CreativeType.HTML, AdInfo("a", AdType.BANNER, Integration.DIRECT), AdRenderingConfig(),
+        )
+        RendererTelemetry.adEvents(
+            Captured(), CreativeType.HTML, AdInfo("a", AdType.BANNER), AdRenderingConfig(),
+        )
+        assertNull(RendererTelemetry.lastIntegration)
+    }
+
+    /**
+     * A process that has created no renderer labels a crash with no integration. The object is loaded again, in a
+     * class loader of its own, because the other tests in this JVM have already created renderers through it.
+     */
+    @Test
+    fun beforeAnyRendererIsCreatedThereIsNoIntegration() {
+        val classPath = System.getProperty("java.class.path").split(File.pathSeparator).map { File(it).toURI().toURL() }
+        // A class loader of its own gives a copy of RendererTelemetry that no other test has touched.
+        URLClassLoader(classPath.toTypedArray(), ClassLoader.getSystemClassLoader().parent).use { loader ->
+            val type = loader.loadClass(RendererTelemetry::class.java.name)
+            assertNotSame(RendererTelemetry::class.java, type)
+            val fresh = type.getField("INSTANCE").get(null)
+
+            assertNull(type.getMethod("getLastIntegration").invoke(fresh))
+        }
     }
 }

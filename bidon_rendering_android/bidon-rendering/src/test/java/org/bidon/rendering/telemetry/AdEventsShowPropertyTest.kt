@@ -57,7 +57,7 @@ class AdEventsShowPropertyTest {
     private val step: Arb<Step> = Arb.bind(Arb.enum<Op>(), Arb.element(SHOW_CODES), ::Step)
 
     private fun adEvents(telemetry: Telemetry, renderer: Renderer) =
-        AdEvents(telemetry, session, "a", AdType.INTERSTITIAL, renderer, declaredType = null, { 0L }, { 0L })
+        AdEvents(telemetry, session, "a", AdType.INTERSTITIAL, null, renderer, declaredType = null, { 0L }, { 0L }, { 0L })
 
     private fun AdEvents.perform(step: Step) {
         when (step.op) {

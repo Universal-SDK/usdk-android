@@ -71,6 +71,7 @@ class GateSessionOnDeviceTest {
                 EVENT,
                 RendererTelemetry.sessionId,
                 Clock.System,
+                { 0L },
                 auctionId = auctionId,
                 samplingRate = rate,
             )
