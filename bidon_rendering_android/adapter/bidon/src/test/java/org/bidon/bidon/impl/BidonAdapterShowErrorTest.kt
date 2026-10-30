@@ -16,9 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.bidon.bidon.BidonBannerAuctionParams
@@ -32,6 +30,7 @@ import org.bidon.sdk.auction.models.AdUnit
 import org.bidon.sdk.config.BidonError
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -56,6 +55,7 @@ class BidonAdapterShowErrorTest(private val kind: Kind) {
     private class FakeRenderer : AdRenderer {
         lateinit var listener: AdRenderer.Listener
         var onShowFullscreen: () -> Unit = {}
+        var adView: View? = null
 
         override fun load(adm: String, listener: AdRenderer.Listener) {
             this.listener = listener
@@ -64,7 +64,7 @@ class BidonAdapterShowErrorTest(private val kind: Kind) {
         override fun attach(container: ViewGroup) = Unit
         override fun showFullscreen(activity: Activity) = onShowFullscreen()
         override fun destroy() = Unit
-        override fun getView(): View? = null
+        override fun getView(): View? = adView
     }
 
     private class Subject(
@@ -136,7 +136,10 @@ class BidonAdapterShowErrorTest(private val kind: Kind) {
                 Subject(renderer, a.adEvent, { a.load(fullscreenParams()) }, { a.show(activity) }, a::destroy)
             }
             Kind.BANNER -> BidonBannerImpl().let { a ->
-                Subject(renderer, a.adEvent, { a.load(bannerParams()) }, { a.getAdView() }, a::destroy)
+                // The banner is shown by placing the renderer's view, so the host gets that view and no other.
+                renderer.adView = mockk<View>()
+                val show = { assertSame(renderer.adView, a.getAdView()?.networkAdview) }
+                Subject(renderer, a.adEvent, { a.load(bannerParams()) }, show, a::destroy)
             }
         }
         created += subject
@@ -202,13 +205,26 @@ class BidonAdapterShowErrorTest(private val kind: Kind) {
     }
 
     @Test
-    fun `no LoadFailed is emitted after show when the load deadline passes`() = runTest {
+    fun `error after a new load following a show is LoadFailed`() = runTest {
         val s = loadedSubject()
         s.show()
+        s.load()
 
-        advanceTimeBy(TIMEOUT_MS + 1)
-        runCurrent()
+        s.renderer.listener.onError(error)
 
-        assertTrue(s.events.none { it is AdEvent.LoadFailed })
+        assertTrue(s.events.last() is AdEvent.LoadFailed)
+        assertTrue(s.events.none { it is AdEvent.ShowFailed })
+    }
+
+    @Test
+    fun `error after a new load following an impression is LoadFailed`() = runTest {
+        val s = loadedSubject()
+        s.show()
+        s.renderer.listener.onImpression()
+        s.load()
+
+        s.renderer.listener.onError(error)
+
+        assertTrue(s.events.last() is AdEvent.LoadFailed)
     }
 }

@@ -44,7 +44,6 @@ internal class BidonInterstitialImpl :
     private val scope = MainScope()
     private var loadDeadline: RendererLoadDeadline? = null
     private var isShowCalled = false
-    private var isShownEmitted = false
 
     override fun getAuctionParam(
         auctionParamsScope: AdAuctionParamSource
@@ -67,7 +66,7 @@ internal class BidonInterstitialImpl :
     override fun load(adParams: BidonFullscreenAuctionParams) {
         Log.d(TAG, "load() creativeType=${adParams.creativeType}")
         isShowCalled = false
-        isShownEmitted = false
+        isImpressionSent = false
 
         val ad = getAd()
 
@@ -83,7 +82,6 @@ internal class BidonInterstitialImpl :
             override fun onImpression() {
                 if (!isImpressionSent) {
                     isImpressionSent = true
-                    isShownEmitted = true
                     ad?.let { emitEvent(AdEvent.Shown(it)) }
                 }
             }
@@ -105,7 +103,7 @@ internal class BidonInterstitialImpl :
                 Log.e(TAG, "Ad error: ${error.message}")
                 isAdReadyToShow = false
 
-                if (isShownEmitted) {
+                if (isImpressionSent) {
                     Log.w(TAG, "Ad runtime error after impression: ${error.message}", error)
                     return
                 }
@@ -146,8 +144,6 @@ internal class BidonInterstitialImpl :
         renderer = null
         isAdReadyToShow = false
         isImpressionSent = false
-
         isShowCalled = false
-        isShownEmitted = false
     }
 }
