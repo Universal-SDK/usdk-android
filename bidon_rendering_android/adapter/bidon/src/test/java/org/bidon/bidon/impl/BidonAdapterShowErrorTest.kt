@@ -26,8 +26,12 @@ import org.bidon.rendering.AdRenderingConfig
 import org.bidon.rendering.BidonRenderer
 import org.bidon.rendering.CreativeType
 import org.bidon.sdk.adapter.AdEvent
+import org.bidon.sdk.adapter.DemandAd
+import org.bidon.sdk.ads.AdType
 import org.bidon.sdk.auction.models.AdUnit
 import org.bidon.sdk.config.BidonError
+import org.bidon.sdk.stats.StatisticsCollector
+import org.bidon.sdk.stats.models.BidType
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -73,6 +77,7 @@ class BidonAdapterShowErrorTest(private val kind: Kind) {
         val load: () -> Unit,
         val show: () -> Unit,
         val destroy: () -> Unit,
+        val stats: StatisticsCollector,
     ) {
         val events = mutableListOf<AdEvent>()
     }
@@ -130,24 +135,26 @@ class BidonAdapterShowErrorTest(private val kind: Kind) {
         every { BidonRenderer.createRenderer(any(), any(), any()) } returns renderer
         val subject = when (kind) {
             Kind.INTERSTITIAL -> BidonInterstitialImpl().let { a ->
-                Subject(renderer, a.adEvent, { a.load(fullscreenParams()) }, { a.show(activity) }, a::destroy)
+                Subject(renderer, a.adEvent, { a.load(fullscreenParams()) }, { a.show(activity) }, a::destroy, a)
             }
             Kind.REWARDED -> BidonRewardedImpl().let { a ->
-                Subject(renderer, a.adEvent, { a.load(fullscreenParams()) }, { a.show(activity) }, a::destroy)
+                Subject(renderer, a.adEvent, { a.load(fullscreenParams()) }, { a.show(activity) }, a::destroy, a)
             }
             Kind.BANNER -> BidonBannerImpl().let { a ->
                 // The banner is shown by placing the renderer's view, so the host gets that view and no other.
                 renderer.adView = mockk<View>()
                 val show = { assertSame(renderer.adView, a.getAdView()?.networkAdview) }
-                Subject(renderer, a.adEvent, { a.load(bannerParams()) }, show, a::destroy)
+                Subject(renderer, a.adEvent, { a.load(bannerParams()) }, show, a::destroy, a)
             }
         }
         created += subject
         return subject
     }
 
-    private fun TestScope.loadedSubject(): Subject {
+    /** A subject that has loaded and heard the renderer load; [beforeLoad] runs on it first. */
+    private fun TestScope.loadedSubject(beforeLoad: (Subject) -> Unit = {}): Subject {
         val subject = createSubject()
+        beforeLoad(subject)
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             subject.flow.collect { subject.events += it }
         }
@@ -202,6 +209,22 @@ class BidonAdapterShowErrorTest(private val kind: Kind) {
         s.renderer.listener.onError(error)
 
         assertEquals(before, s.events.size)
+    }
+
+    @Test
+    fun `a second impression from the renderer reports Shown once`() = runTest {
+        // Shown carries the mediation SDK's ad, which exists only once the auction round and the fill are recorded.
+        every { adUnit.bidType } returns BidType.RTB
+        val s = loadedSubject { subject ->
+            subject.stats.addRoundInfo("auction-1", DemandAd(AdType.Interstitial), auctionPricefloor = 0.0)
+            subject.stats.markFillStarted(adUnit, pricefloor = 0.0)
+        }
+        s.show()
+
+        s.renderer.listener.onImpression()
+        s.renderer.listener.onImpression()
+
+        assertEquals(1, s.events.count { it is AdEvent.Shown })
     }
 
     @Test
