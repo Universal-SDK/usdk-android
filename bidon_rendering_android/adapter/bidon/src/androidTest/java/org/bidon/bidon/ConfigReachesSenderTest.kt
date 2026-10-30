@@ -49,7 +49,7 @@ class ConfigReachesSenderTest {
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context: Context = instrumentation.targetContext
-    private val directory = File(File(context.noBackupFilesDir, "bidon_telemetry"), Application.getProcessName())
+    private val directory = telemetryDirectory(context)
     private val ingests = mutableListOf<FakeIngest>()
     private lateinit var restoreTrust: () -> Unit
 
@@ -68,8 +68,19 @@ class ConfigReachesSenderTest {
         @BeforeClass
         fun forgetStoredSettings() {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
-            File(File(File(context.noBackupFilesDir, "bidon_telemetry"), Application.getProcessName()), "telemetry_config")
-                .delete()
+            File(telemetryDirectory(context), "telemetry_config").delete()
+        }
+
+        /**
+         * The telemetry directory of this process. `Application.getProcessName()` exists from API 28; below it the test
+         * runs in the main process, which is named as the package.
+         */
+        private fun telemetryDirectory(context: Context): File {
+            val processName = when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> Application.getProcessName()
+                else -> context.packageName
+            }
+            return File(File(context.noBackupFilesDir, "bidon_telemetry"), processName)
         }
     }
 
