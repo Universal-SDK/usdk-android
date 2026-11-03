@@ -6,7 +6,7 @@ import org.bidon.app.settings.SdkSettings
 /**
  * Test-only stand-in for the Play services advertising id client.
  *
- * Why this exists: the Adikteev test campaign on the staging backend only bids for one specific
+ * Why this exists: the test campaign on the staging backend only bids for one specific
  * device advertising id. Without it the auction returns a no-bid, so the demo app can never render
  * a real creative. There is no public SDK API to set the advertising id.
  *
@@ -34,7 +34,7 @@ class AdvertisingIdClient {
     companion object {
         /**
          * The id comes from the Settings tab so it can be changed without a rebuild. Its default,
-         * the device the Adikteev test campaign targets, lives in res/values/settings.xml.
+         * the device the test campaign targets, lives in res/values/settings.xml.
          */
         @JvmStatic
         fun getAdvertisingIdInfo(context: Context): Info = Info(

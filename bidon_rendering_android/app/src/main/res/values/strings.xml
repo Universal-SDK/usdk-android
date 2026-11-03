@@ -16,7 +16,7 @@
     <string name="settings_app_key">App key</string>
     <string name="settings_app_key_help">The publisher app key the SDK initializes with.</string>
     <string name="settings_base_url">Base URL</string>
-    <string name="settings_base_url_help">The BidOn backend the SDK talks to, for example https://sdkapi.bidon.squads.com</string>
+    <string name="settings_base_url_help">The BidOn backend the SDK talks to. Leave empty for the SDK\'s default server.</string>
     <string name="settings_bundle_id">Bundle ID override</string>
     <string name="settings_bundle_id_help">Leave empty to send the real package name. Set it to make the SDK report a different bundle in its requests. Note: with an override set the SDK cannot look up its own package, so the app version it reports goes empty.</string>
     <string name="settings_test_mode">Test mode</string>

@@ -100,7 +100,8 @@ class MainActivity : AppCompatActivity() {
             .registerAdapters(adapter)
             .setLoggerLevel(settings.logLevel)
             .setTestMode(settings.testMode)
-            .setBaseUrl(settings.baseUrl)
+            // An empty URL would replace the SDK's own default server, so it is only set when given.
+            .apply { if (settings.baseUrl.isNotBlank()) setBaseUrl(settings.baseUrl) }
             .setInitializationCallback { applyRegulation(settings) }
             .initialize(context = sdkContext(settings), appKey = settings.appKey)
     }
