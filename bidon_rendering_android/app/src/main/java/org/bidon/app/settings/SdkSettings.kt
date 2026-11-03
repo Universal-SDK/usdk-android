@@ -16,7 +16,8 @@ import org.bidon.sdk.regulation.Gdpr
  */
 data class SdkSettings(
     val appKey: String,
-    val baseUrl: String,
+    /** Null leaves the SDK on its own default server. */
+    val baseUrl: String?,
     /** Null means send the real package name. */
     val bundleId: String?,
     /** Where the renderer sends telemetry until the server's config says; null leaves it to the server. */
@@ -53,7 +54,7 @@ data class SdkSettings(
 
             return SdkSettings(
                 appKey = string(R.string.pref_app_key, R.string.pref_app_key_default),
-                baseUrl = string(R.string.pref_base_url, R.string.pref_base_url_default),
+                baseUrl = optionalString(R.string.pref_base_url),
                 bundleId = optionalString(R.string.pref_bundle_id),
                 telemetryUrl = optionalString(R.string.pref_telemetry_url),
                 testMode = prefs.getBoolean(

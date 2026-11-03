@@ -25,12 +25,11 @@
 
     <!-- Defaults -->
     <string name="pref_app_key_default" translatable="false">tetris_2005</string>
-    <string name="pref_base_url_default" translatable="false"></string>
     <bool name="pref_test_mode_default">false</bool>
     <string name="pref_log_level_default" translatable="false">Verbose</string>
     <!--
-        The test campaign on the staging backend only bids for this one device
-        advertising id. See AdvertisingIdClient.
+        When Base URL points at a backend whose test campaign bids for one device advertising id
+        only, this is that id. See AdvertisingIdClient.
     -->
     <string name="pref_advertising_id_default" translatable="false">013b8c47-8beb-41b4-aefe-60fe466f9fd8</string>
 
