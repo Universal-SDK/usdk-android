@@ -100,7 +100,7 @@ class MainActivity : AppCompatActivity() {
             .registerAdapters(adapter)
             .setLoggerLevel(settings.logLevel)
             .setTestMode(settings.testMode)
-            .setBaseUrl(settings.baseUrl)
+            .apply { settings.baseUrl?.let(::setBaseUrl) }
             .setInitializationCallback { applyRegulation(settings) }
             .initialize(context = sdkContext(settings), appKey = settings.appKey)
     }

@@ -31,8 +31,8 @@ class BidonAdapter :
         sdkVersion = "rendering-1.0.0"
     )
 
-    // The adikteev bid token = sdk_instance_id from the config response. The SDK sends it in
-    // the auction request's demands so the backend runs the adikteev bid.
+    // The bid token is the sdk_instance_id from the config response. The SDK sends it in the
+    // auction request's demands so the backend runs this demand's bid.
     private var sdkInstanceId: String? = null
 
     override suspend fun init(

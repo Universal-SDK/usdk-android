@@ -18,7 +18,6 @@
             app:useSimpleSummaryProvider="true" />
 
         <EditTextPreference
-            app:defaultValue="@string/pref_base_url_default"
             app:dialogMessage="@string/settings_base_url_help"
             app:key="@string/pref_base_url"
             app:title="@string/settings_base_url"
