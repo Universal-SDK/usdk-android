@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The Settings tab.
+
+    Everything here is read once, at startup, when MainActivity initializes the BidOn SDK. The SDK
+    only initializes once per process, so changing a value on this screen does nothing until the app
+    restarts - hence the "Restart app" item at the bottom.
+-->
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory app:title="@string/settings_category_sdk">
+
+        <EditTextPreference
+            app:defaultValue="@string/pref_app_key_default"
+            app:dialogMessage="@string/settings_app_key_help"
+            app:key="@string/pref_app_key"
+            app:title="@string/settings_app_key"
+            app:useSimpleSummaryProvider="true" />
+
+        <EditTextPreference
+            app:defaultValue="@string/pref_base_url_default"
+            app:dialogMessage="@string/settings_base_url_help"
+            app:key="@string/pref_base_url"
+            app:title="@string/settings_base_url"
+            app:useSimpleSummaryProvider="true" />
+
+        <EditTextPreference
+            app:dialogMessage="@string/settings_bundle_id_help"
+            app:key="@string/pref_bundle_id"
+            app:title="@string/settings_bundle_id"
+            app:useSimpleSummaryProvider="true" />
+
+        <EditTextPreference
+            app:dialogMessage="@string/settings_telemetry_url_help"
+            app:key="@string/pref_telemetry_url"
+            app:title="@string/settings_telemetry_url"
+            app:useSimpleSummaryProvider="true" />
+
+        <SwitchPreferenceCompat
+            app:defaultValue="@bool/pref_test_mode_default"
+            app:key="@string/pref_test_mode"
+            app:summaryOff="@string/settings_test_mode_off"
+            app:summaryOn="@string/settings_test_mode_on"
+            app:title="@string/settings_test_mode" />
+
+        <ListPreference
+            app:defaultValue="@string/pref_log_level_default"
+            app:entries="@array/pref_log_level_entries"
+            app:entryValues="@array/pref_log_level_values"
+            app:key="@string/pref_log_level"
+            app:title="@string/settings_log_level"
+            app:useSimpleSummaryProvider="true" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/settings_category_device">
+
+        <EditTextPreference
+            app:defaultValue="@string/pref_advertising_id_default"
+            app:dialogMessage="@string/settings_advertising_id_help"
+            app:key="@string/pref_advertising_id"
+            app:title="@string/settings_advertising_id"
+            app:useSimpleSummaryProvider="true" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/settings_category_privacy">
+
+        <ListPreference
+            app:defaultValue="@string/pref_tristate_default"
+            app:entries="@array/pref_tristate_entries"
+            app:entryValues="@array/pref_tristate_values"
+            app:key="@string/pref_gdpr"
+            app:title="@string/settings_gdpr"
+            app:useSimpleSummaryProvider="true" />
+
+        <EditTextPreference
+            app:key="@string/pref_gdpr_consent_string"
+            app:title="@string/settings_gdpr_consent_string"
+            app:useSimpleSummaryProvider="true" />
+
+        <EditTextPreference
+            app:key="@string/pref_us_privacy_string"
+            app:title="@string/settings_us_privacy_string"
+            app:useSimpleSummaryProvider="true" />
+
+        <ListPreference
+            app:defaultValue="@string/pref_tristate_default"
+            app:entries="@array/pref_tristate_entries"
+            app:entryValues="@array/pref_tristate_values"
+            app:key="@string/pref_coppa"
+            app:title="@string/settings_coppa"
+            app:useSimpleSummaryProvider="true" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/settings_category_status">
+
+        <Preference
+            app:key="status_sdk_state"
+            app:persistent="false"
+            app:selectable="false"
+            app:title="@string/settings_status_sdk_state" />
+
+        <Preference
+            app:key="status_sdk_version"
+            app:persistent="false"
+            app:selectable="false"
+            app:title="@string/settings_status_sdk_version" />
+
+        <Preference
+            app:key="status_bundle_id"
+            app:persistent="false"
+            app:selectable="false"
+            app:title="@string/settings_status_bundle_id" />
+
+        <Preference
+            app:key="status_base_url"
+            app:persistent="false"
+            app:selectable="false"
+            app:title="@string/settings_status_base_url" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/settings_category_actions">
+
+        <Preference
+            app:key="action_restart"
+            app:persistent="false"
+            app:summary="@string/settings_restart_summary"
+            app:title="@string/settings_restart" />
+
+        <Preference
+            app:key="action_reset"
+            app:persistent="false"
+            app:summary="@string/settings_reset_summary"
+            app:title="@string/settings_reset" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>

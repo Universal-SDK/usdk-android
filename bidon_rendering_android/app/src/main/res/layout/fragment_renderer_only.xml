@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <Button
+                android:id="@+id/btn_load_html_banner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ro_load_banner" />
+
+            <Button
+                android:id="@+id/btn_show_html_banner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:text="@string/ro_show_banner" />
+
+            <Button
+                android:id="@+id/btn_load_html_interstitial"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ro_load_interstitial" />
+
+            <Button
+                android:id="@+id/btn_show_html_interstitial"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:text="@string/ro_show_interstitial" />
+
+            <Button
+                android:id="@+id/btn_load_vast"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ro_load_vast" />
+
+            <Button
+                android:id="@+id/btn_show_vast"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:text="@string/ro_show_vast" />
+
+            <Button
+                android:id="@+id/btn_load_mraid_banner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ro_load_mraid_banner" />
+
+            <Button
+                android:id="@+id/btn_show_mraid_banner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:text="@string/ro_show_mraid_banner" />
+
+            <Button
+                android:id="@+id/btn_load_mraid_interstitial"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/ro_load_mraid_interstitial" />
+
+            <Button
+                android:id="@+id/btn_show_mraid_interstitial"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:enabled="false"
+                android:text="@string/ro_show_mraid_interstitial" />
+
+            <Button
+                android:id="@+id/btn_destroy_all"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/destroy" />
+
+        </LinearLayout>
+    </ScrollView>
+
+    <FrameLayout
+        android:id="@+id/renderer_banner_slot"
+        android:layout_width="match_parent"
+        android:layout_height="50dp"
+        android:background="#DDDDDD" />
+
+</LinearLayout>

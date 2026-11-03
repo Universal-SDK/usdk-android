@@ -1,0 +1,169 @@
+public final class org/bidon/rendering/AdInfo {
+	public fun <init> (Ljava/lang/String;Lorg/bidon/rendering/AdType;)V
+	public fun <init> (Ljava/lang/String;Lorg/bidon/rendering/AdType;Lorg/bidon/rendering/Integration;)V
+	public synthetic fun <init> (Ljava/lang/String;Lorg/bidon/rendering/AdType;Lorg/bidon/rendering/Integration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getAuctionId ()Ljava/lang/String;
+	public final fun getIntegration ()Lorg/bidon/rendering/Integration;
+	public final fun getType ()Lorg/bidon/rendering/AdType;
+}
+
+public abstract interface class org/bidon/rendering/AdRenderer {
+	public abstract fun attach (Landroid/view/ViewGroup;)V
+	public abstract fun destroy ()V
+	public abstract fun getView ()Landroid/view/View;
+	public abstract fun load (Ljava/lang/String;Lorg/bidon/rendering/AdRenderer$Listener;)V
+	public abstract fun showFullscreen (Landroid/app/Activity;)V
+}
+
+public abstract interface class org/bidon/rendering/AdRenderer$Listener {
+	public abstract fun onClick ()V
+	public abstract fun onClose ()V
+	public abstract fun onError (Ljava/lang/Throwable;)V
+	public abstract fun onImpression ()V
+	public abstract fun onLoaded ()V
+	public abstract fun onReward ()V
+}
+
+public final class org/bidon/rendering/AdRenderingConfig {
+	public static final field Companion Lorg/bidon/rendering/AdRenderingConfig$Companion;
+	public static final field DEFAULT_SKIP_OFFSET_MS J
+	public fun <init> ()V
+	public final fun component1 ()Lorg/bidon/rendering/CloseButtonConfig;
+	public final fun component2 ()J
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCloseButton ()Lorg/bidon/rendering/CloseButtonConfig;
+	public final fun getSkipOffsetMs ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/bidon/rendering/AdRenderingConfig$Companion {
+	public final fun fromJson (Lorg/json/JSONObject;)Lorg/bidon/rendering/AdRenderingConfig;
+}
+
+public final class org/bidon/rendering/AdType : java/lang/Enum {
+	public static final field BANNER Lorg/bidon/rendering/AdType;
+	public static final field INTERSTITIAL Lorg/bidon/rendering/AdType;
+	public static final field REWARDED Lorg/bidon/rendering/AdType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/bidon/rendering/AdType;
+	public static fun values ()[Lorg/bidon/rendering/AdType;
+}
+
+public final class org/bidon/rendering/BidonRenderer {
+	public static final field INSTANCE Lorg/bidon/rendering/BidonRenderer;
+	public final fun configureTelemetry (Lorg/json/JSONObject;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public final fun createHtmlRenderer (Lorg/bidon/rendering/AdRenderingConfig;)Lorg/bidon/rendering/AdRenderer;
+	public static synthetic fun createHtmlRenderer$default (Lorg/bidon/rendering/BidonRenderer;Lorg/bidon/rendering/AdRenderingConfig;ILjava/lang/Object;)Lorg/bidon/rendering/AdRenderer;
+	public final fun createMraidRenderer (Lorg/bidon/rendering/AdRenderingConfig;)Lorg/bidon/rendering/AdRenderer;
+	public static synthetic fun createMraidRenderer$default (Lorg/bidon/rendering/BidonRenderer;Lorg/bidon/rendering/AdRenderingConfig;ILjava/lang/Object;)Lorg/bidon/rendering/AdRenderer;
+	public final fun createRenderer (Lorg/bidon/rendering/CreativeType;Lorg/bidon/rendering/AdRenderingConfig;Lorg/bidon/rendering/AdInfo;)Lorg/bidon/rendering/AdRenderer;
+	public static synthetic fun createRenderer$default (Lorg/bidon/rendering/BidonRenderer;Lorg/bidon/rendering/CreativeType;Lorg/bidon/rendering/AdRenderingConfig;Lorg/bidon/rendering/AdInfo;ILjava/lang/Object;)Lorg/bidon/rendering/AdRenderer;
+	public final fun createVastRenderer (Lorg/bidon/rendering/AdRenderingConfig;)Lorg/bidon/rendering/AdRenderer;
+	public static synthetic fun createVastRenderer$default (Lorg/bidon/rendering/BidonRenderer;Lorg/bidon/rendering/AdRenderingConfig;ILjava/lang/Object;)Lorg/bidon/rendering/AdRenderer;
+	public final fun init (Landroid/content/Context;Lorg/bidon/rendering/RendererConfig;)V
+	public static synthetic fun init$default (Lorg/bidon/rendering/BidonRenderer;Landroid/content/Context;Lorg/bidon/rendering/RendererConfig;ILjava/lang/Object;)V
+}
+
+public final class org/bidon/rendering/CloseButtonConfig {
+	public static final field Companion Lorg/bidon/rendering/CloseButtonConfig$Companion;
+	public static final field MAX_DELAY_MS J
+	public static final field MAX_PADDING_DP I
+	public static final field MAX_SIZE_DP I
+	public static final field MIN_OPACITY F
+	public static final field MIN_SIZE_DP I
+	public fun <init> ()V
+	public final fun component1 ()J
+	public final fun component2 ()Z
+	public final fun component3 ()Lorg/bidon/rendering/CloseButtonConfig$Style;
+	public final fun component4 ()I
+	public final fun component5 ()Lorg/bidon/rendering/CloseButtonConfig$Position;
+	public final fun component6 ()I
+	public final fun component7 ()F
+	public final fun component8 ()I
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getColor ()I
+	public final fun getDelayMs ()J
+	public final fun getOpacity ()F
+	public final fun getPaddingDp ()I
+	public final fun getPosition ()Lorg/bidon/rendering/CloseButtonConfig$Position;
+	public final fun getShowCountdown ()Z
+	public final fun getSizeDp ()I
+	public final fun getStyle ()Lorg/bidon/rendering/CloseButtonConfig$Style;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/bidon/rendering/CloseButtonConfig$Companion {
+}
+
+public final class org/bidon/rendering/CloseButtonConfig$Position : java/lang/Enum {
+	public static final field BOTTOM_LEFT Lorg/bidon/rendering/CloseButtonConfig$Position;
+	public static final field BOTTOM_RIGHT Lorg/bidon/rendering/CloseButtonConfig$Position;
+	public static final field TOP_LEFT Lorg/bidon/rendering/CloseButtonConfig$Position;
+	public static final field TOP_RIGHT Lorg/bidon/rendering/CloseButtonConfig$Position;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/bidon/rendering/CloseButtonConfig$Position;
+	public static fun values ()[Lorg/bidon/rendering/CloseButtonConfig$Position;
+}
+
+public final class org/bidon/rendering/CloseButtonConfig$Style : java/lang/Enum {
+	public static final field ICON_CIRCLE Lorg/bidon/rendering/CloseButtonConfig$Style;
+	public static final field ICON_X Lorg/bidon/rendering/CloseButtonConfig$Style;
+	public static final field TEXT Lorg/bidon/rendering/CloseButtonConfig$Style;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/bidon/rendering/CloseButtonConfig$Style;
+	public static fun values ()[Lorg/bidon/rendering/CloseButtonConfig$Style;
+}
+
+public final class org/bidon/rendering/CreativeType : java/lang/Enum {
+	public static final field Companion Lorg/bidon/rendering/CreativeType$Companion;
+	public static final field HTML Lorg/bidon/rendering/CreativeType;
+	public static final field MRAID Lorg/bidon/rendering/CreativeType;
+	public static final field VAST Lorg/bidon/rendering/CreativeType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/bidon/rendering/CreativeType;
+	public static fun values ()[Lorg/bidon/rendering/CreativeType;
+}
+
+public final class org/bidon/rendering/CreativeType$Companion {
+	public final fun of (Ljava/lang/String;Lorg/bidon/rendering/AdRenderingConfig;)Lorg/bidon/rendering/CreativeType;
+}
+
+public final class org/bidon/rendering/Integration : java/lang/Enum {
+	public static final field DIRECT Lorg/bidon/rendering/Integration;
+	public static final field MAX_BIDDING Lorg/bidon/rendering/Integration;
+	public static final field MAX_CUSTOM Lorg/bidon/rendering/Integration;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/bidon/rendering/Integration;
+	public static fun values ()[Lorg/bidon/rendering/Integration;
+}
+
+public final class org/bidon/rendering/LogLevel : java/lang/Enum {
+	public static final field DEBUG Lorg/bidon/rendering/LogLevel;
+	public static final field ERROR Lorg/bidon/rendering/LogLevel;
+	public static final field INFO Lorg/bidon/rendering/LogLevel;
+	public static final field NONE Lorg/bidon/rendering/LogLevel;
+	public static final field WARN Lorg/bidon/rendering/LogLevel;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/bidon/rendering/LogLevel;
+	public static fun values ()[Lorg/bidon/rendering/LogLevel;
+}
+
+public final class org/bidon/rendering/RendererConfig {
+	public fun <init> ()V
+	public fun <init> (Lorg/bidon/rendering/LogLevel;JZ)V
+	public synthetic fun <init> (Lorg/bidon/rendering/LogLevel;JZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lorg/bidon/rendering/LogLevel;
+	public final fun component2 ()J
+	public final fun component3 ()Z
+	public final fun copy (Lorg/bidon/rendering/LogLevel;JZ)Lorg/bidon/rendering/RendererConfig;
+	public static synthetic fun copy$default (Lorg/bidon/rendering/RendererConfig;Lorg/bidon/rendering/LogLevel;JZILjava/lang/Object;)Lorg/bidon/rendering/RendererConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnableDebugging ()Z
+	public final fun getLogLevel ()Lorg/bidon/rendering/LogLevel;
+	public final fun getNetworkTimeoutMs ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+

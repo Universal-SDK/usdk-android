@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        The ad activities are declared here, in the library, so that any app which depends on
+        the renderer gets them through manifest merging. They used to live only in the demo
+        app's manifest, which meant showing an ad in any other app crashed with
+        ActivityNotFoundException.
+
+        All three are exported="false": they are started by the renderer itself and must never
+        be launchable by another app.
+
+        All three share the same declarations, which they previously did not:
+
+        - configChanges, so the system hands the activity a configuration change instead of
+          destroying and rebuilding it. Each ad also locks its orientation on show, so rotation
+          should not arise; this covers what a lock cannot, such as multi-window and folding.
+        - hardwareAccelerated, for video playback and WebView compositing.
+        - one dark theme, so nothing flashes white before the creative paints.
+    -->
+    <application>
+
+        <activity
+            android:name="org.bidon.rendering.ui.FullscreenAdActivity"
+            android:theme="@style/Bidon.AdActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:hardwareAccelerated="true"
+            android:exported="false" />
+
+        <activity
+            android:name="org.bidon.rendering.vast.ui.VideoAdActivity"
+            android:theme="@style/Bidon.AdActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:hardwareAccelerated="true"
+            android:exported="false" />
+
+        <activity
+            android:name="org.bidon.rendering.mraid.ui.MraidAdActivity"
+            android:theme="@style/Bidon.AdActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:hardwareAccelerated="true"
+            android:exported="false" />
+
+    </application>
+
+</manifest>

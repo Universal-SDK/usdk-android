@@ -1,0 +1,1 @@
+{"envelope":{"event_id":"2f1c9a64-3b1e-4d57-8a0e-5b7c1d2e9f10","event_name":"ad_load_failed","event_ts":1700000000000,"auction_id":"auction-1","session_id":"session-1","ad_type":"banner","ad_format":"banner","sampling_rate":1},"demand_id":"d","error_domain":"render","error_code":"timeout","duration_ms":null,"failed_stage":"load"}

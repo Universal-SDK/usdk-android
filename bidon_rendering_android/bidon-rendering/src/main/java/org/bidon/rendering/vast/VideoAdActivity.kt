@@ -1,0 +1,320 @@
+package org.bidon.rendering.vast.ui
+
+import android.content.Context
+import android.content.Intent
+import android.os.Bundle
+import android.view.View
+import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AppCompatActivity
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.util.UnstableApi
+import androidx.annotation.OptIn
+import org.bidon.rendering.PresentedAd
+import org.bidon.rendering.PresentedAds
+import org.bidon.rendering.AdRenderingConfig
+import org.bidon.rendering.telemetry.ErrorCode
+import org.bidon.rendering.telemetry.ProcessExit
+import org.bidon.rendering.ui.AdWindow
+import org.bidon.rendering.vast.RewardedController
+import org.bidon.rendering.vast.SkipOffset
+import org.bidon.rendering.vast.VastAd
+import org.bidon.rendering.vast.VastEventTracker
+import org.bidon.rendering.vast.VastRenderer
+import org.bidon.rendering.vast.player.VideoPlayer
+
+@OptIn(UnstableApi::class)
+internal class VideoAdActivity : AppCompatActivity() {
+
+    companion object {
+        private const val EXTRA_MEDIA_URL = "extra_media_url"
+        private const val EXTRA_CLICK_URL = "extra_click_url"
+        private const val EXTRA_FALLBACK_SKIP_OFFSET_MS = "extra_fallback_skip_offset_ms"
+        private const val EXTRA_AD_KEY = "extra_ad_key"
+        private const val STATE_IMPRESSION_REPORTED = "impression_reported"
+
+        fun start(
+            context: Context,
+            mediaUrl: String,
+            clickThroughUrl: String? = null,
+            fallbackSkipOffsetMs: Long,
+            adKey: String? = null
+        ) {
+            val intent = Intent(context, VideoAdActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra(EXTRA_MEDIA_URL, mediaUrl)
+                putExtra(EXTRA_CLICK_URL, clickThroughUrl)
+                putExtra(EXTRA_FALLBACK_SKIP_OFFSET_MS, fallbackSkipOffsetMs)
+                putExtra(EXTRA_AD_KEY, adKey)
+            }
+            context.startActivity(intent)
+        }
+    }
+
+    private var player: VideoPlayer? = null
+    private var videoAdView: VideoAdView? = null
+    private var endCardView: EndCardView? = null
+
+    private val eventTracker = VastEventTracker()
+    private val rewardedController = RewardedController()
+
+    private var vastAd: VastAd? = null
+    private var isCompleted = false
+    private var isEndCardShown = false
+
+    // Back is held until the video completes or is skipped, so it cannot cut a rewarded video short
+    // of its reward. A callback, not an onBackPressed override: with predictive back, on by default
+    // for apps targeting Android 16, onBackPressed is never called.
+    private val holdBack = object : OnBackPressedCallback(true) {
+        override fun handleOnBackPressed() = Unit
+    }
+
+    private var presentationKey: String? = null
+    private var presentation: PresentedAd? = null
+
+    // Kept across recreation: the video starts over on the new screen, but the ad was already seen.
+    private var impressionReported = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // Was SCREEN_ORIENTATION_SENSOR, which invited the rotation that recreated this
+        // activity and restarted the video from the beginning.
+        AdWindow.goFullscreen(window)
+        onBackPressedDispatcher.addCallback(this, holdBack)
+
+        val mediaUrl = intent.getStringExtra(EXTRA_MEDIA_URL)
+        val clickUrl = intent.getStringExtra(EXTRA_CLICK_URL)
+        val fallbackSkipOffsetMs =
+            intent.getLongExtra(EXTRA_FALLBACK_SKIP_OFFSET_MS, AdRenderingConfig.DEFAULT_SKIP_OFFSET_MS)
+        val adKey = intent.getStringExtra(EXTRA_AD_KEY)
+
+        if (mediaUrl.isNullOrBlank()) {
+            finish()
+            return
+        }
+
+        presentationKey = adKey
+        val presented = PresentedAds.get(adKey) ?: run {
+            // The renderer is gone, so nothing here could be reported: no impression, no close,
+            // no reward. Showing the video anyway would be an ad nobody can account for. The
+            // other two ad activities bail out the same way.
+            finish()
+            return
+        }
+        presentation = presented
+        impressionReported = savedInstanceState?.getBoolean(STATE_IMPRESSION_REPORTED) ?: false
+
+        // Locked so the ad cannot rotate while it is up, restarting the video and resetting the
+        // reward counter. Inherited from the publisher, resolved when the ad was shown.
+        requestedOrientation = presented.lockedOrientation
+
+        vastAd = VastRenderer.getAd(adKey)
+        // The document's skip offset is set for this creative; the DSP's is general.
+        val skipOffset = vastAd?.skipOffset ?: SkipOffset.Time(fallbackSkipOffsetMs)
+
+        eventTracker.reset()
+        rewardedController.reset()
+
+        // The reward was being worked out and then dropped: setListener was never called, so
+        // onUserRewarded could not fire and a rewarded video never paid the player.
+        rewardedController.setListener(object : RewardedController.Listener {
+            override fun onRewardEarned() {
+                presentation?.onRewarded()
+            }
+
+            override fun onRewardRejected(reason: String) = Unit
+        })
+
+        player = VideoPlayer(this).apply {
+            load(mediaUrl)
+        }
+
+        val adView = VideoAdView(this).apply {
+            player?.let { bindPlayer(it) }
+            setClickThroughUrl(clickUrl)
+            setSkipOffset(skipOffset)
+
+            setListener(object : VideoAdView.Listener {
+                override fun onClick() = reportVideoClick()
+
+                override fun onSkip() {
+                    val trackingEvents = vastAd?.trackingEvents ?: emptyList()
+                    eventTracker.onSkip(trackingEvents)
+                    rewardedController.onSkip()
+                    isCompleted = true
+                    holdBack.isEnabled = false
+                    // Skipping ends the video, not the ad. The companion end card,
+                    // when the VAST has one, still gets its turn.
+                    showEndCard()
+                }
+
+                override fun onMuteChanged(isMuted: Boolean) {}
+
+                override fun onCtaClick() = reportVideoClick()
+            })
+        }
+
+        videoAdView = adView
+        setContentView(adView)
+
+        observePlayer()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (isEndCardShown) return
+        player?.play()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_IMPRESSION_REPORTED, impressionReported)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isCompleted) {
+            player?.pause()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+
+        if (isFinishing) {
+            presentation?.onClosed()
+            PresentedAds.unregister(presentationKey)
+            presentationKey?.let { VastRenderer.adRegistry.remove(it) }
+        }
+        presentation = null
+
+        videoAdView?.setListener(null)
+        videoAdView?.unbindPlayer()
+        videoAdView = null
+        endCardView?.destroy()
+        endCardView?.setListener(null)
+        endCardView = null
+        player?.release()
+        player = null
+    }
+
+    private fun observePlayer() {
+        player?.addListener(object : VideoPlayer.Listener {
+
+            override fun onReady() {}
+            override fun onStarted() = reportImpression()
+            override fun onPaused() {}
+
+            override fun onProgress(positionMs: Long, durationMs: Long) {
+                if (durationMs <= 0) return
+
+                val progress = positionMs.toFloat() / durationMs.toFloat()
+                val trackingEvents = vastAd?.trackingEvents ?: emptyList()
+                eventTracker.onProgress(progress, durationMs, positionMs, trackingEvents)
+                rewardedController.onProgress(progress)
+            }
+
+            override fun onCompleted() {
+                val trackingEvents = vastAd?.trackingEvents ?: emptyList()
+                val durationMs = player?.getDuration() ?: 0L
+                eventTracker.onProgress(1f, durationMs, durationMs, trackingEvents)
+
+                // The tracker is told the video reached the end; the reward controller has to be
+                // told too. Its threshold is full completion, and the player's progress ticks
+                // never land exactly on the duration, so without this the reward was always
+                // refused with "completion threshold not reached".
+                rewardedController.onProgress(1f)
+                rewardedController.onComplete()
+
+                isCompleted = true
+                holdBack.isEnabled = false
+                showEndCard()
+            }
+
+            override fun onError(error: Throwable) {
+                if (!impressionReported) failShow(error)
+                finish()
+            }
+        })
+    }
+
+    /**
+     * The impression is counted when the video starts playing, which is when a video impression is
+     * counted by the standard buyers measure against. The screen opening is not enough: a video that
+     * never loads was never seen. The SDK and the buyer's pixels are told together, so both count
+     * the same impressions.
+     */
+    private fun reportImpression() {
+        if (impressionReported) return
+        impressionReported = true
+        eventTracker.onImpression(vastAd?.impressions.orEmpty())
+        presentation?.onImpression()
+    }
+
+    /**
+     * The video failed before its first frame: the show fails, and the ad that was never seen is not also reported as
+     * closed. Not called after the impression: the show already ended in it, so the screen just closes.
+     */
+    private fun failShow(error: Throwable) {
+        val shown = presentation ?: return
+        val playerCode = (error as? PlaybackException)?.errorCode
+        shown.events?.showFailed(ErrorCode.PLAYER_ERROR, playerCode?.toString(), error)
+        shown.onFailed(error)
+        presentation = null
+    }
+
+    private fun reportVideoClick() {
+        eventTracker.onClick(vastAd?.videoClicks?.clickTrackingUrls.orEmpty())
+        presentation?.onClicked()
+    }
+
+    private fun showEndCard() {
+        if (isEndCardShown) return
+
+        // Whether the video completed or was skipped, it stops here. Without this the
+        // audio keeps running behind the end card.
+        player?.pause()
+        videoAdView?.setListener(null)
+        videoAdView?.unbindPlayer()
+
+        val companion = vastAd?.companions?.firstOrNull()
+
+        if (companion == null) {
+            finish()
+            return
+        }
+
+        isEndCardShown = true
+
+        val endCard = EndCardView(this).apply {
+            setListener(object : EndCardView.Listener {
+                override fun onClose() {
+                    finish()
+                }
+
+                override fun onClick() {
+                    eventTracker.onClick(companion.clickTrackingUrls)
+                    presentation?.onClicked()
+                }
+
+                override fun onError(error: Throwable) {
+                    finish()
+                }
+
+                override fun onRendererGone(exit: ProcessExit) {
+                    presentation?.events?.processGone(exit)
+                    finish()
+                }
+            })
+
+            showCompanion(companion)
+        }
+
+        endCardView = endCard
+
+        // Replace video view with end card
+        setContentView(endCard)
+
+        eventTracker.onCompanionView(companion.trackingEvents)
+    }
+}

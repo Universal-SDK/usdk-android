@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Keys and default values for the Settings tab.
+
+    The keys are string resources so that the preference screen (res/xml/settings.xml) and the
+    Kotlin that reads them (SdkSettings.kt) cannot drift apart.
+
+    The defaults are the values the demo app shipped with before the settings screen existed. A
+    fresh install behaves exactly as it did, and "Reset to defaults" puts it back.
+-->
+<resources>
+
+    <!-- Keys -->
+    <string name="pref_app_key" translatable="false">pref_app_key</string>
+    <string name="pref_base_url" translatable="false">pref_base_url</string>
+    <string name="pref_bundle_id" translatable="false">pref_bundle_id</string>
+    <string name="pref_telemetry_url" translatable="false">pref_telemetry_url</string>
+    <string name="pref_test_mode" translatable="false">pref_test_mode</string>
+    <string name="pref_log_level" translatable="false">pref_log_level</string>
+    <string name="pref_advertising_id" translatable="false">pref_advertising_id</string>
+    <string name="pref_gdpr" translatable="false">pref_gdpr</string>
+    <string name="pref_gdpr_consent_string" translatable="false">pref_gdpr_consent_string</string>
+    <string name="pref_us_privacy_string" translatable="false">pref_us_privacy_string</string>
+    <string name="pref_coppa" translatable="false">pref_coppa</string>
+
+    <!-- Defaults -->
+    <string name="pref_app_key_default" translatable="false">tetris_2005</string>
+    <string name="pref_base_url_default" translatable="false">https://sdkapi.bidon.squads.com</string>
+    <bool name="pref_test_mode_default">false</bool>
+    <string name="pref_log_level_default" translatable="false">Verbose</string>
+    <!--
+        The Adikteev test campaign on the staging backend only bids for this one device
+        advertising id. See AdvertisingIdClient.
+    -->
+    <string name="pref_advertising_id_default" translatable="false">013b8c47-8beb-41b4-aefe-60fe466f9fd8</string>
+
+    <!-- Log level -->
+    <string-array name="pref_log_level_entries">
+        <item>Verbose (all logs)</item>
+        <item>Error (errors only)</item>
+        <item>Off (no logs)</item>
+    </string-array>
+    <string-array name="pref_log_level_values" translatable="false">
+        <item>Verbose</item>
+        <item>Error</item>
+        <item>Off</item>
+    </string-array>
+
+    <!-- GDPR and COPPA. The values are the codes the SDK enums carry, and -1 is their Unknown. -->
+    <string name="pref_tristate_default" translatable="false">-1</string>
+    <string-array name="pref_tristate_entries">
+        <item>Unknown</item>
+        <item>No</item>
+        <item>Yes</item>
+    </string-array>
+    <string-array name="pref_tristate_values" translatable="false">
+        <item>-1</item>
+        <item>0</item>
+        <item>1</item>
+    </string-array>
+
+</resources>

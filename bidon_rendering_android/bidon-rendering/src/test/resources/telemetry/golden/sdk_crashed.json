@@ -1,0 +1,30 @@
+{
+  "crashed_on_main_thread": true,
+  "envelope": {
+    "auction_owner": "bidon",
+    "event_id": "3f2a8c1e-7b4d-4e9a-a1c6-5d8e2f0b9c47",
+    "event_name": "sdk_crashed",
+    "event_ts": 1790326698635,
+    "host": "publisher",
+    "sampling_rate": 1,
+    "sdk_uptime_ms": 12345,
+    "session_id": "550e8400-e29b-41d4-a716-446655440000"
+  },
+  "exceptions": [
+    {
+      "class": "java.lang.IllegalStateException",
+      "frames": [
+        "android.view.View.performClick(View.java:7659)",
+        "org.bidon.rendering.html.ClickHandler.shouldOverrideUrlLoading(ClickHandler.kt:60)",
+        "org.bidon.rendering.html.HtmlRenderer.onClick(HtmlRenderer.kt:58)",
+        "android.os.Looper.loop(Looper.java:288)"
+      ],
+      "omitted_frames": 1
+    },
+    {
+      "class": "java.lang.IllegalArgumentException",
+      "frames": [],
+      "omitted_frames": 2
+    }
+  ]
+}
