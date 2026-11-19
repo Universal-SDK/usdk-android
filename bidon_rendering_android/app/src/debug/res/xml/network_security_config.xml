@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug builds only: allow plain http so the app can talk to a local Bidon stack
+    (http://localhost:1324 over adb reverse, http://10.0.2.2:1324 from an emulator, or a LAN IP),
+    and so the renderer can load that stack's creative assets and trackers.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
