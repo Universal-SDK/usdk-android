@@ -2,9 +2,11 @@
 
     <!--
         The debug build is where the renderer's telemetry is exercised: it switches telemetry on and
-        watches the main thread with StrictMode.
+        watches the main thread with StrictMode. It also allows plain http, for a local Bidon stack.
     -->
-    <application android:name="org.bidon.app.DebugApplication">
+    <application
+        android:name="org.bidon.app.DebugApplication"
+        android:networkSecurityConfig="@xml/network_security_config">
 
         <meta-data
             android:name="org.bidon.rendering.telemetry"
